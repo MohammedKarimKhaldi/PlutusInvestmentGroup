@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Deal Details</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/common.css" />
+  <link rel="stylesheet" href="../styles/pages.css" />
+  <style>
+
+    .panel {
+      border-radius: 16px;
+      padding: 12px 12px 11px;
+      background: #ffffff;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      font-size: 13px;
+    }
+
+    .panel h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      font-weight: 500;
+      color: var(--text-soft);
+    }
+
+    .panel p {
+      margin: 4px 0;
+      color: var(--text-soft);
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .btn {
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      padding: 7px 14px;
+      font-size: 12px;
+      background: var(--bg-card, #f9fafb);
+      color: var(--text-main);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      border-color: transparent;
+      background: linear-gradient(135deg, #4f46e5, #22c55e);
+      color: white;
+      box-shadow:
+        0 14px 30px rgba(79, 70, 229, 0.55),
+        0 0 0 1px rgba(15, 23, 42, 0.8);
+    }
+
+    .btn:hover {
+      filter: brightness(1.05);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 16px;
+      color: var(--text-soft);
+      font-size: 14px;
+    }
+
+    .empty-state a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .empty-state a:hover {
+      text-decoration: underline;
+    }
+
+    .deal-task-list {
+      list-style: none;
+      margin: 10px 0 0;
+      padding: 0;
+      max-height: 260px;
+      overflow-y: auto;
+      font-size: 12px;
+      color: var(--text-soft);
+    }
+
+    .deal-task-item {
+      padding: 7px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      background: #ffffff;
+      margin-bottom: 6px;
+    }
+
+    .deal-task-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 2px;
+    }
+
+    .deal-task-title {
+      font-weight: 500;
+      color: #e5e7eb;
+    }
+
+    .deal-task-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+    }
+
+    .deal-task-meta span {
+      white-space: nowrap;
+    }
+
+    .badge-status-in-progress {
+      border-radius: 999px;
+      padding: 2px 6px;
+      border: 1px solid rgba(56, 189, 248, 0.9);
+      color: #e0f2fe;
+      background: rgba(15, 23, 42, 0.9);
+      font-size: 10px;
+    }
+
+    .badge-status-waiting {
+      border-radius: 999px;
+      padding: 2px 6px;
+      border: 1px solid rgba(251, 191, 36, 0.9);
+      color: #fef9c3;
+      background: rgba(15, 23, 42, 0.9);
+      font-size: 10px;
+    }
+
+    .badge-status-done {
+      border-radius: 999px;
+      padding: 2px 6px;
+      border: 1px solid rgba(34, 197, 94, 0.9);
+      color: #bbf7d0;
+      background: rgba(15, 23, 42, 0.9);
+      font-size: 10px;
+    }
+
+    .overdue-label {
+      color: #fecaca;
+      font-weight: 500;
+    }
+
+    .task-notes {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .task-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 11px;
+    }
+
+    .task-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell" id="shell" style="display:none;">
+    <div class="layout">
+      <aside class="sidebar-nav">
+        <div class="sidebar-title">Navigation</div>
+        <ul class="nav-list">
+          <li><a class="nav-link" href="index.html"><span class="dot"></span> Investor dashboard</a></li>
+          <li><a class="nav-link" href="main.html"><span class="dot"></span> Deals overview</a></li>
+          <li><a class="nav-link" href="tasks.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link active" href="javascript:void(0)"><span class="dot"></span> This deal</a></li>
+        </ul>
+      </aside>
+
+      <div class="main-column">
+        <div class="breadcrumbs">
+          <a href="main.html">Deals</a> / <span id="crumb-deal-name">Deal</span>
+        </div>
+
+        <div class="header">
+          <div class="title-block">
+            <h1 id="deal-name">Deal</h1>
+            <p id="deal-subtitle">Company and round details.</p>
+          </div>
+          <div>
+            <span class="stage-badge" id="deal-stage-badge">
+              <span class="stage-dot stage-prospect" id="deal-stage-dot"></span>
+              <span id="deal-stage-label">Prospect</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="meta-grid">
+          <div class="meta-card">
+            <div class="meta-label">Company</div>
+            <div class="meta-value" id="deal-company">–</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Owner</div>
+            <div class="meta-value" id="deal-owner">–</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Target amount</div>
+            <div class="meta-value" id="deal-target">–</div>
+            <div class="progress">
+              <div class="progress-fill" id="deal-progress"></div>
+            </div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Raised so far</div>
+            <div class="meta-value" id="deal-raised">–</div>
+          </div>
+        </div>
+
+        <div class="body-grid">
+          <div class="panel">
+            <h2>Deal summary</h2>
+            <p id="deal-summary">
+              This deal does not yet have a custom description. Use this space to track the high-level context, goals,
+              and key investors targeted for this round.
+            </p>
+          </div>
+          <div class="panel">
+            <h2>Commercial terms & actions</h2>
+            <p>
+              Commercial terms for this mandate:
+              <br />
+              Cash commission: <span id="deal-cash-comm">–</span><br />
+              Equity commission: <span id="deal-equity-comm">–</span><br />
+              Retainer: <span id="deal-retainer">–</span>
+            </p>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" id="btn-open-dashboard">
+                Open fundraising dashboard
+              </button>
+              <button class="btn" type="button" onclick="window.location.href='main.html'">
+                Back to all deals
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top: 12px;">
+          <h2>Related tasks</h2>
+          <p style="margin-top:4px; font-size:12px; color:var(--text-soft);" id="deal-task-summary">
+            Tasks linked to this deal across all owners.
+          </p>
+          <ul class="deal-task-list" id="deal-task-list">
+            <!-- JS injected -->
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="empty-state" id="empty-state" style="display:none;">
+    <p>Deal not found. It may have been renamed or removed from the configuration.</p>
+    <p>
+      Go back to the <a href="main.html">deals overview</a>.
+    </p>
+  </div>
+
+  <script src="../data/deals.js"></script>
+  <script src="../data/tasks.js"></script>
+  <script>
+    const TASKS_STORAGE_KEY = "owner_tasks_v1";
+    let allTasks = [];
+
+    const STAGE_LABELS = {
+      "prospect": "Prospect",
+      "onboarding": "Onboarding",
+      "contacting investors": "Contacting investors",
+    };
+
+    function loadTasksForDeal() {
+      try {
+        const raw = localStorage.getItem(TASKS_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            allTasks = parsed;
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to load tasks from storage", e);
+      }
+      allTasks = Array.isArray(TASKS) ? JSON.parse(JSON.stringify(TASKS)) : [];
+    }
+
+    function stageClass(stage) {
+      const s = String(stage || "").toLowerCase();
+      if (s === "prospect") return "stage-prospect";
+      if (s === "onboarding") return "stage-onboarding";
+      if (s === "contacting investors") return "stage-contacting";
+      return "stage-prospect";
+    }
+
+    function formatAmount(amount, currency) {
+      if (amount == null || amount === "") return "–";
+      if (typeof amount === "string") return amount;
+      if (typeof amount === "number" && !isNaN(amount)) {
+        try {
+          return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: currency || "USD",
+            maximumFractionDigits: 0
+          }).format(amount);
+        } catch {
+          return `${currency || "USD"} ${Number(amount).toLocaleString()}`;
+        }
+      }
+      return "–";
+    }
+
+    function formatDate(d) {
+      if (!d) return "No due date";
+      const dt = new Date(d);
+      if (isNaN(dt.getTime())) return d;
+      return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+    }
+
+    function loadDeal() {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("id");
+      const emptyState = document.getElementById("empty-state");
+      const shell = document.getElementById("shell");
+
+      if (!id || !Array.isArray(DEALS)) {
+        emptyState.style.display = "block";
+        return;
+      }
+
+      const deal = DEALS.find(d => d.id === id);
+      if (!deal) {
+        emptyState.style.display = "block";
+        return;
+      }
+
+      shell.style.display = "block";
+
+      document.getElementById("crumb-deal-name").textContent = deal.name || "Deal";
+      document.getElementById("deal-name").textContent = deal.name || "Deal";
+      document.getElementById("deal-subtitle").textContent =
+        `${deal.company || "Company"} • ${STAGE_LABELS[String(deal.stage || "").toLowerCase()] || "Prospect"}`;
+
+      document.getElementById("deal-company").textContent = deal.company || "–";
+      document.getElementById("deal-owner").textContent = deal.owner || "–";
+      document.getElementById("deal-target").textContent = formatAmount(deal.targetAmount, deal.currency);
+      document.getElementById("deal-raised").textContent = formatAmount(deal.raisedAmount, deal.currency);
+
+      const textOrDash = (value) =>
+        value == null || String(value).trim() === "" ? "–" : String(value);
+      document.getElementById("deal-cash-comm").textContent = textOrDash(deal.CashCommission);
+      document.getElementById("deal-equity-comm").textContent = textOrDash(deal.EquityCommission);
+      document.getElementById("deal-retainer").textContent = textOrDash(deal.Retainer);
+
+      const progressPercent =
+        deal.targetAmount && !isNaN(deal.targetAmount) && deal.raisedAmount && !isNaN(deal.raisedAmount)
+          ? Math.min(100, Math.round((deal.raisedAmount / deal.targetAmount) * 100))
+          : 0;
+      document.getElementById("deal-progress").style.width = `${progressPercent}%`;
+
+      const stage = String(deal.stage || "").toLowerCase();
+      const stageLabel = STAGE_LABELS[stage] || "Prospect";
+      document.getElementById("deal-stage-label").textContent = stageLabel;
+      document.getElementById("deal-stage-dot").className = `stage-dot ${stageClass(stage)}`;
+
+      const btnDashboard = document.getElementById("btn-open-dashboard");
+      btnDashboard.onclick = () => {
+        const dashId = deal.fundraisingDashboardId || "biolux";
+        window.location.href = `index.html?dashboard=${encodeURIComponent(dashId)}`;
+      };
+
+      // Render related tasks
+      loadTasksForDeal();
+      const related = allTasks.filter(t => t.dealId === deal.id);
+      const listEl = document.getElementById("deal-task-list");
+      const summaryEl = document.getElementById("deal-task-summary");
+
+      if (!related.length) {
+        listEl.innerHTML = '<li class="deal-task-item"><span class="task-notes">No tasks are linked to this deal yet.</span></li>';
+        summaryEl.textContent = "No tasks currently linked to this deal.";
+      } else {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        let overdueCount = 0;
+
+        const itemsHtml = related.map(task => {
+          const status = String(task.status || "").toLowerCase();
+          const statusLabel = status ? status.charAt(0).toUpperCase() + status.slice(1) : "In progress";
+
+          let overdue = false;
+          if (task.dueDate && status !== "done") {
+            const d = new Date(task.dueDate);
+            if (!isNaN(d.getTime())) {
+              d.setHours(0, 0, 0, 0);
+              overdue = d < today;
+            }
+          }
+          if (overdue) overdueCount++;
+
+          const dueLabel = formatDate(task.dueDate) +
+            (overdue ? ' · <span class="overdue-label">Overdue</span>' : '');
+
+          const statusClassName =
+            status === "waiting" ? "badge-status-waiting" :
+              status === "done" ? "badge-status-done" : "badge-status-in-progress";
+
+          const owner = task.owner || "Unassigned";
+          const ownerLink = `person.html?owner=${encodeURIComponent(owner)}`;
+
+          return `
+            <li class="deal-task-item">
+              <div class="deal-task-header">
+                <span class="deal-task-title">${task.title || "Task"}</span>
+                <span class="${statusClassName}">${statusLabel}</span>
+              </div>
+              <div class="deal-task-meta">
+                <span>${dueLabel}</span>
+                <span>Owner: <a class="task-link" href="${ownerLink}">${owner}</a></span>
+              </div>
+              ${task.notes ? `<div class="task-notes">${task.notes}</div>` : ""}
+            </li>
+          `;
+        }).join("");
+
+        listEl.innerHTML = itemsHtml;
+        summaryEl.textContent =
+          `${related.length} task${related.length === 1 ? "" : "s"} linked to this deal · ${overdueCount} overdue.`;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", loadDeal);
+  </script>
+</body>
+
+</html>

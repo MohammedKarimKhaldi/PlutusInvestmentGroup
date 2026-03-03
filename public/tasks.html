@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Tasks by Owner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/common.css" />
+  <link rel="stylesheet" href="../styles/pages.css" />
+  <style>
+
+    .owner-card {
+      border-radius: 18px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-card);
+      padding: 12px 13px 10px;
+    }
+
+    .owner-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .owner-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: #e5e7eb;
+    }
+
+    .owner-meta {
+      font-size: 11px;
+      color: var(--text-soft);
+    }
+
+    .task-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+
+    .task-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 7px 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: #ffffff;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .task-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .task-title {
+      font-weight: 500;
+      color: #e5e7eb;
+    }
+
+    .task-badges {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      font-size: 10px;
+    }
+
+    .badge {
+      border-radius: 999px;
+      padding: 2px 7px;
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      color: var(--text-soft);
+      background: rgba(15, 23, 42, 0.96);
+    }
+
+    .badge-status-in-progress {
+      border-color: rgba(56, 189, 248, 0.9);
+      color: #e0f2fe;
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .badge-status-waiting {
+      border-color: rgba(251, 191, 36, 0.9);
+      color: #fef9c3;
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .badge-status-done {
+      border-color: rgba(34, 197, 94, 0.9);
+      color: #bbf7d0;
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .task-secondary {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-soft);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .task-secondary span {
+      white-space: nowrap;
+    }
+
+    .overdue-label {
+      color: #fecaca;
+      font-weight: 500;
+    }
+
+    .task-notes {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .task-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 11px;
+    }
+
+    .task-link:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="shell">
+    <div class="layout">
+      <aside class="sidebar-nav">
+        <div class="sidebar-title">Navigation</div>
+        <ul class="nav-list">
+          <li><a class="nav-link" href="index.html"><span class="dot"></span> Investor dashboard</a></li>
+          <li><a class="nav-link" href="main.html"><span class="dot"></span> Deals overview</a></li>
+          <li><a class="nav-link active" href="tasks.html"><span class="dot"></span> Tasks by owner</a></li>
+        </ul>
+      </aside>
+
+      <div class="main-column">
+        <div class="header">
+          <div class="title-block">
+            <h1>Owner Tasks</h1>
+            <p>View ongoing tasks grouped by deal owner.</p>
+          </div>
+          <div class="header-actions">
+            <div class="pill">
+              <span class="dot"></span>
+              <span>Live task list</span>
+            </div>
+            <a class="btn" href="main.html">Back to deals</a>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="toolbar-row">
+            <span style="font-weight:500; color:var(--text-main);">Add task</span>
+          </div>
+          <form id="task-form">
+            <div class="toolbar-row">
+              <label>
+                Owner
+                <input type="text" id="task-owner" required placeholder="Owner" />
+              </label>
+              <label>
+                Deal
+                <select id="task-deal">
+                  <option value="">(General)</option>
+                </select>
+              </label>
+              <label>
+                Title
+                <input type="text" id="task-title" required placeholder="Task title" />
+              </label>
+              <label>
+                Type
+                <input type="text" id="task-type" placeholder="e.g. Call, Doc" />
+              </label>
+            </div>
+            <div class="toolbar-row">
+              <label>
+                Status
+                <select id="task-status">
+                  <option value="in progress">In progress</option>
+                  <option value="waiting">Waiting</option>
+                  <option value="done">Done</option>
+                </select>
+              </label>
+              <label>
+                Due
+                <input type="date" id="task-due" />
+              </label>
+              <label style="flex:1 1 200px;">
+                Notes
+                <textarea id="task-notes" placeholder="Optional notes"></textarea>
+              </label>
+              <button class="btn btn-primary" type="submit">
+                Add task
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div class="grid" id="owners-grid">
+          <!-- JS injected -->
+        </div>
+
+        <div class="footer">
+          <span id="footer-meta"></span>
+          <span>
+            Open a deal from the task link, or view the
+            <a href="main.html">deal pipeline</a>.
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/deals.js"></script>
+  <script src="../data/tasks.js"></script>
+  <script>
+    const TASKS_STORAGE_KEY = "owner_tasks_v1";
+    let tasks = [];
+
+    function loadTasksData() {
+      try {
+        const raw = localStorage.getItem(TASKS_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            tasks = parsed;
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to load tasks from storage", e);
+      }
+      tasks = Array.isArray(TASKS) ? JSON.parse(JSON.stringify(TASKS)) : [];
+    }
+
+    function saveTasksData() {
+      try {
+        localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
+      } catch (e) {
+        console.warn("Failed to save tasks to storage", e);
+      }
+    }
+
+    function statusClass(status) {
+      const s = String(status || "").toLowerCase();
+      if (s === "in progress") return "badge-status-in-progress";
+      if (s === "waiting") return "badge-status-waiting";
+      if (s === "done") return "badge-status-done";
+      return "";
+    }
+
+    function formatDate(d) {
+      if (!d) return "No due date";
+      const dt = new Date(d);
+      if (isNaN(dt.getTime())) return d;
+      return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+    }
+
+    function renderTasks() {
+      const grid = document.getElementById("owners-grid");
+      const footerMeta = document.getElementById("footer-meta");
+      if (!Array.isArray(tasks)) return;
+
+      const byOwner = {};
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      tasks.forEach(task => {
+        const owner = task.owner || "Unassigned";
+        if (!byOwner[owner]) byOwner[owner] = [];
+        byOwner[owner].push(task);
+      });
+
+      Object.keys(byOwner).forEach(owner => {
+        byOwner[owner].sort((a, b) => {
+          if (!a.dueDate && !b.dueDate) return 0;
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return new Date(a.dueDate) - new Date(b.dueDate);
+        });
+      });
+
+      const owners = Object.keys(byOwner).sort();
+      grid.innerHTML = "";
+
+      let overdueTotal = 0;
+
+      owners.forEach(owner => {
+        const ownerTasks = byOwner[owner];
+        const openCount = ownerTasks.filter(t => String(t.status || "").toLowerCase() !== "done").length;
+        const card = document.createElement("div");
+        card.className = "owner-card";
+
+        const listItems = ownerTasks.map(task => {
+          const deal = Array.isArray(DEALS) && task.dealId
+            ? DEALS.find(d => d.id === task.dealId)
+            : null;
+          const status = String(task.status || "").toLowerCase();
+          const statusLabel = status ? status.charAt(0).toUpperCase() + status.slice(1) : "In progress";
+          const dealLabel = deal ? (deal.name || deal.company || "View deal") : "General";
+          const dealLink = deal ? `deal.html?id=${encodeURIComponent(deal.id)}` : null;
+
+          let overdue = false;
+          if (task.dueDate && status !== "done") {
+            const d = new Date(task.dueDate);
+            if (!isNaN(d.getTime())) {
+              d.setHours(0, 0, 0, 0);
+              overdue = d < today;
+            }
+          }
+          if (overdue) overdueTotal++;
+
+          return `
+            <li class="task-item">
+              <div class="task-title-row">
+                <span class="task-title">${task.title || "Task"}</span>
+                <div class="task-badges">
+                  <span class="badge ${statusClass(status)}">${statusLabel}</span>
+                  ${task.type ? `<span class="badge">${task.type}</span>` : ""}
+                </div>
+              </div>
+              <div class="task-secondary">
+                <span>${formatDate(task.dueDate)}${overdue ? ' · <span class="overdue-label">Overdue</span>' : ''}</span>
+                <span>${deal ? (deal.company || "") : ""}</span>
+                ${dealLink ? `<a class="task-link" href="${dealLink}">${dealLabel}</a>` : ""}
+                <a class="task-link" href="javascript:void(0)" onclick="deleteTask('${task.id}')">Delete</a>
+              </div>
+              ${task.notes ? `<div class="task-notes">${task.notes}</div>` : ""}
+            </li>
+          `;
+        }).join("");
+
+        card.innerHTML = `
+          <div class="owner-header">
+            <div>
+              <a class="owner-name" href="person.html?owner=${encodeURIComponent(owner)}">${owner}</a>
+              <div class="owner-meta">${openCount} open task${openCount === 1 ? "" : "s"}</div>
+            </div>
+          </div>
+          <ul class="task-list">
+            ${listItems}
+          </ul>
+        `;
+
+        grid.appendChild(card);
+      });
+
+      const total = tasks.length;
+      const openTotal = tasks.filter(t => String(t.status || "").toLowerCase() !== "done").length;
+      footerMeta.textContent =
+        `${openTotal} open · ${overdueTotal} overdue · ${total} total task${total === 1 ? "" : "s"}.`;
+    }
+
+    function setupForm() {
+      const form = document.getElementById("task-form");
+      const ownerInput = document.getElementById("task-owner");
+      const dealSelect = document.getElementById("task-deal");
+      const titleInput = document.getElementById("task-title");
+      const typeInput = document.getElementById("task-type");
+      const statusSelect = document.getElementById("task-status");
+      const dueInput = document.getElementById("task-due");
+      const notesInput = document.getElementById("task-notes");
+
+      if (Array.isArray(DEALS)) {
+        DEALS.forEach(d => {
+          const opt = document.createElement("option");
+          opt.value = d.id;
+          opt.textContent = d.name || d.company || d.id;
+          dealSelect.appendChild(opt);
+        });
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const owner = ownerInput.value.trim();
+        const title = titleInput.value.trim();
+        if (!owner || !title) return;
+
+        const newTask = {
+          id: `t-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          owner,
+          dealId: dealSelect.value || null,
+          title,
+          type: typeInput.value.trim() || "",
+          status: statusSelect.value || "in progress",
+          dueDate: dueInput.value || "",
+          notes: notesInput.value.trim() || "",
+        };
+
+        tasks.push(newTask);
+        saveTasksData();
+        renderTasks();
+
+        ownerInput.value = "";
+        titleInput.value = "";
+        typeInput.value = "";
+        notesInput.value = "";
+      });
+    }
+
+    function deleteTask(taskId) {
+      tasks = tasks.filter(t => t.id !== taskId);
+      saveTasksData();
+      renderTasks();
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadTasksData();
+      setupForm();
+      renderTasks();
+    });
+  </script>
+</body>
+
+</html>

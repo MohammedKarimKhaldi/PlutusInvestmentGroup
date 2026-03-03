@@ -1,0 +1,24 @@
+# Build artifacts and generated files
+# (config.js is tracked so the project is fully standalone)
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# OS files
+Thumbs.db
+.DS_Store
