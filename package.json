@@ -1,0 +1,23 @@
+{
+  "name": "plutus-investment-group-dashboard",
+  "version": "1.0.0",
+  "description": "Investment deal management and task tracking dashboard",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/generate-config.js",
+    "start": "python -m http.server 8000",
+    "serve": "npx http-server"
+  },
+  "keywords": [
+    "investment",
+    "deals",
+    "task-management",
+    "dashboard"
+  ],
+  "author": "Plutus Investment Group",
+  "license": "UNLICENSED",
+  "private": true,
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

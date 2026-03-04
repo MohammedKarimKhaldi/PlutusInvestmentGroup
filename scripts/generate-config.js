@@ -3,7 +3,7 @@ const path = require('path');
 
 const cwd = process.cwd();
 const envPath = path.join(cwd, '.env');
-const outputPath = path.join(cwd, 'dashboard.config.js');
+const outputPath = path.join(cwd, 'data', 'config.js');
 
 function parseEnv(content) {
   const result = {};
@@ -88,7 +88,7 @@ const configObj = {
 };
 
 const output = [
-  '// Generated from .env by scripts/generate-dashboard-config.js',
+  '// Generated from .env by scripts/generate-config.js',
   `window.DASHBOARD_CONFIG = ${JSON.stringify(configObj, null, 4)};`,
   '',
   'window.DASHBOARD_PROXIES = [',
@@ -98,5 +98,5 @@ const output = [
   ''
 ].join('\n');
 
-fs.writeFileSync(outputPath, output, 'utf8');
-console.log(`Generated ${path.basename(outputPath)} from .env`);
+fs.writeFileSync(outputPath, output);
+console.log(`✓ Generated ${outputPath}`);
