@@ -6,10 +6,10 @@
   <title>Owner Tasks</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../styles/common.css" />
-  <link rel="stylesheet" href="../styles/pages.css" />
-  <link rel="stylesheet" href="../styles/tasks.css" />
-  <link rel="stylesheet" href="../styles/person.css" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/tasks-management.css" />
+  <link rel="stylesheet" href="../styles/owner-tasks.css" />
 </head>
 
 <body>
@@ -18,15 +18,16 @@
       <aside class="sidebar-nav">
         <div class="sidebar-title">Navigation</div>
         <ul class="nav-list">
-          <li><a class="nav-link" href="index.html"><span class="dot"></span> Investor dashboard</a></li>
-          <li><a class="nav-link" href="main.html"><span class="dot"></span> Deals overview</a></li>
-          <li><a class="nav-link active" href="tasks.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link" href="investor-dashboard.html"><span class="dot"></span> Investor dashboard</a></li>
+          <li><a class="nav-link" href="deals-overview.html"><span class="dot"></span> Deals overview</a></li>
+          <li><a class="nav-link active" href="tasks-management.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link" href="sharedrive-folders.html"><span class="dot"></span> Sharedrive folders</a></li>
         </ul>
       </aside>
 
       <div class="main-column">
         <div class="breadcrumbs">
-          <a href="tasks.html">Tasks</a> / <span id="crumb-owner">Owner</span>
+          <a href="tasks-management.html">Tasks</a> / <span id="crumb-owner">Owner</span>
         </div>
 
         <div class="header">
@@ -35,9 +36,9 @@
             <p id="owner-subtitle">Focused task view by owner.</p>
           </div>
           <div class="header-actions">
-            <a class="btn" href="index.html">Dashboard</a>
-            <a class="btn" href="main.html">Deals</a>
-            <a class="btn" href="tasks.html">Back to all owners</a>
+            <a class="btn" href="investor-dashboard.html">Dashboard</a>
+            <a class="btn" href="deals-overview.html">Deals</a>
+            <a class="btn" href="tasks-management.html">Back to all owners</a>
           </div>
         </div>
 
@@ -113,7 +114,8 @@
   <script src="../data/deals.js"></script>
   <script src="../data/tasks.js"></script>
   <script src="../scripts/shared/core.js"></script>
-  <script src="../scripts/pages/person.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/owner-tasks.js"></script>
 </body>
 
 </html>

@@ -93,7 +93,7 @@
           return {
             key: `deal:${normalizeValue(deal ? (deal.id || label) : label)}`,
             label,
-            href: deal && deal.id ? `deal.html?id=${encodeURIComponent(deal.id)}` : ""
+            href: deal && deal.id ? `deal-details.html?id=${encodeURIComponent(deal.id)}` : ""
           };
         }
 
@@ -111,7 +111,7 @@
         return {
           key: `owner:${normalizeValue(owner)}`,
           label: owner,
-          href: `person.html?owner=${encodeURIComponent(owner)}`
+          href: `owner-tasks.html?owner=${encodeURIComponent(owner)}`
         };
       };
 
@@ -185,7 +185,7 @@
           const status = String(task.status || "").toLowerCase();
           const statusLabel = status ? status.charAt(0).toUpperCase() + status.slice(1) : "In progress";
           const dealLabel = deal ? (deal.name || deal.company || "View deal") : "General";
-          const dealLink = deal && deal.id ? `./deal.html?id=${encodeURIComponent(deal.id)}` : "";
+          const dealLink = deal && deal.id ? `./deal-details.html?id=${encodeURIComponent(deal.id)}` : "";
           const overdue = isTaskOverdue(task);
 
           if (titleOnly) {

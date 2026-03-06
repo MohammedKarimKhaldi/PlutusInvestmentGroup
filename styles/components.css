@@ -60,6 +60,11 @@
   box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
 }
 
+.stage-signing {
+  background: #f97316;
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.75);
+}
+
 .stage-contacting {
   background: var(--success);
   box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);

@@ -6,9 +6,9 @@
   <title>Deal Details</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../styles/common.css" />
-  <link rel="stylesheet" href="../styles/pages.css" />
-  <link rel="stylesheet" href="../styles/deal.css" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/deal-details.css" />
 </head>
 
 <body>
@@ -17,16 +17,17 @@
       <aside class="sidebar-nav">
         <div class="sidebar-title">Navigation</div>
         <ul class="nav-list">
-          <li><a class="nav-link" href="index.html"><span class="dot"></span> Investor dashboard</a></li>
-          <li><a class="nav-link" href="main.html"><span class="dot"></span> Deals overview</a></li>
-          <li><a class="nav-link" href="tasks.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link" href="investor-dashboard.html"><span class="dot"></span> Investor dashboard</a></li>
+          <li><a class="nav-link" href="deals-overview.html"><span class="dot"></span> Deals overview</a></li>
+          <li><a class="nav-link" href="tasks-management.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link" href="sharedrive-folders.html"><span class="dot"></span> Sharedrive folders</a></li>
           <li><a class="nav-link active" href="javascript:void(0)"><span class="dot"></span> This deal</a></li>
         </ul>
       </aside>
 
       <div class="main-column">
         <div class="breadcrumbs">
-          <a href="main.html">Deals</a> / <span id="crumb-deal-name">Deal</span>
+          <a href="deals-overview.html">Deals</a> / <span id="crumb-deal-name">Deal</span>
         </div>
 
         <div class="header">
@@ -34,11 +35,28 @@
             <h1 id="deal-name">Deal</h1>
             <p id="deal-subtitle">Company and round details.</p>
           </div>
-          <div>
+          <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
             <span class="stage-badge" id="deal-stage-badge">
               <span class="stage-dot stage-prospect" id="deal-stage-dot"></span>
               <span id="deal-stage-label">Prospect</span>
             </span>
+            <button class="btn btn-primary" type="button" id="btn-complete-stage">Complete current stage</button>
+          </div>
+        </div>
+
+        <div class="deal-stage-tracker" id="deal-stage-tracker">
+          <div class="deal-stage-tracker-top">
+            <span class="deal-stage-tracker-title">Company advancement</span>
+            <span class="deal-stage-tracker-value" id="deal-stage-tracker-value">Prospect · 1/4</span>
+          </div>
+          <div class="deal-stage-track-bar">
+            <div class="deal-stage-track-fill" id="deal-stage-track-fill"></div>
+          </div>
+          <div class="deal-stage-steps">
+            <div class="deal-stage-step" data-stage="prospect">Prospect</div>
+            <div class="deal-stage-step" data-stage="signing">Signing</div>
+            <div class="deal-stage-step" data-stage="onboarding">Onboarding</div>
+            <div class="deal-stage-step" data-stage="contacting investors">Contacting investors</div>
           </div>
         </div>
 
@@ -89,7 +107,7 @@
               <button class="btn btn-primary" type="button" id="btn-open-dashboard">
                 Open fundraising dashboard
               </button>
-              <a class="btn" href="main.html">Back to all deals</a>
+              <a class="btn" href="deals-overview.html">Back to all deals</a>
             </div>
           </div>
         </div>
@@ -108,6 +126,7 @@
               <label>Stage
                 <select id="deal-input-stage">
                   <option value="prospect">Prospect</option>
+                  <option value="signing">Signing</option>
                   <option value="onboarding">Onboarding</option>
                   <option value="contacting investors">Contacting investors</option>
                 </select>
@@ -176,7 +195,7 @@
   <div class="empty-state" id="empty-state" style="display:none;">
     <p>Deal not found. It may have been renamed or removed from the configuration.</p>
     <p>
-      Go back to the <a href="main.html">deals overview</a>.
+      Go back to the <a href="deals-overview.html">deals overview</a>.
     </p>
   </div>
 
@@ -185,7 +204,8 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
   <script src="../data/config.js"></script>
   <script src="../scripts/shared/core.js"></script>
-  <script src="../scripts/pages/deal.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/deal-details.js"></script>
 </body>
 
 </html>

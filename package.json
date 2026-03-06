@@ -1,23 +1,79 @@
 {
-  "name": "plutus-investment-group-dashboard",
+  "name": "plutus-investment-group-desktop",
   "version": "1.0.0",
-  "description": "Investment deal management and task tracking dashboard",
-  "type": "module",
-  "scripts": {
-    "build": "node scripts/generate-config.js",
-    "start": "python -m http.server 8000",
-    "serve": "npx http-server"
-  },
-  "keywords": [
-    "investment",
-    "deals",
-    "task-management",
-    "dashboard"
-  ],
-  "author": "Plutus Investment Group",
-  "license": "UNLICENSED",
   "private": true,
+  "description": "Desktop wrapper for Plutus Investment Group dashboard",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "desktop": "electron .",
+    "dist": "electron-builder --mac dmg --universal --publish never",
+    "dist:mac": "electron-builder --mac dmg --universal --publish never",
+    "dist:mac:arm64": "electron-builder --mac dmg --arm64 --publish never",
+    "dist:mac:x64": "electron-builder --mac dmg --x64 --publish never",
+    "dist:mac:universal": "electron-builder --mac dmg --universal --publish never",
+    "dist:mac:zip": "electron-builder --mac zip --universal --publish never",
+    "dist:win": "electron-builder --win portable --x64 --publish never",
+    "dist:linux": "electron-builder --linux AppImage --x64 --publish never"
+  },
+  "build": {
+    "appId": "com.plutus.investment.dashboard",
+    "productName": "Plutus Investment Dashboard",
+    "compression": "maximum",
+    "asar": true,
+    "electronLanguages": [
+      "en-US"
+    ],
+    "files": [
+      "index.html",
+      "public/**/*.html",
+      "scripts/pages/**/*.js",
+      "scripts/shared/**/*.js",
+      "styles/**/*.css",
+      "data/config.js",
+      "data/deals.js",
+      "data/tasks.js",
+      "electron/**/*",
+      "package.json",
+      "!**/.DS_Store",
+      "!**/*.md"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "zip"
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "afterPack": "electron/after-pack.cjs",
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    }
+  },
   "devDependencies": {
-    "http-server": "^14.1.1"
+    "electron": "^27.3.11",
+    "electron-builder": "^26.8.1"
   }
 }

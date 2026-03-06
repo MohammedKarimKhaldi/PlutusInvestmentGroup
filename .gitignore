@@ -1,5 +1,6 @@
 # Build artifacts and generated files
 # (config.js is tracked so the project is fully standalone)
+data/runtime/*.json
 
 # Environment variables
 .env

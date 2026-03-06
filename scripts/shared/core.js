@@ -15,7 +15,24 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  function hasDesktopBridge() {
+    return Boolean(
+      global.PlutusDesktop &&
+      typeof global.PlutusDesktop.readArrayStore === "function" &&
+      typeof global.PlutusDesktop.writeArrayStore === "function",
+    );
+  }
+
   function readArrayFromStorage(key) {
+    if (hasDesktopBridge()) {
+      try {
+        const values = global.PlutusDesktop.readArrayStore(key);
+        return Array.isArray(values) ? values : null;
+      } catch (error) {
+        console.warn(`[AppCore] Desktop read failed for ${key}`, error);
+      }
+    }
+
     try {
       const raw = localStorage.getItem(key);
       if (!raw) return null;
@@ -28,6 +45,15 @@
   }
 
   function writeArrayToStorage(key, values) {
+    if (hasDesktopBridge()) {
+      try {
+        global.PlutusDesktop.writeArrayStore(key, Array.isArray(values) ? values : []);
+        return;
+      } catch (error) {
+        console.warn(`[AppCore] Desktop write failed for ${key}`, error);
+      }
+    }
+
     try {
       localStorage.setItem(key, JSON.stringify(Array.isArray(values) ? values : []));
     } catch (error) {

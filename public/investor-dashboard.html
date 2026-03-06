@@ -9,9 +9,9 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="../styles/common.css" />
-    <link rel="stylesheet" href="../styles/pages.css" />
-    <link rel="stylesheet" href="../styles/index-dashboard.css" />
+    <link rel="stylesheet" href="../styles/base.css" />
+    <link rel="stylesheet" href="../styles/components.css" />
+    <link rel="stylesheet" href="../styles/investor-dashboard.css" />
     <!-- SheetJS for Excel Parsing -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <!-- Chart.js for Visualizations -->
@@ -54,10 +54,11 @@
             <aside class="sidebar-nav">
                 <div class="sidebar-title">Navigation</div>
                 <ul class="nav-list">
-                    <li><a class="nav-link active" href="index.html"><span class="dot"></span> Investor dashboard</a>
+                    <li><a class="nav-link active" href="investor-dashboard.html"><span class="dot"></span> Investor dashboard</a>
                     </li>
-                    <li><a class="nav-link" href="main.html"><span class="dot"></span> Deals overview</a></li>
-                    <li><a class="nav-link" href="tasks.html"><span class="dot"></span> Tasks by owner</a></li>
+                    <li><a class="nav-link" href="deals-overview.html"><span class="dot"></span> Deals overview</a></li>
+                    <li><a class="nav-link" href="tasks-management.html"><span class="dot"></span> Tasks by owner</a></li>
+                    <li><a class="nav-link" href="sharedrive-folders.html"><span class="dot"></span> Sharedrive folders</a></li>
                 </ul>
             </aside>
             <div class="main-column" id="dashboard">
@@ -168,7 +169,8 @@
         </div>
     </div>
 
-    <script src="../scripts/pages/index-dashboard.js"></script>
+    <script src="../scripts/pages/investor-dashboard.js"></script>
+    <script src="../scripts/shared/theme.js"></script>
 </body>
 
 </html>

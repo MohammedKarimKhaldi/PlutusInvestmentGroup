@@ -6,9 +6,9 @@
   <title>Tasks by Owner</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../styles/common.css" />
-  <link rel="stylesheet" href="../styles/pages.css" />
-  <link rel="stylesheet" href="../styles/tasks.css" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/tasks-management.css" />
 </head>
 
 <body>
@@ -17,9 +17,10 @@
       <aside class="sidebar-nav">
         <div class="sidebar-title">Navigation</div>
         <ul class="nav-list">
-          <li><a class="nav-link" href="index.html"><span class="dot"></span> Investor dashboard</a></li>
-          <li><a class="nav-link" href="main.html"><span class="dot"></span> Deals overview</a></li>
-          <li><a class="nav-link active" href="tasks.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link" href="investor-dashboard.html"><span class="dot"></span> Investor dashboard</a></li>
+          <li><a class="nav-link" href="deals-overview.html"><span class="dot"></span> Deals overview</a></li>
+          <li><a class="nav-link active" href="tasks-management.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link" href="sharedrive-folders.html"><span class="dot"></span> Sharedrive folders</a></li>
         </ul>
       </aside>
 
@@ -34,7 +35,7 @@
               <span class="dot"></span>
               <span>Live management view</span>
             </div>
-            <a class="btn" href="main.html">Back to deals</a>
+            <a class="btn" href="deals-overview.html">Back to deals</a>
           </div>
         </div>
 
@@ -124,7 +125,7 @@
           <span id="footer-meta"></span>
           <span>
             Open a deal from the task link, or view the
-            <a href="main.html">deal pipeline</a>.
+            <a href="deals-overview.html">deal pipeline</a>.
           </span>
         </div>
       </div>
@@ -134,7 +135,8 @@
   <script src="../data/deals.js"></script>
   <script src="../data/tasks.js"></script>
   <script src="../scripts/shared/core.js"></script>
-  <script src="../scripts/pages/tasks.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/tasks-management.js"></script>
 </body>
 
 </html>

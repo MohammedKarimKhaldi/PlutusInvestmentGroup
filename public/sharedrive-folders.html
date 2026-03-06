@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Sharedrive Folders</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/sharedrive-folders.css" />
+</head>
+
+<body>
+  <div class="shell">
+    <div class="layout">
+      <aside class="sidebar-nav">
+        <div class="sidebar-title">Navigation</div>
+        <ul class="nav-list">
+          <li><a class="nav-link" href="investor-dashboard.html"><span class="dot"></span> Investor dashboard</a></li>
+          <li><a class="nav-link" href="deals-overview.html"><span class="dot"></span> Deals overview</a></li>
+          <li><a class="nav-link" href="tasks-management.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link active" href="sharedrive-folders.html"><span class="dot"></span> Sharedrive folders</a></li>
+        </ul>
+      </aside>
+
+      <div class="main-column">
+        <div class="header">
+          <div class="title-block">
+            <h1>Sharedrive Folders</h1>
+            <p>Dynamic folder list from your SharePoint / OneDrive directory.</p>
+          </div>
+          <div class="header-actions">
+            <div class="pill"><span class="dot"></span><span>Live Graph API</span></div>
+          </div>
+        </div>
+
+        <div class="panel form-panel">
+          <h2>Connection</h2>
+          <div class="toolbar-row">
+            <label class="wide">
+              Share URL
+              <input id="share-url" type="text" placeholder="https://.../onedrive.aspx?id=..." />
+            </label>
+          </div>
+          <div class="toolbar-row">
+            <label class="wide">
+              Access token (optional)
+              <input id="access-token" type="password" placeholder="Paste Microsoft Graph bearer token, or leave empty to use env vars" />
+            </label>
+          </div>
+          <div class="toolbar-row actions-row">
+            <label class="remember-toggle">
+              <input id="remember-url" type="checkbox" checked />
+              <span>Remember URL on this machine</span>
+            </label>
+            <button class="btn btn-primary" type="button" id="fetch-folders-btn">Load folders</button>
+          </div>
+          <p class="hint">
+            Dynamic listing requires desktop mode (`npm run desktop`) and a valid Microsoft Graph token.
+            You can also set environment vars: `PLUTUS_GRAPH_ACCESS_TOKEN` or
+            `PLUTUS_AZURE_TENANT_ID` + `PLUTUS_AZURE_CLIENT_ID` + `PLUTUS_AZURE_CLIENT_SECRET`.
+          </p>
+        </div>
+
+        <div class="meta-row" id="sharedrive-meta-row"></div>
+
+        <div class="panel list-panel">
+          <div class="panel-heading-row">
+            <h2>Folders</h2>
+            <span id="folders-status" class="status-text">Idle</span>
+          </div>
+          <div id="folders-error" class="error-banner" hidden></div>
+          <div id="folders-empty" class="empty-state" hidden>No folders found at this location.</div>
+          <div id="folders-list" class="folders-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/sharedrive-folders.js"></script>
+</body>
+
+</html>

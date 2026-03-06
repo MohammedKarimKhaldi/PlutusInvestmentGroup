@@ -10,9 +10,11 @@ const AUTO_CONTACT_TASK_PREFIX = (AppCore && AppCore.AUTO_CONTACT_TASK_PREFIX) |
 
 const STAGE_LABELS = {
   prospect: "Prospect",
+  signing: "Signing",
   onboarding: "Onboarding",
   "contacting investors": "Contacting investors",
 };
+const STAGE_ORDER = ["prospect", "signing", "onboarding", "contacting investors"];
 
 function normalizeValue(value) {
   if (AppCore) return AppCore.normalizeValue(value);
@@ -54,9 +56,116 @@ function saveTasksData() {
 function stageClass(stage) {
   const s = normalizeValue(stage);
   if (s === "prospect") return "stage-prospect";
+  if (s === "signing") return "stage-signing";
   if (s === "onboarding") return "stage-onboarding";
   if (s === "contacting investors") return "stage-contacting";
   return "stage-prospect";
+}
+
+function relatedTasksForCurrentDeal() {
+  if (!currentDeal) return [];
+  return allTasks.filter((task) => normalizeValue(task.dealId) === normalizeValue(currentDeal.id));
+}
+
+function isSigningTask(task) {
+  const hay = `${task && task.title || ""} ${task && task.type || ""} ${task && task.notes || ""}`;
+  const normalized = normalizeValue(hay);
+  return (
+    normalized.includes("sign") ||
+    normalized.includes("signature") ||
+    normalized.includes("contract") ||
+    normalized.includes("legal")
+  );
+}
+
+function getSigningTaskProgress() {
+  const signingTasks = relatedTasksForCurrentDeal().filter(isSigningTask);
+  const doneCount = signingTasks.filter((task) => normalizeValue(task.status) === "done").length;
+  return {
+    total: signingTasks.length,
+    done: doneCount,
+    allDone: signingTasks.length === 0 || doneCount === signingTasks.length,
+  };
+}
+
+function advanceDealStage(nextStage) {
+  if (!currentDeal) return;
+  currentDeal.stage = nextStage;
+  saveDealsData();
+  renderDealHeader();
+  populateDealForm();
+  renderRelatedTasks();
+}
+
+function refreshStageButton() {
+  const button = document.getElementById("btn-complete-stage");
+  if (!button || !currentDeal) return;
+
+  const stage = normalizeValue(currentDeal.stage);
+  const signing = getSigningTaskProgress();
+
+  if (stage === "prospect") {
+    button.disabled = false;
+    button.textContent = "Move to signing";
+    return;
+  }
+  if (stage === "signing") {
+    button.disabled = false;
+    button.textContent = "Move to onboarding";
+    return;
+  }
+  if (stage === "onboarding") {
+    button.disabled = !signing.allDone;
+    button.textContent = signing.total === 0
+      ? "Move to contacting investors"
+      : (signing.allDone
+        ? "Move to contacting investors"
+        : `Complete signing tasks (${signing.done}/${signing.total})`);
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Final stage reached";
+}
+
+function setupStageProgressionButton() {
+  const button = document.getElementById("btn-complete-stage");
+  if (!button) return;
+
+  button.addEventListener("click", () => {
+    if (!currentDeal) return;
+    const stage = normalizeValue(currentDeal.stage);
+    const signing = getSigningTaskProgress();
+
+    if (stage === "prospect") {
+      advanceDealStage("signing");
+      return;
+    }
+    if (stage === "signing") {
+      advanceDealStage("onboarding");
+      return;
+    }
+    if (stage === "onboarding") {
+      if (!signing.allDone) {
+        window.alert(`Complete signing tasks first (${signing.done}/${signing.total} done).`);
+        return;
+      }
+      advanceDealStage("contacting investors");
+      return;
+    }
+  });
+}
+
+function autoPromoteFromOnboardingIfReady() {
+  if (!currentDeal) return false;
+  if (normalizeValue(currentDeal.stage) !== "onboarding") return false;
+
+  const signing = getSigningTaskProgress();
+  if (!(signing.total > 0 && signing.allDone)) return false;
+
+  currentDeal.stage = "contacting investors";
+  saveDealsData();
+  return true;
 }
 
 function getSeniorOwner(deal) {
@@ -301,6 +410,7 @@ function renderDealHeader() {
   const stageLabel = STAGE_LABELS[stage] || "Prospect";
   document.getElementById("deal-stage-label").textContent = stageLabel;
   document.getElementById("deal-stage-dot").className = `stage-dot ${stageClass(stage)}`;
+  renderStageTracker(stage);
 
   document.getElementById("deal-summary").textContent =
     currentDeal.summary ||
@@ -309,8 +419,28 @@ function renderDealHeader() {
   const btnDashboard = document.getElementById("btn-open-dashboard");
   btnDashboard.onclick = () => {
     const dashId = currentDeal.fundraisingDashboardId || "biolux";
-    window.location.href = `index.html?dashboard=${encodeURIComponent(dashId)}`;
+    window.location.href = `investor-dashboard.html?dashboard=${encodeURIComponent(dashId)}`;
   };
+
+  refreshStageButton();
+}
+
+function renderStageTracker(stage) {
+  const trackerValue = document.getElementById("deal-stage-tracker-value");
+  const trackerFill = document.getElementById("deal-stage-track-fill");
+  const stepNodes = Array.from(document.querySelectorAll(".deal-stage-step"));
+  if (!trackerValue || !trackerFill || !stepNodes.length) return;
+
+  const stageIndex = Math.max(0, STAGE_ORDER.indexOf(stage));
+  const ratio = ((stageIndex + 1) / STAGE_ORDER.length) * 100;
+  const label = STAGE_LABELS[stage] || "Prospect";
+
+  trackerValue.textContent = `${label} · ${stageIndex + 1}/${STAGE_ORDER.length}`;
+  trackerFill.style.width = `${ratio}%`;
+
+  stepNodes.forEach((node, index) => {
+    node.classList.toggle("active", index <= stageIndex);
+  });
 }
 
 function populateDealForm() {
@@ -341,6 +471,7 @@ function renderRelatedTasks() {
   if (!related.length) {
     listEl.innerHTML = '<div class="deal-task-item"><span class="task-notes">No tasks are linked to this deal yet.</span></div>';
     summaryEl.textContent = "No tasks currently linked to this deal.";
+    refreshStageButton();
     return;
   }
 
@@ -387,7 +518,7 @@ function renderRelatedTasks() {
         status === "done" ? "badge-status-done" : "badge-status-in-progress";
 
     const owner = task.owner || "Unassigned";
-    const ownerLink = `person.html?owner=${encodeURIComponent(owner)}`;
+    const ownerLink = `owner-tasks.html?owner=${encodeURIComponent(owner)}`;
 
     return `
       <div class="deal-task-item">
@@ -434,6 +565,13 @@ function renderRelatedTasks() {
   listEl.innerHTML = groupsHtml;
   summaryEl.textContent =
     `${related.length} task${related.length === 1 ? "" : "s"} linked to this deal · ${overdueCount} overdue · grouped by ${groupMode}.`;
+
+  if (autoPromoteFromOnboardingIfReady()) {
+    renderDealHeader();
+    populateDealForm();
+  } else {
+    refreshStageButton();
+  }
 }
 
 function setupGroupButtons() {
@@ -584,6 +722,7 @@ function loadDealPage() {
   setupDealTaskForm();
   setupFormToggles();
   setupGroupButtons();
+  setupStageProgressionButton();
   syncContactStatusTasksFromDashboard();
 }
 

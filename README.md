@@ -1,130 +1,75 @@
 # Plutus Investment Group Dashboard
 
-Internal web dashboard for managing fundraising deals, investor tracking, and execution tasks.
+Static HTML/CSS/JavaScript dashboard for:
+- investor tracking
+- deals overview and deal management
+- task management by owner and deal
 
-The project is intentionally lightweight:
-- Vanilla HTML/CSS/JavaScript
-- No framework build pipeline
-- LocalStorage-backed editing for deals and tasks
+## Main Entrypoint
 
-## Overview
+- `index.html` (redirects to `public/investor-dashboard.html`)
 
-The app is split into focused pages:
-- `public/index.html`: investor dashboard synced from configured Excel sources
-- `public/main.html`: deals overview and pipeline table
-- `public/deal.html`: deal detail page, deal editing, task management, dashboard-sync task generation
-- `public/tasks.html`: management view across tasks with grouping/filtering/sorting
-- `public/person.html`: owner-level task view with grouped/list layouts and inline editing
-
-## Project Structure
+## Current Structure
 
 ```text
 .
+├── index.html
+├── README.md
 ├── data/
-│   ├── config.js             # Dashboard/proxy configuration (generated or manually maintained)
-│   ├── deals.js              # Seed deal dataset
-│   └── tasks.js              # Seed task dataset
+│   ├── config.js
+│   ├── deals.js
+│   └── tasks.js
 ├── public/
-│   ├── index.html
-│   ├── main.html
-│   ├── deal.html
-│   ├── tasks.html
-│   └── person.html
+│   ├── investor-dashboard.html
+│   ├── deals-overview.html
+│   ├── deal-details.html
+│   ├── tasks-management.html
+│   └── owner-tasks.html
 ├── scripts/
-│   ├── generate-config.js    # Optional config generation from .env
+│   ├── generate-config.js
 │   ├── shared/
-│   │   └── core.js           # Shared app utilities (storage, normalization, lookup helpers)
+│   │   └── core.js
 │   └── pages/
-│       ├── index-dashboard.js
-│       ├── main.js
-│       ├── deal.js
-│       ├── tasks.js
-│       └── person.js
-├── styles/
-│   ├── common.css
-│   ├── pages.css
-│   ├── index-dashboard.css
-│   ├── deal.css
-│   ├── tasks.css
-│   └── person.css
-├── .env.example
-├── package.json
-└── README.md
+│       ├── investor-dashboard.js
+│       ├── deals-overview.js
+│       ├── deal-details.js
+│       ├── tasks-management.js
+│       └── owner-tasks.js
+└── styles/
+    ├── base.css
+    ├── components.css
+    ├── investor-dashboard.css
+    ├── deal-details.css
+    ├── tasks-management.css
+    └── owner-tasks.css
 ```
+
+## Page Map
+
+- `public/investor-dashboard.html`: investor dashboard
+- `public/deals-overview.html`: pipeline table for all deals
+- `public/deal-details.html`: single deal details, edits, and related tasks
+- `public/tasks-management.html`: cross-owner management view for tasks
+- `public/owner-tasks.html`: owner-specific task view
 
 ## Data and Persistence
 
-- Static defaults come from `data/deals.js` and `data/tasks.js`.
-- Runtime edits are persisted in browser LocalStorage:
+- Seed data:
+  - `data/deals.js`
+  - `data/tasks.js`
+- Dashboard configuration:
+  - `data/config.js`
+- Browser LocalStorage keys:
   - deals: `deals_data_v1`
   - tasks: `owner_tasks_v1`
-- Shared LocalStorage and lookup logic is centralized in `scripts/shared/core.js`.
+- Shared utilities:
+  - `scripts/shared/core.js`
 
-## Setup
+## Run
 
-### 1. Install dependencies (optional, only needed for `serve`)
+Open `index.html` in your browser.  
 
-```bash
-npm install
-```
+## Notes
 
-### 2. Configure dashboards (optional)
-
-If you need custom Excel/proxy endpoints:
-
-```bash
-cp .env.example .env
-npm run build
-```
-
-This regenerates `data/config.js` using `scripts/generate-config.js`.
-
-You can also edit `data/config.js` directly for quick local changes.
-
-### 3. Run locally
-
-Option A:
-
-```bash
-npm run start
-```
-
-Option B:
-
-```bash
-npm run serve
-```
-
-Then open:
-- `http://localhost:8000/public/index.html`
-- `http://localhost:8000/public/main.html`
-
-## Development Guidelines
-
-- Keep page-specific behavior in `scripts/pages/*`.
-- Put reusable logic in `scripts/shared/core.js` (no duplication of storage helpers).
-- Keep design tokens/layout primitives in `styles/common.css`.
-- Use page stylesheet files for page-only visuals.
-- Preserve data object compatibility (`id`, `dealId`, `status`, `owner`, etc.) when extending features.
-
-## Current Status Model
-
-Task statuses supported in UI:
-- `in progress`
-- `waiting`
-- `done`
-
-Deal pipeline stages currently used in overview/detail:
-- `prospect`
-- `onboarding`
-- `contacting investors`
-
-## Troubleshooting
-
-- If dashboards do not sync: verify `data/config.js` URLs/proxies and browser console errors.
-- If edits are not reflected: clear LocalStorage keys `deals_data_v1` / `owner_tasks_v1`.
-- If local file loading is blocked: run via local server (`npm run start`) instead of opening `file://` directly.
-
-## License
-
-Internal use only.
+- Edits to deals/tasks are stored in browser LocalStorage.
+- `scripts/generate-config.js` is optional and only used when regenerating `data/config.js` from a local `.env`.

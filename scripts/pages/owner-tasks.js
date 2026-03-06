@@ -221,9 +221,9 @@ function renderOwnerPage() {
         const statusLabel = status ? status.charAt(0).toUpperCase() + status.slice(1) : "In progress";
         const deal = findDealForTask(task);
         const dealLabel = deal ? (deal.name || deal.company || "View deal") : "General";
-        const dealLink = deal && deal.id ? `./deal.html?id=${encodeURIComponent(deal.id)}` : "";
+        const dealLink = deal && deal.id ? `./deal-details.html?id=${encodeURIComponent(deal.id)}` : "";
         const dashboardLink = deal && deal.fundraisingDashboardId
-          ? `./index.html?dashboard=${encodeURIComponent(deal.fundraisingDashboardId)}`
+          ? `./investor-dashboard.html?dashboard=${encodeURIComponent(deal.fundraisingDashboardId)}`
           : "";
         const overdue = isTaskOverdue(task, today);
         const editable = !isAutoTask(task);

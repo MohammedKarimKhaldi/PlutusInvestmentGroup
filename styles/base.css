@@ -22,6 +22,21 @@
   --transition: all 0.24s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+:root[data-theme="coastal"] {
+  --bg: #f5fbfa;
+  --bg-elevated: #ffffff;
+  --bg-card: #ecfdf5;
+  --border-subtle: rgba(16, 185, 129, 0.3);
+  --border-strong: rgba(16, 185, 129, 0.55);
+  --text-main: #052e2b;
+  --text-soft: #3f6b67;
+  --accent: #0f766e;
+  --accent-soft: rgba(15, 118, 110, 0.12);
+  --accent-soft-stronger: rgba(15, 118, 110, 0.2);
+  --accent-glow: rgba(15, 118, 110, 0.24);
+  --chip-bg: #dcfce7;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -72,6 +87,29 @@ body {
   padding: 10px 10px 8px;
   font-size: 12px;
   color: var(--text-soft);
+}
+
+.theme-switch {
+  margin-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.theme-toggle-btn {
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: #ffffff;
+  color: var(--text-main);
+  font-size: 11px;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.theme-toggle-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-card);
 }
 
 .sidebar-title {
