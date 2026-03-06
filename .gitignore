@@ -19,6 +19,7 @@ data/runtime/*.json
 node_modules/
 package-lock.json
 yarn.lock
+web/
 
 # OS files
 Thumbs.db

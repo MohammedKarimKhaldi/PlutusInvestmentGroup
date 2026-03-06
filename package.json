@@ -6,6 +6,11 @@
   "main": "electron/main.cjs",
   "scripts": {
     "desktop": "electron .",
+    "web:prepare": "node scripts/prepare-web-assets.cjs",
+    "ios:add": "npm run web:prepare && npx cap add ios",
+    "ios:sync": "npm run web:prepare && npx cap sync ios",
+    "ios:open": "npx cap open ios",
+    "ios:run": "npm run ios:sync && npm run ios:open",
     "dist": "electron-builder --mac dmg --universal --publish never",
     "dist:mac": "electron-builder --mac dmg --universal --publish never",
     "dist:mac:arm64": "electron-builder --mac dmg --arm64 --publish never",
@@ -73,7 +78,13 @@
     }
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.2.0",
     "electron": "^27.3.11",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.2.0",
+    "@capacitor/ios": "^8.2.0"
   }
 }

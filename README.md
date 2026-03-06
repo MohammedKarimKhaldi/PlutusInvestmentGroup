@@ -69,6 +69,20 @@ Static HTML/CSS/JavaScript dashboard for:
 
 Open `index.html` in your browser.  
 
+## Desktop (macOS via Electron)
+
+- Install dependencies: `npm install`
+- Run app: `npm run desktop`
+- Build macOS package: `npm run dist:mac`
+
+## iOS (via Capacitor + Xcode)
+
+- Prepare web assets: `npm run web:prepare`
+- Add iOS project (first time only): `npm run ios:add`
+- Sync latest web assets to iOS: `npm run ios:sync`
+- Open in Xcode: `npm run ios:open`
+- One-command sync + open: `npm run ios:run`
+
 ## Notes
 
 - Edits to deals/tasks are stored in browser LocalStorage.
