@@ -19,8 +19,11 @@ data/runtime/*.json
 node_modules/
 package-lock.json
 yarn.lock
-web/
 
 # OS files
 Thumbs.db
 .DS_Store
+
+# Xcode transient dependency resolution state
+ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
