@@ -1,0 +1,83 @@
+.form-panel {
+  margin-bottom: 16px;
+}
+
+.wide {
+  flex: 1 1 100%;
+}
+
+.form-panel input[type="text"],
+.form-panel input[type="password"] {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+
+.actions-row {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.remember-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.hint {
+  margin-top: 10px;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+}
+
+.status-text {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.error-banner {
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.24);
+  color: #fecdd3;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 8px 0 14px;
+}
+
+.folders-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.folder-card {
+  display: block;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-card);
+  padding: 12px;
+}
+
+.folder-card:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.folder-name {
+  color: var(--text-main);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.folder-meta {
+  display: grid;
+  gap: 4px;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+}

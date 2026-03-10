@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Deal Details</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/deal-details.css" />
+</head>
+
+<body>
+  <div class="shell" id="shell" style="display:none;">
+    <div class="layout">
+      <aside class="sidebar-nav">
+        <div class="sidebar-title">Navigation</div>
+        <ul class="nav-list">
+          <li><a class="nav-link" href="investor-dashboard.html"><span class="dot"></span> Investor dashboard</a></li>
+          <li><a class="nav-link" href="deal-staffing.html"><span class="dot"></span> Deal staffing</a></li>
+          <li><a class="nav-link" href="deals-overview.html"><span class="dot"></span> Deals overview</a></li>
+          <li><a class="nav-link" href="tasks-management.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link" href="sharedrive-folders.html"><span class="dot"></span> Sharedrive folders</a></li>
+          <li><a class="nav-link active" href="javascript:void(0)"><span class="dot"></span> This deal</a></li>
+        </ul>
+      </aside>
+
+      <div class="main-column">
+        <div class="breadcrumbs">
+          <a href="deals-overview.html">Deals</a> / <span id="crumb-deal-name">Deal</span>
+        </div>
+
+        <div class="header">
+          <div class="title-block">
+            <h1 id="deal-name">Deal</h1>
+            <p id="deal-subtitle">Company and round details.</p>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
+            <span class="stage-badge" id="deal-stage-badge">
+              <span class="stage-dot stage-prospect" id="deal-stage-dot"></span>
+              <span id="deal-stage-label">Prospect</span>
+            </span>
+            <button class="btn btn-primary" type="button" id="btn-complete-stage">Complete current stage</button>
+          </div>
+        </div>
+
+        <div class="deal-stage-tracker" id="deal-stage-tracker">
+          <div class="deal-stage-tracker-top">
+            <span class="deal-stage-tracker-title">Company advancement</span>
+            <span class="deal-stage-tracker-value" id="deal-stage-tracker-value">Prospect · 1/4</span>
+          </div>
+          <div class="deal-stage-track-bar">
+            <div class="deal-stage-track-fill" id="deal-stage-track-fill"></div>
+          </div>
+          <div class="deal-stage-steps">
+            <div class="deal-stage-step" data-stage="prospect">Prospect</div>
+            <div class="deal-stage-step" data-stage="signing">Signing</div>
+            <div class="deal-stage-step" data-stage="onboarding">Onboarding</div>
+            <div class="deal-stage-step" data-stage="contacting investors">Contacting investors</div>
+          </div>
+        </div>
+
+        <div class="meta-grid">
+          <div class="meta-card">
+            <div class="meta-label">Company</div>
+            <div class="meta-value" id="deal-company">–</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Senior</div>
+            <div class="meta-value" id="deal-senior">–</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Junior</div>
+            <div class="meta-value" id="deal-junior">–</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Target amount</div>
+            <div class="meta-value" id="deal-target">–</div>
+            <div class="progress">
+              <div class="progress-fill" id="deal-progress"></div>
+            </div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Raised so far</div>
+            <div class="meta-value" id="deal-raised">–</div>
+          </div>
+        </div>
+
+        <div class="body-grid">
+          <div class="panel">
+            <h2>Deal summary</h2>
+            <p id="deal-summary">
+              This deal does not yet have a custom description. Use this space to track the high-level context, goals,
+              and key investors targeted for this round.
+            </p>
+          </div>
+          <div class="panel">
+            <h2>Commercial terms & actions</h2>
+            <p>
+              Commercial terms for this mandate:
+              <br />
+              Cash commission: <span id="deal-cash-comm">–</span><br />
+              Equity commission: <span id="deal-equity-comm">–</span><br />
+              Retainer: <span id="deal-retainer">–</span>
+            </p>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" id="btn-open-dashboard">
+                Open fundraising dashboard
+              </button>
+              <button class="btn" type="button" id="btn-open-staffing">
+                Open deal staffing
+              </button>
+              <a class="btn" href="deals-overview.html">Back to all deals</a>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top: 12px;">
+          <div class="panel-heading-row">
+            <h2>Edit deal information</h2>
+            <button class="btn" id="btn-toggle-deal-form" type="button">Edit deal</button>
+          </div>
+          <form id="deal-form" class="deal-form" hidden>
+            <div class="deal-form-grid">
+              <label>Name<input id="deal-input-name" type="text" required /></label>
+              <label>Company<input id="deal-input-company" type="text" required /></label>
+              <label>Senior<input id="deal-input-senior" type="text" required /></label>
+              <label>Junior<input id="deal-input-junior" type="text" required /></label>
+              <label>Stage
+                <select id="deal-input-stage">
+                  <option value="prospect">Prospect</option>
+                  <option value="signing">Signing</option>
+                  <option value="onboarding">Onboarding</option>
+                  <option value="contacting investors">Contacting investors</option>
+                </select>
+              </label>
+              <label>Target amount<input id="deal-input-target" type="text" /></label>
+              <label>Raised amount<input id="deal-input-raised" type="text" /></label>
+              <label>Currency<input id="deal-input-currency" type="text" placeholder="USD" /></label>
+              <label>Dashboard ID<input id="deal-input-dashboard" type="text" placeholder="biolux" /></label>
+              <label>Cash commission<input id="deal-input-cash" type="text" /></label>
+              <label>Equity commission<input id="deal-input-equity" type="text" /></label>
+              <label>Retainer<input id="deal-input-retainer" type="text" /></label>
+            </div>
+            <label>Deal summary<textarea id="deal-input-summary" rows="3"></textarea></label>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="submit">Save deal updates</button>
+              <span class="form-status" id="deal-save-status"></span>
+            </div>
+          </form>
+        </div>
+
+        <div class="panel" style="margin-top: 12px;">
+          <div class="panel-heading-row">
+            <h2>Add task to this deal</h2>
+            <button class="btn" id="btn-toggle-task-form" type="button">Add task</button>
+          </div>
+          <form id="deal-task-form" class="deal-form" hidden>
+            <div class="deal-form-grid">
+              <label>Title<input id="task-input-title" type="text" required /></label>
+              <label>Owner<input id="task-input-owner" type="text" required /></label>
+              <label>Type<input id="task-input-type" type="text" placeholder="Meeting, Document..." /></label>
+              <label>Status
+                <select id="task-input-status">
+                  <option value="in progress">In progress</option>
+                  <option value="waiting">Waiting</option>
+                  <option value="done">Done</option>
+                </select>
+              </label>
+              <label>Due date<input id="task-input-due" type="date" /></label>
+            </div>
+            <label>Notes<textarea id="task-input-notes" rows="3"></textarea></label>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="submit">Add task</button>
+              <span class="form-status" id="task-save-status"></span>
+            </div>
+          </form>
+        </div>
+
+        <div class="panel" style="margin-top: 12px;">
+          <h2>Related tasks</h2>
+          <p style="margin-top:4px; font-size:12px; color:var(--text-soft);" id="deal-task-summary">
+            Tasks linked to this deal across all owners.
+          </p>
+          <div class="deal-task-toolbar">
+            <span>Group tasks:</span>
+            <button class="task-group-btn active" type="button" data-group="owner">By owner</button>
+            <button class="task-group-btn" type="button" data-group="type">By task type</button>
+          </div>
+          <div class="deal-task-list" id="deal-task-list">
+            <!-- JS injected -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="empty-state" id="empty-state" style="display:none;">
+    <p>Deal not found. It may have been renamed or removed from the configuration.</p>
+    <p>
+      Go back to the <a href="deals-overview.html">deals overview</a>.
+    </p>
+  </div>
+
+  <script src="../data/deals.js"></script>
+  <script src="../data/tasks.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+  <script src="../data/config.js"></script>
+  <script src="../scripts/shared/core.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/deal-details.js"></script>
+</body>
+
+</html>

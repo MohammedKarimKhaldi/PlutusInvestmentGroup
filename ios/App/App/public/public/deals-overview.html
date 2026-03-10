@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Deals Overview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+</head>
+
+<body>
+  <div class="shell">
+    <div class="layout">
+      <aside class="sidebar-nav">
+        <div class="sidebar-title">Navigation</div>
+        <ul class="nav-list">
+          <li><a class="nav-link" href="investor-dashboard.html"><span class="dot"></span> Investor dashboard</a></li>
+          <li><a class="nav-link" href="deal-staffing.html"><span class="dot"></span> Deal staffing</a></li>
+          <li><a class="nav-link active" href="deals-overview.html"><span class="dot"></span> Deals overview</a></li>
+          <li><a class="nav-link" href="tasks-management.html"><span class="dot"></span> Tasks by owner</a></li>
+          <li><a class="nav-link" href="sharedrive-folders.html"><span class="dot"></span> Sharedrive folders</a></li>
+        </ul>
+      </aside>
+
+      <div class="main-column">
+        <div class="header">
+          <div class="title-block">
+            <h1>Deal Pipeline</h1>
+            <p>High-level view of all active deals and their current step.</p>
+          </div>
+          <div class="header-actions">
+            <div class="pill">
+              <span class="dot"></span>
+              <span>Live overview</span>
+            </div>
+            <a class="btn btn-primary" href="investor-dashboard.html">Open Investor Dashboard</a>
+            <a class="btn" href="tasks-management.html">View owner tasks</a>
+          </div>
+        </div>
+
+        <div class="meta-row" id="meta-row">
+          <!-- Filled by JS: counts per stage, totals -->
+        </div>
+
+        <details class="toolbar" id="add-deal-panel">
+          <summary style="font-weight:600; color:var(--text-main); cursor:pointer;">+ Add deal</summary>
+          <form id="deal-form">
+            <div class="toolbar-row">
+              <label>
+                Deal name
+                <input id="deal-name-input" type="text" required placeholder="Deal name" />
+              </label>
+              <label>
+                Company
+                <input id="deal-company-input" type="text" required placeholder="Company" />
+              </label>
+              <label>
+                Senior
+                <input id="deal-senior-input" type="text" required placeholder="Senior owner" />
+              </label>
+              <label>
+                Junior
+                <input id="deal-junior-input" type="text" required placeholder="Junior owner" />
+              </label>
+            </div>
+            <div class="toolbar-row">
+              <label>
+                Target amount
+                <input id="deal-target-input" type="text" placeholder="e.g. 1000000" />
+              </label>
+              <label>
+                Raised amount
+                <input id="deal-raised-input" type="text" placeholder="e.g. 350000" />
+              </label>
+              <label>
+                Currency
+                <input id="deal-currency-input" type="text" placeholder="USD" value="USD" />
+              </label>
+              <label>
+                Dashboard ID
+                <input id="deal-dashboard-input" type="text" placeholder="optional" />
+              </label>
+            </div>
+            <div class="toolbar-row">
+              <label>
+                Cash commission
+                <input id="deal-cash-input" type="text" placeholder="optional" />
+              </label>
+              <label>
+                Equity commission
+                <input id="deal-equity-input" type="text" placeholder="optional" />
+              </label>
+              <label>
+                Retainer
+                <input id="deal-retainer-input" type="text" placeholder="optional" />
+              </label>
+              <label style="flex: 1 1 320px;">
+                Summary
+                <textarea id="deal-summary-input" rows="2" placeholder="optional"></textarea>
+              </label>
+              <button class="btn btn-primary" type="submit">Create deal</button>
+            </div>
+          </form>
+        </details>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Deal</th>
+                <th>Company</th>
+                <th>Stage</th>
+                <th>People in Charge</th>
+                <th>Target</th>
+                <th>Raised</th>
+                <th>Cash %</th>
+                <th>Equity %</th>
+                <th>Retainer</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="deals-body">
+              <!-- JS injected -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="footer">
+          <span id="footer-meta"></span>
+          <span>
+            View any deal to see details, or
+            <a href="investor-dashboard.html">open fundraising dashboard</a>.
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../data/deals.js"></script>
+  <script src="../scripts/shared/core.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/deals-overview.js"></script>
+</body>
+
+</html>
