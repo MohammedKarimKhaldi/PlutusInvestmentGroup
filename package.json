@@ -11,6 +11,10 @@
     "ios:sync": "npm run web:prepare && npx cap sync ios",
     "ios:open": "npx cap open ios",
     "ios:run": "npm run ios:sync && npm run ios:open",
+    "android:add": "npm run web:prepare && npx cap add android",
+    "android:sync": "npm run web:prepare && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:run": "npm run android:sync && npm run android:open",
     "dist": "electron-builder --mac dmg --universal --publish never",
     "dist:mac": "electron-builder --mac dmg --universal --publish never",
     "dist:mac:arm64": "electron-builder --mac dmg --arm64 --publish never",
@@ -84,6 +88,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@capacitor/android": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/ios": "^8.2.0"
   }
