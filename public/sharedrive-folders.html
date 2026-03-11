@@ -54,8 +54,27 @@
               <input id="remember-url" type="checkbox" checked />
               <span>Remember URL on this machine</span>
             </label>
-            <button class="btn btn-primary" type="button" id="fetch-folders-btn">Load folders</button>
+            <div class="action-buttons">
+              <button class="btn btn-secondary" type="button" id="device-code-btn">Sign in with Microsoft</button>
+              <button class="btn btn-primary" type="button" id="fetch-folders-btn">Load items</button>
+            </div>
           </div>
+          <div id="device-code-box" class="device-code-box" hidden>
+            <div class="device-code-title">Device code sign-in</div>
+            <div class="device-code-message" id="device-code-message">Follow the prompt to finish signing in.</div>
+            <div class="device-code-row">
+              <div class="device-code-label">Code</div>
+              <div class="device-code-value" id="device-code-value">—</div>
+            </div>
+            <div class="device-code-row">
+              <div class="device-code-label">Verify</div>
+              <a class="device-code-link" id="device-code-link" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener noreferrer">
+                https://microsoft.com/devicelogin
+              </a>
+            </div>
+            <div class="device-code-status" id="device-code-status">Waiting for authorization…</div>
+          </div>
+          <div id="auth-debug-box" class="error-banner" hidden></div>
           <p class="hint">
             Dynamic listing requires desktop mode (`npm run desktop`) and a valid Microsoft Graph token.
             You can also set environment vars: `PLUTUS_GRAPH_ACCESS_TOKEN` or
@@ -65,9 +84,30 @@
 
         <div class="meta-row" id="sharedrive-meta-row"></div>
 
+        <div class="panel form-panel">
+          <h2>Upload</h2>
+          <div class="toolbar-row">
+            <label class="wide">
+              Target folder ID (optional)
+              <input id="upload-folder-id" type="text" placeholder="Leave empty to upload to the shared root folder" />
+            </label>
+          </div>
+          <div class="toolbar-row upload-row">
+            <input id="upload-file" class="upload-input" type="file" />
+            <select id="upload-conflict" class="upload-select">
+              <option value="replace">Replace if exists</option>
+              <option value="rename">Rename if exists</option>
+              <option value="fail">Fail if exists</option>
+            </select>
+            <button class="btn btn-primary" type="button" id="upload-btn">Upload file</button>
+          </div>
+          <div class="upload-status" id="upload-status">Idle</div>
+          <p class="hint">Uploads happen via Microsoft Graph. Large files are sent in chunks.</p>
+        </div>
+
         <div class="panel list-panel">
           <div class="panel-heading-row">
-            <h2>Folders</h2>
+            <h2>Items</h2>
             <span id="folders-status" class="status-text">Idle</span>
           </div>
           <div id="folders-error" class="error-banner" hidden></div>
@@ -78,6 +118,8 @@
     </div>
   </div>
 
+  <script src="../data/sharedrive-tasks.js"></script>
+  <script src="../scripts/shared/core.js"></script>
   <script src="../scripts/shared/theme.js"></script>
   <script src="../scripts/pages/sharedrive-folders.js"></script>
 </body>

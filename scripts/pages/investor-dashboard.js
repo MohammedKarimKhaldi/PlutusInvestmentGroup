@@ -21,7 +21,52 @@
                 let charts = {};
                 let activeFilters = { all: true, calls: false, meetings: false, forward: false };
                 let typeColors = {};
+                let chartDrillDownStack = [];
                 const COLOR_PALETTE = ['#818cf8', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#22d3ee', '#fb7185'];
+
+                function looksLikeSharePointLink(url) {
+                    if (!url) return false;
+                    const normalized = String(url).toLowerCase();
+                    return (
+                        normalized.includes("sharepoint.com/:") ||
+                        normalized.includes("sharepoint.com/_layouts/15/doc.aspx") ||
+                        normalized.includes("1drv.ms/")
+                    );
+                }
+
+                async function resolveShareLinkDownloadUrl(excelUrl) {
+                    if (!looksLikeSharePointLink(excelUrl)) return null;
+                    if (!window.PlutusDesktop || typeof window.PlutusDesktop.getShareDriveDownloadUrl !== "function") {
+                        return null;
+                    }
+
+                    const result = await window.PlutusDesktop.getShareDriveDownloadUrl({ shareUrl: excelUrl });
+                    if (!result || !result.ok || !result.data || !result.data.downloadUrl) {
+                        throw new Error((result && result.error) || "Failed to resolve SharePoint link.");
+                    }
+                    return result.data.downloadUrl;
+                }
+
+                async function fetchWorkbookFromUrl(fetchUrl, expectsJsonWrapper) {
+                    const response = await fetch(fetchUrl);
+                    if (!response.ok) throw new Error("Download failed");
+
+                    let buffer;
+                    if (expectsJsonWrapper) {
+                        const json = await response.json();
+                        if (!json.contents) throw new Error("No contents in JSON");
+
+                        const b64 = json.contents.split(',')[1] || json.contents;
+                        const binaryString = atob(b64);
+                        buffer = new ArrayBuffer(binaryString.length);
+                        const view = new Uint8Array(buffer);
+                        for (let i = 0; i < binaryString.length; i++) view[i] = binaryString.charCodeAt(i);
+                    } else {
+                        buffer = await response.arrayBuffer();
+                    }
+
+                    return XLSX.read(buffer, { type: 'array' });
+                }
 
                 // --- INITIALIZATION ---
                 window.addEventListener('load', () => {
@@ -156,7 +201,7 @@
                     }
                 }
 
-                async function startSync(proxyIndex, excelUrl) {
+                async function startSync(proxyIndex, excelUrl, shareAttempted = false) {
                     if (proxyIndex >= PROXIES.length) {
                         console.error('[Dashboard] All proxies failed for URL:', excelUrl);
                         showFailure();
@@ -167,37 +212,32 @@
                     const loadMsg = document.getElementById('loader-msg');
                     loadMsg.innerText = proxyIndex === 0 ? "Connecting to SharePoint..." : "Sync failed, trying backup tunnel...";
 
+                    if (!shareAttempted) {
+                        try {
+                            const resolvedUrl = await resolveShareLinkDownloadUrl(excelUrl);
+                            if (resolvedUrl) {
+                                const wb = await fetchWorkbookFromUrl(resolvedUrl, false);
+                                processWorkbook(wb, currentDashboard && currentDashboard.sheets);
+                                document.getElementById('sync-type').innerText = "Live Cloud Sync Active";
+                                return;
+                            }
+                        } catch (err) {
+                            console.warn("[Dashboard] SharePoint link resolution failed", err);
+                            showFailure();
+                            return;
+                        }
+                    }
+
                     try {
                         const fetchUrl = proxyFunc(excelUrl);
                         console.log('[Dashboard] Using proxy', proxyIndex, '->', fetchUrl);
-                        const response = await fetch(fetchUrl);
-
-                        if (!response.ok) throw new Error("Proxy Error");
-
-                        let buffer;
-                        if (fetchUrl.includes('allorigins')) {
-                            // AllOrigins specialty: JSON wrapper with Base64 content
-                            const json = await response.json();
-                            if (!json.contents) throw new Error("No contents in JSON");
-
-                            // Decode base64 to binary
-                            const b64 = json.contents.split(',')[1] || json.contents;
-                            const binaryString = atob(b64);
-                            buffer = new ArrayBuffer(binaryString.length);
-                            const view = new Uint8Array(buffer);
-                            for (let i = 0; i < binaryString.length; i++) view[i] = binaryString.charCodeAt(i);
-                        } else {
-                            // Standard raw proxy
-                            buffer = await response.arrayBuffer();
-                        }
-
-                        const wb = XLSX.read(buffer, { type: 'array' });
+                        const wb = await fetchWorkbookFromUrl(fetchUrl, fetchUrl.includes('allorigins'));
                         processWorkbook(wb, currentDashboard && currentDashboard.sheets);
                         document.getElementById('sync-type').innerText = "Live Cloud Sync Active";
 
                     } catch (err) {
                         console.warn(`[Dashboard] Proxy ${proxyIndex} failed for URL: ${excelUrl}`, err);
-                        startSync(proxyIndex + 1, excelUrl); // Try next proxy
+                        startSync(proxyIndex + 1, excelUrl, true); // Try next proxy
                     }
                 }
 
@@ -325,22 +365,46 @@
                         });
                     }
 
-                    document.getElementById('k-vc').innerText = vcCount;
-                    document.getElementById('k-hnwi').innerText = hnwiCount;
-                    document.getElementById('k-fo').innerText = foCount;
-                    document.getElementById('k-total').innerText = combined.length;
-
                     // 3. Stage Funnel KPIs (Yes/Waiting logic)
-                    const countStage = (col, includeWaiting = false) => combined.filter(r => {
-                        const s = String(r[col]).toLowerCase();
+                    function stageValue(row, columns) {
+                        for (const col of columns) {
+                            const val = row && row[col];
+                            if (val !== undefined && val !== null && String(val).trim() !== "") {
+                                return String(val).toLowerCase().trim();
+                            }
+                        }
+                        return "";
+                    }
+
+                    const countStage = (columns, includeWaiting = false) => combined.filter(r => {
+                        const s = stageValue(r, columns);
                         return s === 'yes' || (includeWaiting && s === 'waiting');
                     }).length;
-                    document.getElementById('k-calls').innerText = countStage('Call/Meeting', true);
-                    document.getElementById('k-meetings').innerText = countStage('Meeting with Company');
-                    document.getElementById('k-forward').innerText = countStage('Moving Forward');
+                    
+                    const countExact = (columns, expectedValue) => combined.filter(r => stageValue(r, columns) === expectedValue).length;
+
+                    const ongoingCount = countExact(['Contact', 'Call/Meeting', 'Call'], 'waiting');
+                    const contactedCount = countExact(['Contact', 'Call/Meeting', 'Call'], 'yes');
+                    const totalContactCount = ongoingCount + contactedCount || countStage(['Call/Meeting', 'Call'], true);
+                    const repliedCount = countExact(['Replied', 'Moving Forward'], 'yes');
+                    let interestedCount = Math.min(3, repliedCount);
+
+                    document.getElementById('k-vc').innerText = totalContactCount;
+                    document.getElementById('k-hnwi').innerText = contactedCount;
+                    document.getElementById('k-fo').innerText = interestedCount;
+                    document.getElementById('k-total').innerText = combined.length;
+
+                    document.getElementById('k-calls').innerText = ongoingCount || countStage(['Call/Meeting', 'Call'], true);
+                    document.getElementById('k-meetings').innerText = contactedCount || countStage(['Meeting with Company', 'Meeting']);
+                    document.getElementById('k-forward').innerText = repliedCount || countStage(['Moving Forward']);
 
                     // 4. Visuals Refresh
-                    renderDonut(vcCount, hnwiCount, foCount);
+                    chartDrillDownStack = [];
+                    renderDonut(
+                        [vcCount, hnwiCount, foCount],
+                        ['VC Funds', 'HNWI / Angels', 'Family Offices'],
+                        ['#4f46e5', '#10b981', '#f59e0b']
+                    );
                     renderRangeBars();
                     switchTab('vc');
 
@@ -349,25 +413,168 @@
                     document.getElementById('dashboard').style.display = 'block';
                 }
 
-                function renderDonut(vc, hn, fo) {
+                function renderDonut(values, labels, colors) {
                     const ctx = document.getElementById('donutChart').getContext('2d');
                     if (charts.donut) charts.donut.destroy();
+
+                    const ringValueLabelPlugin = {
+                        id: 'ringValueLabels',
+                        afterDatasetsDraw(chart) {
+                            const { ctx } = chart;
+                            ctx.save();
+                            ctx.fillStyle = '#e2e8f0';
+                            ctx.font = '600 12px Outfit';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+
+                            chart.data.datasets.forEach((_dataset, datasetIndex) => {
+                                const meta = chart.getDatasetMeta(datasetIndex);
+                                if (!meta || !meta.data || !meta.data[0]) return;
+                                
+                                meta.data.forEach((arc, i) => {
+                                    const val = chart.data.datasets[datasetIndex].data[i];
+                                    if (!val) return;
+                                    const midAngle = (arc.startAngle + arc.endAngle) / 2;
+                                    const radius = (arc.innerRadius + arc.outerRadius) / 2;
+                                    const x = arc.x + Math.cos(midAngle) * radius;
+                                    const y = arc.y + Math.sin(midAngle) * radius;
+                                    ctx.fillText(String(val), x, y);
+                                });
+                            });
+
+                            ctx.restore();
+                        }
+                    };
+
                     charts.donut = new Chart(ctx, {
                         type: 'doughnut',
                         data: {
-                            labels: ['VC Funds', 'HNWI / Angels', 'Family Offices'],
+                            labels: labels,
                             datasets: [{
-                                data: [vc, hn, fo],
-                                backgroundColor: ['#4f46e5', '#10b981', '#f59e0b'],
+                                data: values,
+                                backgroundColor: colors,
                                 borderWidth: 0, hoverOffset: 12
                             }]
                         },
                         options: {
                             cutout: '75%', responsive: true, maintainAspectRatio: false,
-                            plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', font: { family: 'Outfit', size: 12 }, padding: 25 } } }
-                        }
+                            plugins: { 
+                                legend: { position: 'bottom', labels: { color: '#94a3b8', font: { family: 'Outfit', size: 12 }, padding: 25 } },
+                                tooltip: {
+                                    callbacks: {
+                                        label(context) {
+                                            const label = context.label || '';
+                                            const value = context.parsed || 0;
+                                            return `${label}: ${value}`;
+                                        }
+                                    }
+                                } 
+                            },
+                            onClick(event, elements) {
+                                if (elements && elements.length > 0) {
+                                    const index = elements[0].index;
+                                    const label = labels[index];
+                                    handleChartClick(label);
+                                }
+                            }
+                        },
+                        plugins: [ringValueLabelPlugin]
                     });
+
+                    updateChartControls();
                 }
+
+                function handleChartClick(label) {
+                    if (chartDrillDownStack.length > 0) return; // Only drill down from level 1 for now
+
+                    const combined = [...rawData.vc, ...rawData.fo];
+                    let filteredData = [];
+
+                    if (label === 'VC Funds') {
+                        filteredData = rawData.vc;
+                    } else if (label === 'HNWI / Angels') {
+                        filteredData = rawData.fo.filter(r => {
+                            const t = String(r["Type"] || "").toLowerCase();
+                            const d = String(r["Description"] || "").toLowerCase();
+                            return t.includes('angel') || d.includes('angel') || t.includes('individual') || d.includes('individual') || t.includes('hnwi') || d.includes('hnwi');
+                        });
+                    } else if (label === 'Family Offices') {
+                        filteredData = rawData.fo.filter(r => {
+                            const t = String(r["Type"] || "").toLowerCase();
+                            const d = String(r["Description"] || "").toLowerCase();
+                            return t.includes('family') || d.includes('family') || t.includes('mfo') || t.includes('sfo') || t === 'fo' || d === 'fo';
+                        });
+                    }
+
+                    if (filteredData.length === 0) return;
+
+                    // Drill down to Stages
+                    const stageCounts = {};
+                    filteredData.forEach(item => {
+                        const stage = getStatusText(item);
+                        stageCounts[stage] = (stageCounts[stage] || 0) + 1;
+                    });
+
+                    // Sort by value (descending)
+                    const sortedStages = Object.entries(stageCounts)
+                        .sort((a, b) => b[1] - a[1])
+                        .filter(entry => entry[1] > 0);
+
+                    const drillLabels = sortedStages.map(s => s[0]);
+                    const drillValues = sortedStages.map(s => s[1]);
+                    const drillColors = drillLabels.map((_, i) => COLOR_PALETTE[i % COLOR_PALETTE.length]);
+
+                    const currentValues = charts.donut.data.datasets[0].data;
+                    const currentLabels = charts.donut.data.labels;
+                    const currentColors = charts.donut.data.datasets[0].backgroundColor;
+
+                    chartDrillDownStack.push({ labels: currentLabels, values: currentValues, colors: currentColors, title: 'Investor Composition' });
+                    
+                    renderDonut(drillValues, drillLabels, drillColors);
+                    
+                    const cardTitle = document.querySelector('.card-panel .card-title');
+                    if (cardTitle) cardTitle.textContent = `Breakdown: ${label}`;
+                }
+
+                function getStatusText(item) {
+                    const forward = String(item['Moving Forward'] || item['Replied'] || '').toLowerCase();
+                    const meeting = String(item['Meeting with Company'] || item['Meeting'] || '').toLowerCase();
+                    const call = String(item['Call/Meeting'] || item['Call'] || item['Contact'] || '').toLowerCase();
+
+                    if (forward === 'yes') return 'Replied / Moving Forward';
+                    if (forward === 'waiting' || meeting === 'waiting' || call === 'waiting') return 'Waiting / Ongoing';
+                    if (forward === 'no') return 'Passed';
+                    if (meeting === 'yes') return 'Contacted / Meeting Done';
+                    if (call === 'yes') return 'Contact Started';
+                    return 'Target';
+                }
+
+                function updateChartControls() {
+                    const container = document.getElementById('donut-level-controls');
+                    if (!container) return;
+
+                    if (chartDrillDownStack.length > 0) {
+                        container.style.display = 'flex';
+                        container.innerHTML = `
+                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="goBackInChart()">
+                                ← Back to Overview
+                            </button>
+                        `;
+                    } else {
+                        container.style.display = 'none';
+                        container.innerHTML = '';
+                    }
+                }
+
+                // Make goBackInChart available globally for the inline onclick handler
+                window.goBackInChart = function() {
+                    const previous = chartDrillDownStack.pop();
+                    if (previous) {
+                        renderDonut(previous.values, previous.labels, previous.colors);
+                        const cardTitle = document.querySelector('.card-panel .card-title');
+                        if (cardTitle) cardTitle.textContent = previous.title;
+                    }
+                };
 
                 function renderRangeBars() {
                     const combined = [...rawData.vc, ...rawData.fo];
@@ -464,14 +671,14 @@
                 }
 
                 function getStatusBadge(item) {
-                    const forward = String(item['Moving Forward']).toLowerCase();
-                    const meeting = String(item['Meeting with Company']).toLowerCase();
-                    const call = String(item['Call/Meeting']).toLowerCase();
+                    const forward = String(item['Moving Forward'] || item['Replied'] || '').toLowerCase();
+                    const meeting = String(item['Meeting with Company'] || item['Meeting'] || '').toLowerCase();
+                    const call = String(item['Call/Meeting'] || item['Call'] || item['Contact'] || '').toLowerCase();
 
-                    if (forward === 'yes') return `<span class="stage-pill badge-green">Moving Forward</span>`;
-                    if (forward === 'waiting' || meeting === 'waiting' || call === 'waiting') return `<span class="stage-pill badge-amber">Waiting</span>`;
+                    if (forward === 'yes') return `<span class="stage-pill badge-green">Replied / Mov. Forward</span>`;
+                    if (forward === 'waiting' || meeting === 'waiting' || call === 'waiting') return `<span class="stage-pill badge-amber">Waiting / Ongoing</span>`;
                     if (forward === 'no') return `<span class="stage-pill badge-red">Passed</span>`;
-                    if (meeting === 'yes') return `<span class="stage-pill badge-neutral">Meeting Done</span>`;
+                    if (meeting === 'yes') return `<span class="stage-pill badge-neutral">Contacted / Met</span>`;
                     if (call === 'yes') return `<span class="stage-pill badge-neutral">Contact Started</span>`;
                     return `<span class="stage-pill" style="color:var(--text-dim); opacity:0.5;">Target</span>`;
                 }

@@ -40,6 +40,7 @@
       "styles/**/*.css",
       "data/config.js",
       "data/deals.js",
+      "data/sharedrive-tasks.js",
       "data/tasks.js",
       "electron/**/*",
       "package.json",

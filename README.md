@@ -59,11 +59,30 @@ Static HTML/CSS/JavaScript dashboard for:
   - `data/tasks.js`
 - Dashboard configuration:
   - `data/config.js`
+- Sharedrive task sync config:
+  - `data/sharedrive-tasks.js`
 - Browser LocalStorage keys:
   - deals: `deals_data_v1`
   - tasks: `owner_tasks_v1`
 - Shared utilities:
   - `scripts/shared/core.js`
+
+## Sharedrive Tasks Sync (Multi-User)
+
+To keep tasks in a shared file that multiple users can edit:
+
+1. Upload your `sharedrive-tasks.json` file to your Netorg SharePoint/Sharedrive folder.
+2. Open `data/sharedrive-tasks.js` and set:
+   - `enabled: true`
+   - `shareUrl`: the SharePoint link to the JSON file (not the folder).
+   - `fileName`: the exact filename in SharePoint (default is `sharedrive-tasks.json`).
+3. Run the Electron desktop app (`npm run desktop`). The sharedrive sync uses the desktop bridge + Microsoft Graph.
+
+Notes:
+- When sharedrive sync is enabled, tasks are no longer stored in LocalStorage.
+- The app polls for updates every 60s (configurable via `pollIntervalMs`).
+- The `shareUrl` should point to the JSON file (not just the folder).
+- On Android/web, device-code auth uses `azureClientId` and `azureTenantId` from `data/sharedrive-tasks.js`.
 
 ## Run
 

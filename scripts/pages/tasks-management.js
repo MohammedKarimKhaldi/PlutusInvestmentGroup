@@ -43,6 +43,61 @@
       return String(value || "").trim().toLowerCase();
     }
 
+    function formatTime(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function truncateMessage(value, maxLength) {
+      const text = String(value || "");
+      if (!text) return "";
+      if (text.length <= maxLength) return text;
+      return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+    }
+
+    function applySharedriveStatus(detail) {
+      const pill = document.getElementById("sharedrive-status-pill");
+      const textEl = document.getElementById("sharedrive-status-text");
+      const dotEl = document.getElementById("sharedrive-status-dot");
+      if (!pill || !textEl || !dotEl || !detail) return;
+
+      let label = "Sharedrive: idle";
+      let color = "#94a3b8";
+      let glow = "0 0 8px rgba(148, 163, 184, 0.6)";
+      pill.removeAttribute("title");
+
+      if (detail.lastError) {
+        const shortError = truncateMessage(detail.lastError, 60);
+        label = shortError ? `Sharedrive: error - ${shortError}` : "Sharedrive: error";
+        color = "#f43f5e";
+        glow = "0 0 8px rgba(244, 63, 94, 0.7)";
+        pill.title = detail.lastError;
+      } else if (detail.stage === "uploading") {
+        label = "Sharedrive: uploading…";
+        color = "#f59e0b";
+        glow = "0 0 8px rgba(245, 158, 11, 0.7)";
+      } else if (detail.stage === "upload_queued" || detail.dirty) {
+        label = "Sharedrive: queued";
+        color = "#f59e0b";
+        glow = "0 0 8px rgba(245, 158, 11, 0.7)";
+      } else if (detail.stage === "synced" || detail.stage === "uploaded") {
+        const time = formatTime(detail.lastUploadAt || detail.lastSyncAt);
+        label = time ? `Sharedrive: synced ${time}` : "Sharedrive: synced";
+        color = "#22c55e";
+        glow = "0 0 8px rgba(34, 197, 94, 0.9)";
+      } else if (detail.stage === "syncing") {
+        label = "Sharedrive: syncing…";
+        color = "#38bdf8";
+        glow = "0 0 8px rgba(56, 189, 248, 0.7)";
+      }
+
+      textEl.textContent = label;
+      dotEl.style.background = color;
+      dotEl.style.boxShadow = glow;
+    }
+
     function findDealForTask(task) {
       if (AppCore) return AppCore.findDealForTask(dealsData, task);
       if (!Array.isArray(dealsData) || !task) return null;
@@ -369,6 +424,22 @@
       loadDealsData();
       loadTasksData();
       setupForm();
+      if (AppCore) {
+        window.addEventListener("appcore:tasks-updated", (event) => {
+          if (event && event.detail && Array.isArray(event.detail.tasks)) {
+            tasks = event.detail.tasks;
+            renderTasks();
+          }
+        });
+        window.addEventListener("appcore:tasks-sync", (event) => {
+          if (event && event.detail) {
+            applySharedriveStatus(event.detail);
+          }
+        });
+        if (typeof AppCore.getSharedTasksStatus === "function") {
+          applySharedriveStatus(AppCore.getSharedTasksStatus());
+        }
+      }
       const ownerSearch = document.getElementById("owner-search");
       const statusFilter = document.getElementById("status-filter");
       const ownerSort = document.getElementById("owner-sort");

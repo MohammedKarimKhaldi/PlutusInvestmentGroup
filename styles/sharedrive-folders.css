@@ -22,6 +22,13 @@
   align-items: center;
 }
 
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .remember-toggle {
   display: inline-flex;
   align-items: center;
@@ -41,6 +48,56 @@
   font-size: 0.9rem;
 }
 
+.device-code-box {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(30, 41, 59, 0.35);
+  display: grid;
+  gap: 8px;
+}
+
+.device-code-title {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.device-code-message {
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.device-code-row {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.device-code-label {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.device-code-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-main);
+}
+
+.device-code-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.device-code-status {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
 .error-banner {
   background: rgba(244, 63, 94, 0.12);
   border: 1px solid rgba(244, 63, 94, 0.24);
@@ -56,7 +113,8 @@
   gap: 10px;
 }
 
-.folder-card {
+.folder-card,
+.item-card {
   display: block;
   text-decoration: none;
   border: 1px solid var(--line);
@@ -65,19 +123,46 @@
   padding: 12px;
 }
 
-.folder-card:hover {
+.folder-card:hover,
+.item-card:hover {
   border-color: rgba(59, 130, 246, 0.5);
 }
 
-.folder-name {
+.folder-name,
+.item-name {
   color: var(--text-main);
   font-weight: 600;
   margin-bottom: 8px;
 }
 
-.folder-meta {
+.folder-meta,
+.item-meta {
   display: grid;
   gap: 4px;
   color: var(--text-soft);
+  font-size: 0.85rem;
+}
+
+.upload-row {
+  gap: 10px;
+  align-items: center;
+}
+
+.upload-input {
+  flex: 1 1 auto;
+  color: var(--text-soft);
+}
+
+.upload-select {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+
+.upload-status {
+  margin-top: 8px;
+  color: var(--text-dim);
   font-size: 0.85rem;
 }

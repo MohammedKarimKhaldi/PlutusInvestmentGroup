@@ -82,37 +82,37 @@
 
                 <div class="kpi-grid">
                     <div class="kpi-card">
-                        <div class="kpi-label">VC Funds</div>
+                        <div class="kpi-label" id="k-label-vc">Total Contact</div>
                         <div class="kpi-value" id="k-vc">0</div>
                     </div>
                     <div class="kpi-card">
-                        <div class="kpi-label">HNWI / Angels</div>
+                        <div class="kpi-label" id="k-label-hnwi">Contacted</div>
                         <div class="kpi-value" id="k-hnwi">0</div>
                     </div>
                     <div class="kpi-card">
-                        <div class="kpi-label">Family Offices</div>
+                        <div class="kpi-label" id="k-label-fo">Interested</div>
                         <div class="kpi-value" id="k-fo">0</div>
                     </div>
                     <div class="kpi-card">
-                        <div class="kpi-label">Total Pipeline</div>
+                        <div class="kpi-label" id="k-label-total">Total Investors</div>
                         <div class="kpi-value" id="k-total">0</div>
                     </div>
                 </div>
 
                 <div
                     style="margin-bottom: 20px; color: var(--text-dim); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">
-                    Engagement Funnel</div>
+                    Contact Funnel</div>
                 <div class="kpi-grid" style="margin-bottom: 40px; grid-template-columns: repeat(3, 1fr);">
                     <div class="kpi-card" style="padding: 20px 30px;">
-                        <div class="kpi-label" style="font-size: 0.7rem;">Contact Started</div>
+                        <div class="kpi-label" id="k-label-calls" style="font-size: 0.7rem;">Ongoing</div>
                         <div class="kpi-value" id="k-calls" style="font-size: 2rem;">0</div>
                     </div>
                     <div class="kpi-card" style="padding: 20px 30px;">
-                        <div class="kpi-label" style="font-size: 0.7rem;">Meeting w/ Company</div>
+                        <div class="kpi-label" id="k-label-meetings" style="font-size: 0.7rem;">Contacted</div>
                         <div class="kpi-value" id="k-meetings" style="font-size: 2rem;">0</div>
                     </div>
                     <div class="kpi-card" style="padding: 20px 30px; border-color: rgba(16, 185, 129, 0.3);">
-                        <div class="kpi-label" style="font-size: 0.7rem; color: var(--success);">Moving Forward</div>
+                        <div class="kpi-label" id="k-label-forward" style="font-size: 0.7rem; color: var(--success);">Replied</div>
                         <div class="kpi-value" id="k-forward" style="font-size: 2rem; color: var(--success);">0</div>
                     </div>
                 </div>
@@ -120,6 +120,7 @@
                 <div class="chart-grid">
                     <div class="card-panel">
                         <div class="card-title">Investor Composition</div>
+                        <div id="donut-level-controls" style="display:none; margin: 8px 0 14px; gap:8px; flex-wrap:wrap;"></div>
                         <div style="height: 300px;"><canvas id="donutChart"></canvas></div>
                     </div>
                     <div class="card-panel">
@@ -142,13 +143,13 @@
                         <div class="toggle-dot"></div> All Investors
                     </button>
                     <button class="toggle-btn" id="f-calls" data-filter="calls">
-                        <div class="toggle-dot"></div> Contact Started
+                        <div class="toggle-dot"></div> Ongoing
                     </button>
                     <button class="toggle-btn" id="f-meetings" data-filter="meetings">
-                        <div class="toggle-dot"></div> Meetings
+                        <div class="toggle-dot"></div> Contacted
                     </button>
                     <button class="toggle-btn" id="f-forward" data-filter="forward">
-                        <div class="toggle-dot"></div> Moving Forward
+                        <div class="toggle-dot"></div> Replied
                     </button>
                 </div>
 

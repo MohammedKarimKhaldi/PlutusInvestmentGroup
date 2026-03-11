@@ -303,26 +303,62 @@ function buildAutoInvestorTasks(rows) {
 async function fetchDashboardWorkbook(excelUrl, proxies) {
   if (!excelUrl || !Array.isArray(proxies) || !proxies.length) return null;
 
+  const looksLikeSharePointLink = (url) => {
+    if (!url) return false;
+    const normalized = String(url).toLowerCase();
+    return (
+      normalized.includes("sharepoint.com/:") ||
+      normalized.includes("sharepoint.com/_layouts/15/doc.aspx") ||
+      normalized.includes("1drv.ms/")
+    );
+  };
+
+  const resolveShareLinkDownloadUrl = async (url) => {
+    if (!looksLikeSharePointLink(url)) return null;
+    if (!window.PlutusDesktop || typeof window.PlutusDesktop.getShareDriveDownloadUrl !== "function") {
+      return null;
+    }
+    const result = await window.PlutusDesktop.getShareDriveDownloadUrl({ shareUrl: url });
+    if (!result || !result.ok || !result.data || !result.data.downloadUrl) {
+      throw new Error((result && result.error) || "Failed to resolve SharePoint link.");
+    }
+    return result.data.downloadUrl;
+  };
+
+  const fetchWorkbookFromUrl = async (fetchUrl, expectsJsonWrapper) => {
+    const response = await fetch(fetchUrl);
+    if (!response.ok) throw new Error(`Download failed`);
+
+    let buffer;
+    if (expectsJsonWrapper) {
+      const json = await response.json();
+      if (!json.contents) throw new Error("No contents in allorigins response");
+      const b64 = json.contents.split(",")[1] || json.contents;
+      const binaryString = atob(b64);
+      buffer = new ArrayBuffer(binaryString.length);
+      const view = new Uint8Array(buffer);
+      for (let j = 0; j < binaryString.length; j++) view[j] = binaryString.charCodeAt(j);
+    } else {
+      buffer = await response.arrayBuffer();
+    }
+
+    return XLSX.read(buffer, { type: "array" });
+  };
+
+  try {
+    const resolved = await resolveShareLinkDownloadUrl(excelUrl);
+    if (resolved) {
+      return await fetchWorkbookFromUrl(resolved, false);
+    }
+  } catch (err) {
+    console.warn("[Deal] SharePoint link resolution failed", err);
+    return null;
+  }
+
   for (let i = 0; i < proxies.length; i++) {
     try {
       const fetchUrl = proxies[i](excelUrl);
-      const response = await fetch(fetchUrl);
-      if (!response.ok) throw new Error(`Proxy ${i} failed`);
-
-      let buffer;
-      if (fetchUrl.includes("allorigins")) {
-        const json = await response.json();
-        if (!json.contents) throw new Error("No contents in allorigins response");
-        const b64 = json.contents.split(",")[1] || json.contents;
-        const binaryString = atob(b64);
-        buffer = new ArrayBuffer(binaryString.length);
-        const view = new Uint8Array(buffer);
-        for (let j = 0; j < binaryString.length; j++) view[j] = binaryString.charCodeAt(j);
-      } else {
-        buffer = await response.arrayBuffer();
-      }
-
-      return XLSX.read(buffer, { type: "array" });
+      return await fetchWorkbookFromUrl(fetchUrl, fetchUrl.includes("allorigins"));
     } catch (err) {
       console.warn(`[Deal] Dashboard sync proxy ${i} failed`, err);
     }
@@ -701,6 +737,14 @@ function loadDealPage() {
 
   loadDealsData();
   loadTasksForDeal();
+  if (AppCore) {
+    window.addEventListener("appcore:tasks-updated", (event) => {
+      if (event && event.detail && Array.isArray(event.detail.tasks)) {
+        allTasks = event.detail.tasks;
+        if (currentDeal) renderRelatedTasks();
+      }
+    });
+  }
 
   if (!id || !Array.isArray(allDeals)) {
     emptyState.style.display = "block";
