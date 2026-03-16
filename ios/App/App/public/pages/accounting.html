@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Accounting</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/accounting.css" />
+  <script src="../scripts/shared/app-config.js"></script>
+  <script src="../scripts/shared/sharedrive-gate.js"></script>
+</head>
+
+<body data-page-id="accounting">
+  <div class="shell">
+    <div class="layout">
+      <aside class="sidebar-nav" data-sidebar-nav></aside>
+
+      <div class="main-column">
+        <div class="header">
+          <div class="title-block">
+            <h1>Retainers & Payment Days</h1>
+            <p>Manage monthly retainers and expected payment day for each deal.</p>
+          </div>
+          <div class="header-actions">
+            <div class="pill">
+              <span class="dot"></span>
+              <span id="accounting-status-text">Ready</span>
+            </div>
+            <button class="btn btn-primary" id="save-all-btn" type="button">Save all changes</button>
+          </div>
+        </div>
+
+        <div class="meta-row" id="accounting-meta-row"></div>
+
+        <div class="toolbar">
+          <div class="toolbar-row">
+            <label class="search-label">
+              Search
+              <input id="accounting-search" type="search" placeholder="Find by deal or company..." />
+            </label>
+            <span class="hint" id="accounting-status-line">No unsaved changes.</span>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Deal</th>
+                <th>Company</th>
+                <th>Monthly retainer</th>
+                <th>Expected payment day</th>
+                <th>Next expected date</th>
+              </tr>
+            </thead>
+            <tbody id="accounting-body"></tbody>
+          </table>
+        </div>
+
+        <div class="invoice-builder" id="invoice-builder-panel" hidden>
+          <div class="invoice-history-head">
+            <div>
+              <h2>Invoice Generator</h2>
+              <p class="hint" id="invoice-builder-subtitle">Fill invoice details for this deal, then generate Word or PDF.</p>
+            </div>
+            <div class="btn-row">
+              <button class="btn" type="button" id="btn-generate-invoice-word">Generate Word</button>
+              <button class="btn btn-primary" type="button" id="btn-generate-invoice-pdf">Generate PDF</button>
+            </div>
+          </div>
+          <div class="invoice-form-grid" id="invoice-form-grid">
+            <label>Client name
+              <input id="invoice-client-name" type="text" />
+            </label>
+            <label>Address line 1
+              <input id="invoice-address-line-1" type="text" />
+            </label>
+            <label>Address line 2
+              <input id="invoice-address-line-2" type="text" />
+            </label>
+            <label>Country
+              <input id="invoice-country" type="text" />
+            </label>
+            <label>Invoice number
+              <input id="invoice-number" type="text" />
+            </label>
+            <label>Invoice date
+              <input id="invoice-date" type="date" />
+            </label>
+            <label>Payment due date
+              <input id="invoice-due-date" type="date" />
+            </label>
+            <label>Description
+              <input id="invoice-description" type="text" />
+            </label>
+            <label>Amount (GBP)
+              <input id="invoice-amount" type="text" />
+            </label>
+          </div>
+          <div class="hint" id="invoice-builder-status"></div>
+        </div>
+
+        <div class="invoice-history" id="invoice-history-panel" hidden>
+          <div class="invoice-history-head">
+            <div>
+              <h2>Historical Invoices (PDF)</h2>
+              <p class="hint" id="invoice-history-subtitle">Attach, view, and remove invoice PDFs for this deal.</p>
+            </div>
+            <div class="btn-row">
+              <button class="btn" type="button" id="btn-load-invoice-pdf">Load invoice PDF</button>
+            </div>
+          </div>
+          <div class="invoice-history-list" id="invoice-history-list"></div>
+          <div class="hint" id="invoice-history-status"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="invoice-picker-modal" hidden>
+    <div class="modal-panel">
+      <div class="invoice-history-head">
+        <div>
+          <h2>Select Invoice PDF</h2>
+          <p class="hint">Browse Sharedrive and link a PDF invoice to this deal.</p>
+        </div>
+        <button class="btn" id="btn-close-invoice-picker" type="button">Close</button>
+      </div>
+      <div class="toolbar-row" style="margin-top:10px;">
+        <label class="search-label" style="flex:1 1 320px;">
+          Sharedrive folder URL
+          <input id="invoice-share-url-input" type="text" placeholder="Paste a Sharedrive folder URL" />
+        </label>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-primary" id="btn-load-invoice-root" type="button">Load location</button>
+        <button class="btn" id="btn-invoice-go-back" type="button">Back one folder</button>
+        <span class="hint" id="invoice-picker-status"></span>
+      </div>
+      <div class="picker-path" id="invoice-picker-path">Not connected to a Sharedrive folder yet.</div>
+      <div class="picker-list" id="invoice-picker-list"></div>
+    </div>
+  </div>
+
+  <script src="../scripts/shared/layout.js"></script>
+  <script src="../scripts/shared/data-loader.js"></script>
+  <script src="../scripts/shared/core.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="../scripts/pages/accounting.js"></script>
+</body>
+
+</html>

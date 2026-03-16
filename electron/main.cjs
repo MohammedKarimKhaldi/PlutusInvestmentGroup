@@ -1,7 +1,13 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const fs = require("fs");
 const path = require("path");
-const vm = require("vm");
+
+const {
+  sourceAppDir,
+  webBuildDir,
+  webSubdirs,
+  dataFiles,
+} = require("../config/project-paths.cjs");
 
 const GRAPH_SCOPE = "https://graph.microsoft.com/.default";
 const GRAPH_SESSION_KEY = "graph_session_v1";
@@ -20,27 +26,29 @@ let sessionRefreshToken = "";
 let cachedSharedriveConfig = null;
 let sharedriveConfigLoaded = false;
 
+function getBundledAppCandidates(...segments) {
+  return [
+    path.join(webBuildDir, ...segments),
+    path.join(sourceAppDir, ...segments),
+  ];
+}
+
+function getBundledDataCandidates(fileName) {
+  return getBundledAppCandidates(webSubdirs.data, fileName);
+}
+
 function loadSharedriveConfig() {
   if (sharedriveConfigLoaded) return cachedSharedriveConfig;
   sharedriveConfigLoaded = true;
 
-  const candidates = [
-    path.join(app.getAppPath(), "data", "sharedrive-tasks.js"),
-    path.join(app.getAppPath(), "web", "data", "sharedrive-tasks.js"),
-  ];
+  const candidates = getBundledDataCandidates(dataFiles.sharedTasks);
 
   for (const filePath of candidates) {
     if (!fs.existsSync(filePath)) continue;
     try {
-      const source = fs.readFileSync(filePath, "utf8");
-      const sandbox = { window: {} };
-      vm.runInNewContext(source, sandbox, { filename: filePath });
-      const config =
-        sandbox && sandbox.window && sandbox.window.SHAREDRIVE_TASKS && typeof sandbox.window.SHAREDRIVE_TASKS === "object"
-          ? sandbox.window.SHAREDRIVE_TASKS
-          : null;
-      if (config) {
-        cachedSharedriveConfig = config;
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (parsed && typeof parsed === "object") {
+        cachedSharedriveConfig = parsed;
         break;
       }
     } catch {
@@ -52,19 +60,62 @@ function loadSharedriveConfig() {
 }
 
 function getStoreDir() {
-  const teamConfigPath = path.join(app.getAppPath(), "data", "team-store-path.json");
-  if (fs.existsSync(teamConfigPath)) {
+  for (const teamConfigPath of getBundledDataCandidates(dataFiles.teamStorePath)) {
+    if (!fs.existsSync(teamConfigPath)) continue;
     try {
       const cfg = JSON.parse(fs.readFileSync(teamConfigPath, "utf8"));
       const customDir = cfg && typeof cfg.storeDir === "string" ? cfg.storeDir.trim() : "";
       if (customDir) return path.resolve(customDir);
     } catch {
-      // Ignore invalid team config and fall back to userData
+      // Ignore invalid team config and continue to the next candidate.
     }
   }
 
   // Default: OS-level app data directory.
   return path.join(app.getPath("userData"), "runtime-store");
+}
+
+function getEditableDataDir() {
+  const dir = path.join(getStoreDir(), "data");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function getEditableDataPath(key) {
+  const safeKey = String(key || "").replace(/[^a-z0-9_-]/gi, "_");
+  return path.join(getEditableDataDir(), `${safeKey}.json`);
+}
+
+function readEditableJson(key) {
+  const filePath = getEditableDataPath(key);
+  const safeKey = `${String(key || "").replace(/[^a-z0-9_-]/gi, "_")}.json`;
+  const pathsToTry = [
+    filePath,
+    ...getBundledDataCandidates(safeKey),
+  ];
+
+  for (const candidate of pathsToTry) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      const raw = fs.readFileSync(candidate, "utf8");
+      const parsed = JSON.parse(raw);
+      return { ok: true, data: parsed };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Invalid JSON file." };
+    }
+  }
+
+  return { ok: false, error: "File not found." };
+}
+
+function writeEditableJson(key, payload) {
+  const filePath = getEditableDataPath(key);
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(payload ?? {}, null, 2), "utf8");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Failed to write file." };
+  }
 }
 
 function getStorePath(key) {
@@ -193,11 +244,23 @@ function loadGraphSession() {
   }
 }
 
+function getGraphSessionSummary() {
+  loadGraphSession();
+  return {
+    accessToken: sessionAccessToken,
+    expiresAt: sessionAccessTokenExpiresAt,
+    hasRefreshToken: Boolean(sessionRefreshToken),
+  };
+}
+
 function getTenantId() {
   const envTenant = String(process.env.PLUTUS_AZURE_TENANT_ID || "").trim();
   if (envTenant) return envTenant;
   const config = loadSharedriveConfig();
-  const cfgTenant = config && typeof config.azureTenantId === "string" ? config.azureTenantId.trim() : "";
+  let cfgTenant = config && typeof config.azureTenantId === "string" ? config.azureTenantId.trim() : "";
+  if (!cfgTenant && config && config.tasks && typeof config.tasks.azureTenantId === "string") {
+    cfgTenant = config.tasks.azureTenantId.trim();
+  }
   return cfgTenant || "common";
 }
 
@@ -205,7 +268,11 @@ function getClientId() {
   const envClient = String(process.env.PLUTUS_AZURE_CLIENT_ID || "").trim();
   if (envClient) return envClient;
   const config = loadSharedriveConfig();
-  return config && typeof config.azureClientId === "string" ? config.azureClientId.trim() : "";
+  let cfgClient = config && typeof config.azureClientId === "string" ? config.azureClientId.trim() : "";
+  if (!cfgClient && config && config.tasks && typeof config.tasks.azureClientId === "string") {
+    cfgClient = config.tasks.azureClientId.trim();
+  }
+  return cfgClient;
 }
 
 function getDelegatedScopes() {
@@ -217,7 +284,10 @@ function getDelegatedScopes() {
       .filter(Boolean);
   }
   const config = loadSharedriveConfig();
-  const cfgScopes = config && typeof config.graphScopes === "string" ? config.graphScopes.trim() : "";
+  let cfgScopes = config && typeof config.graphScopes === "string" ? config.graphScopes.trim() : "";
+  if (!cfgScopes && config && config.tasks && typeof config.tasks.graphScopes === "string") {
+    cfgScopes = config.tasks.graphScopes.trim();
+  }
   if (cfgScopes) {
     return cfgScopes
       .split(/[\s,]+/)
@@ -423,7 +493,7 @@ async function getShareDriveItem(shareUrl, token, selectFields) {
   const encodedShare = `u!${toBase64Url(cleanShareUrl)}`;
   const fields = Array.isArray(selectFields) && selectFields.length
     ? selectFields
-    : ["id", "name", "webUrl", "parentReference", "folder", "file", "size", "lastModifiedDateTime", "@microsoft.graph.downloadUrl"];
+    : ["id", "name", "webUrl", "parentReference", "folder", "file", "size", "lastModifiedDateTime", "remoteItem", "@microsoft.graph.downloadUrl"];
   const params = new URLSearchParams({
     $select: fields.join(","),
   });
@@ -474,6 +544,28 @@ async function listDriveItemChildren(driveId, itemId, token) {
   return items;
 }
 
+async function listDriveItemChildrenRecursive(driveId, rootItemId, token) {
+  const items = [];
+  const queue = [rootItemId];
+  const visited = new Set();
+
+  while (queue.length) {
+    const currentId = queue.shift();
+    if (!currentId || visited.has(currentId)) continue;
+    visited.add(currentId);
+
+    const children = await listDriveItemChildren(driveId, currentId, token);
+    children.forEach((child) => {
+      items.push(child);
+      if (child && child.folder && child.id) {
+        queue.push(child.id);
+      }
+    });
+  }
+
+  return items;
+}
+
 async function listShareDriveItems({ shareUrl, accessToken }) {
   const token = await resolveGraphAccessToken(accessToken);
   const rootItem = await getShareDriveItem(shareUrl, token);
@@ -484,7 +576,7 @@ async function listShareDriveItems({ shareUrl, accessToken }) {
 
   let items = [];
   if (rootItem && rootItem.folder && driveId) {
-    const children = await listDriveItemChildren(driveId, rootItem.id, token);
+    const children = await listDriveItemChildrenRecursive(driveId, rootItem.id, token);
     items = children.map(normalizeDriveItem);
   }
 
@@ -498,6 +590,32 @@ async function listShareDriveItems({ shareUrl, accessToken }) {
     totalItems: items.length,
     totalFolders,
     totalFiles,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+async function listShareDriveChildren({ shareUrl, accessToken, parentItemId }) {
+  const token = await resolveGraphAccessToken(accessToken);
+  const rootItem = await getShareDriveItem(shareUrl, token);
+  const driveId =
+    (rootItem && rootItem.parentReference && rootItem.parentReference.driveId) ||
+    (rootItem && rootItem.remoteItem && rootItem.remoteItem.parentReference && rootItem.remoteItem.parentReference.driveId) ||
+    "";
+  if (!driveId) {
+    throw new Error("Unable to resolve drive for SharePoint item.");
+  }
+
+  const targetId = parentItemId || (rootItem && rootItem.id ? rootItem.id : "");
+  if (!targetId) {
+    throw new Error("Unable to resolve folder id for SharePoint item.");
+  }
+
+  const children = await listDriveItemChildren(driveId, targetId, token);
+  return {
+    root: normalizeDriveItem(rootItem),
+    driveId,
+    parentItemId: targetId,
+    items: children.map(normalizeDriveItem),
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -530,16 +648,86 @@ async function getShareDriveDownloadUrl({ shareUrl, accessToken, driveId, itemId
   }
 
   const downloadUrl = item && item["@microsoft.graph.downloadUrl"] ? item["@microsoft.graph.downloadUrl"] : "";
+  
+  const driveIdOfItem = driveId || (item && item.parentReference && item.parentReference.driveId) || (item && item.remoteItem && item.remoteItem.parentReference && item.remoteItem.parentReference.driveId) || "";
+  const itemIdOfItem = itemId || (item && item.id) || (item && item.remoteItem && item.remoteItem.id) || "";
+
+  console.log(`[Main] getShareDriveDownloadUrl: shareUrl=${shareUrl?shareUrl.substring(0,30)+'...':''} driveId=${driveIdOfItem} itemId=${itemIdOfItem} hasDownloadUrl=${!!downloadUrl}`);
+
+  if (!downloadUrl && driveIdOfItem && itemIdOfItem) {
+    try {
+      // Try resolving directly from drive item
+      const retryUrl = `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveIdOfItem)}/items/${encodeURIComponent(itemIdOfItem)}?$select=id,name,@microsoft.graph.downloadUrl`;
+      console.log(`[Main] Attempting retry fetch for downloadUrl: ${retryUrl}`);
+      const retryResponse = await fetchJson(retryUrl, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
+      if (retryResponse && retryResponse["@microsoft.graph.downloadUrl"]) {
+        console.log(`[Main] Success: Resolved downloadUrl via direct driveItem fetch.`);
+        return {
+          id: itemIdOfItem,
+          name: item && item.name ? item.name : (retryResponse.name || ""),
+          webUrl: item && item.webUrl ? item.webUrl : "",
+          driveId: driveIdOfItem,
+          downloadUrl: retryResponse["@microsoft.graph.downloadUrl"],
+        };
+      }
+
+      // If that fails, try /me/drive/items if it might be the user's own drive or has been added to their drive
+      if (driveIdOfItem.startsWith("me")) {
+         const meUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(itemIdOfItem)}?$select=@microsoft.graph.downloadUrl`;
+         console.log(`[Main] Attempting retry fetch via /me/drive: ${meUrl}`);
+         const meResponse = await fetchJson(meUrl, { headers: { Authorization: `Bearer ${token}` } });
+         if (meResponse && meResponse["@microsoft.graph.downloadUrl"]) {
+             return { id: itemIdOfItem, driveId: driveIdOfItem, downloadUrl: meResponse["@microsoft.graph.downloadUrl"] };
+         }
+      }
+    } catch (e) {
+      console.warn("[Main] Retry fetch for download URL failed:", e.message);
+    }
+  }
+
+  // LAST RESORT: Try to get a redirect from the /content endpoint
+  if (!downloadUrl && driveIdOfItem && itemIdOfItem) {
+    try {
+      const contentUrl = `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveIdOfItem)}/items/${encodeURIComponent(itemIdOfItem)}/content`;
+      console.log(`[Main] Attempting to get downloadUrl via content redirect: ${contentUrl}`);
+      
+      const headResponse = await fetch(contentUrl, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        redirect: "manual",
+      });
+
+      if (headResponse.status === 302 || headResponse.status === 301) {
+        const loc = headResponse.headers.get("location");
+        if (loc) {
+          console.log(`[Main] Success: Resolved downloadUrl via content redirect.`);
+          return {
+            id: itemIdOfItem,
+            driveId: driveIdOfItem,
+            downloadUrl: loc,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("[Main] Content redirect resolution failed:", e.message);
+    }
+  }
+
   if (!downloadUrl) {
+    console.error(`[Main] FATAL: downloadUrl resolution failed for item ${itemIdOfItem} in drive ${driveIdOfItem}`);
     throw new Error("Download URL not available for this item.");
   }
 
   return {
-    id: item && item.id ? item.id : "",
+    id: itemIdOfItem,
     name: item && item.name ? item.name : "",
     webUrl: item && item.webUrl ? item.webUrl : "",
-    driveId:
-      driveId || (item && item.parentReference && item.parentReference.driveId) || "",
+    driveId: driveIdOfItem,
     downloadUrl,
   };
 }
@@ -555,6 +743,7 @@ async function downloadShareDriveFile({ shareUrl, accessToken, driveId, itemId }
       "name",
       "parentReference",
       "remoteItem",
+      "@microsoft.graph.downloadUrl",
     ]);
     resolvedItemId = item && item.id ? item.id : "";
     resolvedDriveId =
@@ -722,7 +911,7 @@ async function listShareDriveFolders({ shareUrl, accessToken }) {
   const encodedShare = `u!${toBase64Url(cleanShareUrl)}`;
   const base = `https://graph.microsoft.com/v1.0/shares/${encodedShare}/driveItem`;
 
-  const root = await fetchJson(`${base}?$select=id,name,webUrl,parentReference`, {
+  const root = await fetchJson(`${base}?$select=id,name,webUrl,parentReference,remoteItem`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
@@ -730,18 +919,35 @@ async function listShareDriveFolders({ shareUrl, accessToken }) {
   });
 
   const folders = [];
-  let nextUrl = `${base}/children?$top=200&$select=id,name,folder,webUrl,lastModifiedDateTime,size,parentReference`;
+  if (root && root.id) {
+    const driveId =
+      (root.parentReference && root.parentReference.driveId) ||
+      (root.remoteItem && root.remoteItem.parentReference && root.remoteItem.parentReference.driveId) ||
+      "";
+    if (!driveId) {
+      return {
+        root: {
+          id: root && root.id ? root.id : "",
+          name: root && root.name ? root.name : "",
+          webUrl: root && root.webUrl ? root.webUrl : cleanShareUrl,
+          parentPath:
+            root && root.parentReference && typeof root.parentReference.path === "string"
+              ? root.parentReference.path
+              : "",
+        },
+        folders: [],
+        totalFolders: 0,
+        fetchedAt: new Date().toISOString(),
+      };
+    }
 
-  while (nextUrl) {
-    const page = await fetchJson(nextUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-    });
+    const children = await listDriveItemChildrenRecursive(
+      driveId,
+      root.id,
+      token,
+    );
 
-    const values = Array.isArray(page && page.value) ? page.value : [];
-    values.forEach((item) => {
+    children.forEach((item) => {
       if (item && item.folder) {
         folders.push({
           id: item.id || "",
@@ -758,8 +964,6 @@ async function listShareDriveFolders({ shareUrl, accessToken }) {
         });
       }
     });
-
-    nextUrl = page && typeof page["@odata.nextLink"] === "string" ? page["@odata.nextLink"] : "";
   }
 
   return {
@@ -791,7 +995,16 @@ function createMainWindow() {
     },
   });
 
-  win.loadFile(path.join(app.getAppPath(), "index.html"));
+  const startupCandidates = getBundledAppCandidates("index.html");
+  const startupPage = startupCandidates.find((candidate) => fs.existsSync(candidate)) || startupCandidates[0];
+  console.log(`[Main] Loading startup page: ${startupPage}`);
+
+  win.loadFile(startupPage).catch((err) => {
+    console.error(`[Main] Failed to load ${startupPage}:`, err.message);
+  });
+  
+  // Open DevTools automatically to see renderer logs
+  win.webContents.openDevTools();
 }
 
 app.whenReady().then(() => {
@@ -803,6 +1016,16 @@ app.whenReady().then(() => {
     const key = payload && payload.key;
     const values = payload && payload.values;
     event.returnValue = writeArrayStore(key, values);
+  });
+
+  ipcMain.on("plutus:data:read-json", (event, key) => {
+    event.returnValue = readEditableJson(key);
+  });
+
+  ipcMain.on("plutus:data:write-json", (event, payload) => {
+    const key = payload && payload.key;
+    const value = payload && payload.value;
+    event.returnValue = writeEditableJson(key, value);
   });
 
   ipcMain.handle("plutus:sharedrive:list-folders", async (_event, payload) => {
@@ -829,6 +1052,20 @@ app.whenReady().then(() => {
       return {
         ok: false,
         error: error instanceof Error ? error.message : "Failed to list sharedrive items.",
+      };
+    }
+  });
+
+  ipcMain.handle("plutus:sharedrive:list-children", async (_event, payload) => {
+    try {
+      return {
+        ok: true,
+        data: await listShareDriveChildren(payload || {}),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to fetch sharedrive children.",
       };
     }
   });
@@ -897,6 +1134,20 @@ app.whenReady().then(() => {
       return {
         ok: false,
         error: error instanceof Error ? error.message : "Failed to poll device code.",
+      };
+    }
+  });
+
+  ipcMain.handle("plutus:graph:session", async () => {
+    try {
+      return {
+        ok: true,
+        data: getGraphSessionSummary(),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to read graph session.",
       };
     }
   });

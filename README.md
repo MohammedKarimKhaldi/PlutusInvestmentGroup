@@ -1,108 +1,82 @@
 # Plutus Investment Group Dashboard
 
-Static HTML/CSS/JavaScript dashboard for:
-- investor tracking
-- deals overview and deal management
-- task management by owner and deal
+Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacitor mobile deployment.
 
-## Main Entrypoint
-
-- `index.html` (redirects to `public/investor-dashboard.html`)
-
-## Current Structure
+## Project Layout
 
 ```text
 .
-├── index.html
-├── README.md
-├── data/
-│   ├── config.js
-│   ├── deals.js
-│   └── tasks.js
-├── public/
-│   ├── investor-dashboard.html
-│   ├── deals-overview.html
-│   ├── deal-details.html
-│   ├── tasks-management.html
-│   └── owner-tasks.html
-├── scripts/
-│   ├── generate-config.js
-│   ├── shared/
-│   │   └── core.js
-│   └── pages/
-│       ├── investor-dashboard.js
-│       ├── deals-overview.js
-│       ├── deal-details.js
-│       ├── tasks-management.js
-│       └── owner-tasks.js
-└── styles/
-    ├── base.css
-    ├── components.css
-    ├── investor-dashboard.css
-    ├── deal-details.css
-    ├── tasks-management.css
-    └── owner-tasks.css
+├── app/                  # Canonical web app source
+│   ├── data/             # Seed data + share drive config
+│   ├── index.html        # Redirects to the default page
+│   ├── pages/            # HTML screens
+│   ├── scripts/          # Browser runtime code
+│   └── styles/           # Shared and page CSS
+├── build/web/            # Generated web bundle for Electron + Capacitor
+├── config/               # Shared project path/config metadata
+├── electron/             # Desktop wrapper
+├── android/              # Capacitor Android project
+├── ios/                  # Capacitor iOS project
+└── tools/                # Node-side project tooling
 ```
 
-## Page Map
+## Source Of Truth
 
-- `public/investor-dashboard.html`: investor dashboard
-- `public/deals-overview.html`: pipeline table for all deals
-- `public/deal-details.html`: single deal details, edits, and related tasks
-- `public/tasks-management.html`: cross-owner management view for tasks
-- `public/owner-tasks.html`: owner-specific task view
+- Core app code lives in `app/`.
+- Generated deployment assets live in `build/` and native platform output folders.
+- Desktop, iOS, and Android should consume generated assets, not duplicate source edits.
 
-## Data and Persistence
+## Core Files
 
-- Seed data:
-  - `data/deals.js`
-  - `data/tasks.js`
-- Dashboard configuration:
-  - `data/config.js`
-- Sharedrive task sync config:
-  - `data/sharedrive-tasks.js`
-- Browser LocalStorage keys:
-  - deals: `deals_data_v1`
-  - tasks: `owner_tasks_v1`
-- Shared utilities:
-  - `scripts/shared/core.js`
+- `app/index.html`: root redirect
+- `app/pages/*.html`: app pages
+- `app/scripts/shared/app-config.js`: shared route, page, storage, and data-file manifest
+- `app/scripts/shared/layout.js`: shared sidebar/nav renderer
+- `app/scripts/shared/core.js`: runtime data and sync layer
+- `app/data/config.json`: dashboard configuration
+- `app/data/sharedrive-tasks.json`: ShareDrive sync configuration
 
-## Sharedrive Tasks Sync (Multi-User)
+## Build Flow
 
-To keep tasks in a shared file that multiple users can edit:
+- `npm run web:prepare`
+  - Copies `app/` into `build/web/`
+- `npm run desktop`
+  - Prepares `build/web/` and opens Electron
+- `npm run ios:sync`
+  - Prepares `build/web/` and syncs Capacitor iOS
+- `npm run android:sync`
+  - Prepares `build/web/` and syncs Capacitor Android
 
-1. Upload your `sharedrive-tasks.json` file to your Netorg SharePoint/Sharedrive folder.
-2. Open `data/sharedrive-tasks.js` and set:
-   - `enabled: true`
-   - `shareUrl`: the SharePoint link to the JSON file (not the folder).
-   - `fileName`: the exact filename in SharePoint (default is `sharedrive-tasks.json`).
-3. Run the Electron desktop app (`npm run desktop`). The sharedrive sync uses the desktop bridge + Microsoft Graph.
+## Tooling
 
-Notes:
-- When sharedrive sync is enabled, tasks are no longer stored in LocalStorage.
-- The app polls for updates every 60s (configurable via `pollIntervalMs`).
-- The `shareUrl` should point to the JSON file (not just the folder).
-- On Android/web, device-code auth uses `azureClientId` and `azureTenantId` from `data/sharedrive-tasks.js`.
+- `tools/prepare-web-assets.cjs`: generates the deployable web bundle
+- `tools/generate-config.js`: regenerates `app/data/config.json` from `.env`
+- `tools/debug-sharedrive-json.cjs`: inspects synced ShareDrive JSON files
+
+## Sharedrive Notes
+
+- Update `app/data/sharedrive-tasks.json` to configure task, deals, or config sync.
+- When shared sync is enabled, app data is read from the shared file or the desktop runtime store instead of local-only browser storage.
+- Electron also supports Microsoft Graph device-code auth through the preload bridge.
 
 ## Run
 
-Open `index.html` in your browser.  
-
-## Desktop (macOS via Electron)
-
 - Install dependencies: `npm install`
-- Run app: `npm run desktop`
-- Build macOS package: `npm run dist:mac`
+- Launch desktop app: `npm run desktop`
+- Build the web bundle only: `npm run web:prepare`
+- Build desktop package: `npm run dist:mac`
 
-## iOS (via Capacitor + Xcode)
+## Documentation
 
-- Prepare web assets: `npm run web:prepare`
-- Add iOS project (first time only): `npm run ios:add`
-- Sync latest web assets to iOS: `npm run ios:sync`
-- Open in Xcode: `npm run ios:open`
-- One-command sync + open: `npm run ios:run`
+- Read the Docs / MkDocs source lives in `docs/`
+- Local config lives in `mkdocs.yml`
+- Read the Docs build config lives in `.readthedocs.yaml`
+- Local docs commands:
+  - `python3 -m pip install -r docs/requirements.txt`
+  - `npm run docs:serve`
+  - `npm run docs:build`
 
-## Notes
+## Important Convention
 
-- Edits to deals/tasks are stored in browser LocalStorage.
-- `scripts/generate-config.js` is optional and only used when regenerating `data/config.js` from a local `.env`.
+Edit `app/` for product changes.
+Treat `build/`, `dist/`, and native copied web assets as generated deployment output.

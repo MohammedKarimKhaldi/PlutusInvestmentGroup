@@ -1,7 +1,7 @@
 {
 	"appId": "com.plutus.investment.dashboard",
 	"appName": "Plutus Investment Dashboard",
-	"webDir": "app",
+	"webDir": "build/web",
 	"bundledWebRuntime": false,
 	"packageClassList": []
 }
