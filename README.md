@@ -98,6 +98,17 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
   - Sign with Mac App Store-compatible certificates/profiles
   - Upload the resulting MAS artifact with Transporter or Xcode Organizer
 
+## Xcode Cloud
+
+- Xcode Cloud must build `ios/App/App.xcworkspace`, not `ios/App/App.xcodeproj`.
+- Use scheme `App` for both workflows.
+- Create separate archive workflows for:
+  - iOS
+  - macOS using Mac Catalyst
+- The repo's Xcode Cloud scripts run `npm run ios:sync` and rely on CocoaPods integration.
+- If Xcode Cloud is pointed at `App.xcodeproj`, builds fail with missing Capacitor modules during archive.
+- If a workflow still logs `-project /Volumes/workspace/repository/ios/App/App.xcodeproj`, edit or recreate it so the container is `ios/App/App.xcworkspace`.
+
 ## Documentation
 
 - Read the Docs / MkDocs source lives in `docs/`

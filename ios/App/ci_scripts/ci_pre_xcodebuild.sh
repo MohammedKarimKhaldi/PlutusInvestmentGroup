@@ -9,6 +9,21 @@ echo "Repository root: ${REPO_ROOT}"
 
 cd "${REPO_ROOT}"
 
+ensure_xcode_cloud_workspace_selection() {
+  if [ "${CI_XCODE_CLOUD:-}" != "TRUE" ]; then
+    return
+  fi
+
+  local selected_container="${CI_XCODE_PROJECT:-}"
+
+  if [ -n "${selected_container}" ] && [[ "${selected_container}" != *.xcworkspace ]]; then
+    echo "Xcode Cloud is configured to build ${selected_container}, but this repo requires ios/App/App.xcworkspace."
+    echo "Capacitor dependencies are integrated through CocoaPods, so building App.xcodeproj will fail to resolve the Capacitor modules."
+    echo "In App Store Connect, edit or recreate the workflow so it uses ios/App/App.xcworkspace with scheme App."
+    exit 1
+  fi
+}
+
 ensure_node_runtime() {
   local brew_bin=""
   local required_node_major="${XCLOUD_NODE_MAJOR:-22}"
@@ -66,6 +81,7 @@ ensure_node_runtime() {
 }
 
 ensure_node_runtime
+ensure_xcode_cloud_workspace_selection
 
 install_dependencies() {
   if [ -f package-lock.json ] && git ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
