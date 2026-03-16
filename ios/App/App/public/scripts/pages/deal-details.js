@@ -195,6 +195,135 @@ function getJuniorOwner(deal) {
   return (deal && deal.juniorOwner) || "";
 }
 
+function normalizeDealContacts(deal, options = {}) {
+  const { keepEmpty = false } = options;
+  const source = deal && Array.isArray(deal.contacts) ? deal.contacts : [];
+  const normalized = source
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const name = String(entry.name || "").trim();
+      const title = String(entry.title || "").trim();
+      const email = String(entry.email || "").trim();
+      const isPrimary = Boolean(entry.isPrimary);
+      if (!keepEmpty && !name && !title && !email) return null;
+      return { name, title, email, isPrimary };
+    })
+    .filter(Boolean);
+
+  if (!normalized.length) {
+    const fallbackEmail = String((deal && (deal.mainContactEmail || deal.email)) || "").trim();
+    const fallbackName = String((deal && deal.mainContactName) || "").trim();
+    const fallbackTitle = String((deal && deal.mainContactTitle) || "").trim();
+    if (fallbackEmail || fallbackName || fallbackTitle) {
+      normalized.push({
+        name: fallbackName,
+        title: fallbackTitle,
+        email: fallbackEmail,
+        isPrimary: true,
+      });
+    }
+  }
+
+  if (normalized.length && !normalized.some((entry) => entry.isPrimary)) {
+    normalized[0].isPrimary = true;
+  }
+
+  if (deal && typeof deal === "object") {
+    deal.contacts = normalized;
+  }
+  return normalized;
+}
+
+function getPrimaryDealContact(deal) {
+  const contacts = normalizeDealContacts(deal);
+  return contacts.find((entry) => entry.isPrimary) || contacts[0] || null;
+}
+
+function syncLegacyPrimaryContactFields(deal) {
+  if (!deal || typeof deal !== "object") return;
+  const primary = getPrimaryDealContact(deal);
+  deal.mainContactName = primary ? primary.name : "";
+  deal.mainContactTitle = primary ? primary.title : "";
+  deal.mainContactEmail = primary ? primary.email : "";
+  deal.email = primary ? primary.email : "";
+}
+
+function renderDealContactsSummary() {
+  const listEl = document.getElementById("deal-contacts-list");
+  const summaryEl = document.getElementById("deal-contacts-summary");
+  if (!listEl || !summaryEl || !currentDeal) return;
+
+  const contacts = normalizeDealContacts(currentDeal);
+  if (!contacts.length) {
+    summaryEl.textContent = "No company contacts saved for this deal yet.";
+    listEl.innerHTML = '<div class="contact-card"><div class="contact-title">Add contacts in the deal editor to keep emails and titles on the deal.</div></div>';
+    return;
+  }
+
+  const primary = getPrimaryDealContact(currentDeal);
+  summaryEl.textContent = primary && primary.email
+    ? `Main contact: ${primary.name || primary.email}${primary.title ? ` · ${primary.title}` : ""}`
+    : `${contacts.length} contact${contacts.length === 1 ? "" : "s"} saved for this deal.`;
+
+  listEl.innerHTML = contacts.map((contact) => `
+    <div class="contact-card">
+      <div class="contact-card-top">
+        <div>
+          <div class="contact-name">${escapeHtml(contact.name || contact.email || "Unnamed contact")}</div>
+          <div class="contact-title">${escapeHtml(contact.title || "No title")}</div>
+        </div>
+        ${contact.isPrimary ? '<span class="contact-primary-badge">Main contact</span>' : ""}
+      </div>
+      ${contact.email ? `<a class="contact-email" href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a>` : '<div class="contact-title">No email</div>'}
+    </div>
+  `).join("");
+}
+
+function buildContactEditorRow(contact, index) {
+  return `
+    <div class="contact-editor-row" data-contact-row="${index}">
+      <div class="contact-editor-grid">
+        <label>Name<input type="text" data-contact-field="name" value="${escapeHtml(contact.name || "")}" /></label>
+        <label>Title<input type="text" data-contact-field="title" value="${escapeHtml(contact.title || "")}" /></label>
+        <label>Email<input type="email" data-contact-field="email" value="${escapeHtml(contact.email || "")}" /></label>
+      </div>
+      <div class="contact-editor-actions">
+        <label class="contact-primary-toggle">
+          <input type="radio" name="deal-contact-primary" data-contact-field="isPrimary" ${contact.isPrimary ? "checked" : ""} />
+          <span>Main contact</span>
+        </label>
+        <button class="btn" type="button" data-remove-contact-row="${index}">Remove</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderDealContactEditor() {
+  const listEl = document.getElementById("deal-contact-editor-list");
+  if (!listEl || !currentDeal) return;
+  const contacts = normalizeDealContacts(currentDeal, { keepEmpty: true });
+  listEl.innerHTML = contacts.length
+    ? contacts.map((contact, index) => buildContactEditorRow(contact, index)).join("")
+    : '<div class="contact-editor-row"><div class="contact-title">No contacts yet. Add one to start tracking the main email contact.</div></div>';
+}
+
+function collectDealContactsFromEditor() {
+  const listEl = document.getElementById("deal-contact-editor-list");
+  if (!listEl) return [];
+  const rows = Array.from(listEl.querySelectorAll("[data-contact-row]"));
+  const contacts = rows.map((row) => ({
+    name: String((row.querySelector('[data-contact-field="name"]') || {}).value || "").trim(),
+    title: String((row.querySelector('[data-contact-field="title"]') || {}).value || "").trim(),
+    email: String((row.querySelector('[data-contact-field="email"]') || {}).value || "").trim(),
+    isPrimary: Boolean((row.querySelector('[data-contact-field="isPrimary"]') || {}).checked),
+  })).filter((entry) => entry.name || entry.title || entry.email);
+
+  if (contacts.length && !contacts.some((entry) => entry.isPrimary)) {
+    contacts[0].isPrimary = true;
+  }
+  return contacts;
+}
+
 function formatAmount(amount, currency) {
   if (amount == null || amount === "") return "–";
   if (typeof amount === "string") return amount;
@@ -803,6 +932,8 @@ function renderDealHeader() {
     btnDashboard.onclick = null;
   }
 
+  syncLegacyPrimaryContactFields(currentDeal);
+  renderDealContactsSummary();
   refreshStageButton();
 }
 
@@ -845,6 +976,7 @@ function populateDealForm() {
   document.getElementById("deal-input-deck-url").value = currentDeal.deckUrl || "";
   document.getElementById("deal-input-deck-parent-path").value = currentDeal.deckParentPath || "";
   refreshDeckEditorSummary();
+  renderDealContactEditor();
 }
 
 function renderRelatedTasks() {
@@ -980,6 +1112,8 @@ function setupDealForm() {
   const clearLinkBtn = document.getElementById("btn-clear-dashboard-link");
   const browseDeckBtn = document.getElementById("btn-browse-deck");
   const clearDeckBtn = document.getElementById("btn-clear-deck-link");
+  const addContactBtn = document.getElementById("btn-add-contact-row");
+  const contactEditorList = document.getElementById("deal-contact-editor-list");
 
   if (dashboardSelect && dashboardInput) {
     dashboardSelect.addEventListener("change", () => {
@@ -1030,6 +1164,39 @@ function setupDealForm() {
     });
   }
 
+  if (addContactBtn) {
+    addContactBtn.addEventListener("click", () => {
+      if (!currentDeal) return;
+      const contacts = normalizeDealContacts(currentDeal);
+      contacts.push({
+        name: "",
+        title: "",
+        email: "",
+        isPrimary: !contacts.length,
+      });
+      currentDeal.contacts = contacts;
+      renderDealContactEditor();
+      if (statusEl) statusEl.textContent = "Contact row added in form";
+    });
+  }
+
+  if (contactEditorList) {
+    contactEditorList.addEventListener("click", (event) => {
+      const removeBtn = event.target.closest("button[data-remove-contact-row]");
+      if (!removeBtn || !currentDeal) return;
+      const index = Number(removeBtn.getAttribute("data-remove-contact-row"));
+      const contacts = normalizeDealContacts(currentDeal);
+      if (!Number.isFinite(index) || !contacts[index]) return;
+      contacts.splice(index, 1);
+      if (contacts.length && !contacts.some((entry) => entry.isPrimary)) {
+        contacts[0].isPrimary = true;
+      }
+      currentDeal.contacts = contacts;
+      renderDealContactEditor();
+      if (statusEl) statusEl.textContent = "Contact removed in form";
+    });
+  }
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!currentDeal) return;
@@ -1051,6 +1218,8 @@ function setupDealForm() {
     currentDeal.deckName = document.getElementById("deal-input-deck-name").value.trim();
     currentDeal.deckUrl = document.getElementById("deal-input-deck-url").value.trim();
     currentDeal.deckParentPath = document.getElementById("deal-input-deck-parent-path").value.trim();
+    currentDeal.contacts = collectDealContactsFromEditor();
+    syncLegacyPrimaryContactFields(currentDeal);
 
     statusEl.textContent = "Saving...";
     try {

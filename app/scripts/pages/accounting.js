@@ -25,6 +25,14 @@ const PLUTUS_INVOICE_ISSUER = {
   swift: "CLRBGB22",
 };
 const INVOICE_TEMPLATE_FILE = "invoice-template.docx";
+const INVOICE_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft" },
+  { value: "prepared", label: "Prepared" },
+  { value: "sent", label: "Sent" },
+  { value: "part_paid", label: "Part paid" },
+  { value: "paid", label: "Paid" },
+  { value: "cancelled", label: "Cancelled" },
+];
 
 function normalizeValue(value) {
   if (AppCore) return AppCore.normalizeValue(value);
@@ -144,6 +152,7 @@ function updateMetaRow(filteredDeals) {
   const allDeals = Array.isArray(filteredDeals) ? filteredDeals : [];
   if (singleDealMode && allDeals.length) {
     const deal = allDeals[0];
+    const primaryContact = getPrimaryDealContact(deal);
     const textOrDash = (value) => {
       const raw = String(value == null ? "" : value).trim();
       return raw || "–";
@@ -156,6 +165,7 @@ function updateMetaRow(filteredDeals) {
       `<div class="chip"><strong>Currency</strong> ${textOrDash(deal.currency)}</div>`,
       `<div class="chip"><strong>Cash %</strong> ${textOrDash(deal.CashCommission)}</div>`,
       `<div class="chip"><strong>Equity %</strong> ${textOrDash(deal.EquityCommission)}</div>`,
+      `<div class="chip"><strong>Main contact</strong> ${textOrDash(primaryContact && (primaryContact.name || primaryContact.email))}</div>`,
       `<div class="chip"><strong>Unsaved</strong> ${dirtyDealIds.size}</div>`,
     ].join("");
     return;
@@ -163,11 +173,16 @@ function updateMetaRow(filteredDeals) {
 
   const withRetainer = allDeals.filter((deal) => getRetainerMonthly(deal)).length;
   const withDay = allDeals.filter((deal) => getPaymentDay(deal)).length;
+  const invoiceStats = getInvoiceSummaryStats(allDeals);
 
   row.innerHTML = [
     `<div class="chip"><strong>${allDeals.length}</strong> deals shown</div>`,
     `<div class="chip"><strong>${withRetainer}</strong> with retainer</div>`,
     `<div class="chip"><strong>${withDay}</strong> with payment day</div>`,
+    `<div class="chip"><strong>${invoiceStats.totalInvoices}</strong> invoices linked</div>`,
+    `<div class="chip"><strong>${invoiceStats.outstanding}</strong> awaiting payment</div>`,
+    `<div class="chip"><strong>${invoiceStats.overdue}</strong> overdue</div>`,
+    `<div class="chip"><strong>${invoiceStats.paid}</strong> paid</div>`,
     `<div class="chip"><strong>${dirtyDealIds.size}</strong> unsaved changes</div>`,
   ].join("");
 }
@@ -183,12 +198,14 @@ function getVisibleDeals() {
   source.sort((a, b) => normalizeValue(a.company || a.name).localeCompare(normalizeValue(b.company || b.name)));
   if (!query) return source;
   return source.filter((deal) => {
+    const contacts = normalizeDealContacts(deal);
     const haystack = [
       deal && deal.name,
       deal && deal.company,
       deal && deal.id,
       deal && deal.seniorOwner,
       deal && deal.juniorOwner,
+      ...contacts.map((entry) => `${entry.name} ${entry.title} ${entry.email}`),
     ].map((value) => normalizeValue(value)).join(" ");
     return haystack.includes(query);
   });
@@ -256,6 +273,70 @@ function isPdfReference(value) {
   return /\.pdf(?:$|[?#])/i.test(String(value || "").trim());
 }
 
+function normalizeDealContacts(deal, options = {}) {
+  const { keepEmpty = false } = options;
+  const source = deal && Array.isArray(deal.contacts) ? deal.contacts : [];
+  const normalized = source
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const name = String(entry.name || "").trim();
+      const title = String(entry.title || "").trim();
+      const email = String(entry.email || "").trim();
+      const isPrimary = Boolean(entry.isPrimary);
+      if (!keepEmpty && !name && !title && !email) return null;
+      return { name, title, email, isPrimary };
+    })
+    .filter(Boolean);
+
+  if (!normalized.length) {
+    const fallbackEmail = String((deal && (deal.mainContactEmail || deal.email)) || "").trim();
+    const fallbackName = String((deal && deal.mainContactName) || "").trim();
+    const fallbackTitle = String((deal && deal.mainContactTitle) || "").trim();
+    if (fallbackEmail || fallbackName || fallbackTitle) {
+      normalized.push({
+        name: fallbackName,
+        title: fallbackTitle,
+        email: fallbackEmail,
+        isPrimary: true,
+      });
+    }
+  }
+
+  if (normalized.length && !normalized.some((entry) => entry.isPrimary)) {
+    normalized[0].isPrimary = true;
+  }
+
+  if (deal && typeof deal === "object") {
+    deal.contacts = normalized;
+  }
+  return normalized;
+}
+
+function getPrimaryDealContact(deal) {
+  const contacts = normalizeDealContacts(deal);
+  return contacts.find((entry) => entry.isPrimary) || contacts[0] || null;
+}
+
+function syncLegacyPrimaryContactFields(deal) {
+  if (!deal || typeof deal !== "object") return;
+  const primary = getPrimaryDealContact(deal);
+  deal.mainContactName = primary ? primary.name : "";
+  deal.mainContactTitle = primary ? primary.title : "";
+  deal.mainContactEmail = primary ? primary.email : "";
+  deal.email = primary ? primary.email : "";
+}
+
+function normalizeDateInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+}
+
+function normalizeInvoiceStatus(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return INVOICE_STATUS_OPTIONS.some((option) => option.value === raw) ? raw : "draft";
+}
+
 function normalizeDealInvoices(deal) {
   const source = deal && Array.isArray(deal.invoices) ? deal.invoices : [];
   const normalized = source
@@ -268,6 +349,10 @@ function normalizeDealInvoices(deal) {
           url: raw,
           parentPath: "",
           addedAt: "",
+          status: "draft",
+          sentDate: "",
+          dueDate: "",
+          paidDate: "",
         };
       }
 
@@ -279,6 +364,10 @@ function normalizeDealInvoices(deal) {
         url,
         parentPath: String(entry.parentPath || "").trim(),
         addedAt: String(entry.addedAt || "").trim(),
+        status: normalizeInvoiceStatus(entry.status),
+        sentDate: normalizeDateInput(entry.sentDate || entry.invoiceDate || entry.sentAt),
+        dueDate: normalizeDateInput(entry.dueDate),
+        paidDate: normalizeDateInput(entry.paidDate || entry.payDate || entry.paidAt),
       };
     })
     .filter((entry) => entry && entry.url && (isPdfReference(entry.url) || isPdfReference(entry.name)));
@@ -374,12 +463,180 @@ function setInvoiceBuilderStatus(message, isError) {
   node.style.color = isError ? "#ef4444" : "var(--text-soft)";
 }
 
+function setDealContactsStatus(message, isError) {
+  const node = document.getElementById("deal-contacts-status");
+  if (!node) return;
+  node.textContent = message || "";
+  node.style.color = isError ? "#ef4444" : "var(--text-soft)";
+}
+
+function buildAccountingContactEditorRow(contact, index) {
+  return `
+    <div class="invoice-item">
+      <div class="contact-meta-card">
+        <div class="contact-editor-grid">
+          <label class="invoice-field">
+            <span>Name</span>
+            <input data-contact-index="${index}" data-contact-field="name" type="text" value="${escapeHtml(contact.name || "")}" />
+          </label>
+          <label class="invoice-field">
+            <span>Title</span>
+            <input data-contact-index="${index}" data-contact-field="title" type="text" value="${escapeHtml(contact.title || "")}" />
+          </label>
+          <label class="invoice-field">
+            <span>Email</span>
+            <input data-contact-index="${index}" data-contact-field="email" type="email" value="${escapeHtml(contact.email || "")}" />
+          </label>
+          <div class="contact-editor-actions">
+            <label class="contact-primary-toggle">
+              <input type="radio" name="accounting-contact-primary" data-contact-index="${index}" data-contact-field="isPrimary" ${contact.isPrimary ? "checked" : ""} />
+              <span>Main contact</span>
+            </label>
+            <button class="btn" type="button" data-remove-contact-index="${index}">Remove</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDealContactsPanel() {
+  const panel = document.getElementById("deal-contacts-panel");
+  const list = document.getElementById("deal-contacts-editor-list");
+  const subtitle = document.getElementById("deal-contacts-subtitle");
+  if (!panel || !list || !subtitle) return;
+
+  if (!singleDealMode) {
+    panel.hidden = true;
+    return;
+  }
+
+  const deal = getSelectedDeal();
+  panel.hidden = false;
+  if (!deal) {
+    subtitle.textContent = "Deal not found for contact tracking.";
+    list.innerHTML = '<div class="invoice-item"><div class="contact-subline">No deal loaded.</div></div>';
+    return;
+  }
+
+  const contacts = normalizeDealContacts(deal, { keepEmpty: true });
+  const primary = getPrimaryDealContact(deal);
+  subtitle.textContent = primary && primary.email
+    ? `Main contact: ${primary.name || primary.email}${primary.title ? ` · ${primary.title}` : ""}`
+    : `${contacts.length} contact${contacts.length === 1 ? "" : "s"} linked to this deal.`;
+
+  list.innerHTML = contacts.length
+    ? contacts.map((contact, index) => buildAccountingContactEditorRow(contact, index)).join("")
+    : '<div class="invoice-item"><div class="contact-subline">No contacts saved for this deal yet.</div></div>';
+}
+
+function updateDealContactField(index, field, nextValue, isChecked) {
+  const deal = getSelectedDeal();
+  if (!deal) return;
+  const contacts = normalizeDealContacts(deal, { keepEmpty: true });
+  const contact = contacts[index];
+  if (!contact) return;
+
+  if (field === "isPrimary") {
+    if (!isChecked) return;
+    contacts.forEach((entry, entryIndex) => {
+      entry.isPrimary = entryIndex === index;
+    });
+  } else if (["name", "title", "email"].includes(field)) {
+    contact[field] = String(nextValue || "").trim();
+  } else {
+    return;
+  }
+
+  deal.contacts = contacts.filter((entry) => entry.name || entry.title || entry.email);
+  if (deal.contacts.length && !deal.contacts.some((entry) => entry.isPrimary)) {
+    deal.contacts[0].isPrimary = true;
+  }
+  syncLegacyPrimaryContactFields(deal);
+  markDirty(deal.id, true);
+  renderDealContactsPanel();
+  renderTable();
+  setStatus("Deal contacts updated. Save all changes to sync online.", false);
+  setDealContactsStatus("Deal contacts updated for this deal.", false);
+}
+
 function formatAddedAt(value) {
   const raw = String(value || "").trim();
   if (!raw) return "Date unknown";
   const dt = new Date(raw);
   if (Number.isNaN(dt.getTime())) return raw;
   return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatStatusLabel(value) {
+  const option = INVOICE_STATUS_OPTIONS.find((entry) => entry.value === normalizeInvoiceStatus(value));
+  return option ? option.label : "Draft";
+}
+
+function formatShortDate(value) {
+  const raw = normalizeDateInput(value);
+  if (!raw) return "";
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return raw;
+  return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function getLatestInvoiceRecord(deal) {
+  const invoices = ensureDealInvoices(deal);
+  if (!invoices.length) return null;
+
+  return invoices
+    .slice()
+    .sort((a, b) => {
+      const aDate = Date.parse(a.paidDate || a.dueDate || a.sentDate || a.addedAt || "");
+      const bDate = Date.parse(b.paidDate || b.dueDate || b.sentDate || b.addedAt || "");
+      return (Number.isFinite(bDate) ? bDate : 0) - (Number.isFinite(aDate) ? aDate : 0);
+    })[0] || invoices[0] || null;
+}
+
+function isInvoiceOverdue(invoice) {
+  if (!invoice || normalizeInvoiceStatus(invoice.status) === "paid" || normalizeInvoiceStatus(invoice.status) === "cancelled") {
+    return false;
+  }
+  if (invoice.paidDate) return false;
+  const dueDate = normalizeDateInput(invoice.dueDate);
+  if (!dueDate) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return dueDate < today;
+}
+
+function getInvoiceDisplayStatus(invoice) {
+  if (isInvoiceOverdue(invoice)) return "overdue";
+  return normalizeInvoiceStatus(invoice && invoice.status);
+}
+
+function getInvoiceSummaryStats(deals) {
+  const summary = {
+    totalInvoices: 0,
+    outstanding: 0,
+    paid: 0,
+    sent: 0,
+    overdue: 0,
+  };
+
+  (Array.isArray(deals) ? deals : []).forEach((deal) => {
+    ensureDealInvoices(deal).forEach((invoice) => {
+      summary.totalInvoices += 1;
+      const status = normalizeInvoiceStatus(invoice.status);
+      if (isInvoiceOverdue(invoice)) summary.overdue += 1;
+      if (["prepared", "sent", "part_paid"].includes(status)) summary.outstanding += 1;
+      if (status === "paid") summary.paid += 1;
+      if (status === "sent" || status === "part_paid") summary.sent += 1;
+    });
+  });
+
+  return summary;
+}
+
+function buildInvoiceBadge(status) {
+  const normalized = status === "overdue" ? "overdue" : normalizeInvoiceStatus(status);
+  const label = normalized === "overdue" ? "Overdue" : formatStatusLabel(normalized);
+  return `<span class="invoice-badge invoice-badge-${normalized}">${escapeHtml(label)}</span>`;
 }
 
 function formatMonthYear(value) {
@@ -861,12 +1118,48 @@ function renderInvoiceHistory() {
   list.innerHTML = invoices
     .map((invoice, index) => {
       const label = invoice.name || "Invoice PDF";
-      const meta = `${formatAddedAt(invoice.addedAt)}${invoice.parentPath ? ` · ${invoice.parentPath}` : ""}`;
+      const status = normalizeInvoiceStatus(invoice.status);
+      const displayStatus = getInvoiceDisplayStatus(invoice);
+      const detailParts = [
+        `Added ${formatAddedAt(invoice.addedAt)}`,
+        `Status ${displayStatus === "overdue" ? "Overdue" : formatStatusLabel(status)}`,
+      ];
+      if (invoice.sentDate) detailParts.push(`Sent ${formatShortDate(invoice.sentDate)}`);
+      if (invoice.dueDate) detailParts.push(`Due ${formatShortDate(invoice.dueDate)}`);
+      if (invoice.paidDate) detailParts.push(`Paid ${formatShortDate(invoice.paidDate)}`);
+      if (invoice.parentPath) detailParts.push(invoice.parentPath);
+      const meta = detailParts.join(" · ");
+      const statusOptions = INVOICE_STATUS_OPTIONS
+        .map((option) => `<option value="${option.value}"${option.value === status ? " selected" : ""}>${escapeHtml(option.label)}</option>`)
+        .join("");
       return `
         <div class="invoice-item">
           <div class="invoice-copy">
             <div class="invoice-title">${escapeHtml(label)}</div>
-            <div class="invoice-meta">${escapeHtml(meta)}</div>
+            <div class="invoice-meta-row">
+              ${buildInvoiceBadge(displayStatus)}
+              <div class="invoice-meta">${escapeHtml(meta)}</div>
+            </div>
+            <div class="invoice-status-grid">
+              <label class="invoice-field">
+                <span>Status</span>
+                <select data-invoice-index="${index}" data-invoice-field="status">
+                  ${statusOptions}
+                </select>
+              </label>
+              <label class="invoice-field">
+                <span>Sent date</span>
+                <input data-invoice-index="${index}" data-invoice-field="sentDate" type="date" value="${escapeHtml(invoice.sentDate || "")}" />
+              </label>
+              <label class="invoice-field">
+                <span>Due date</span>
+                <input data-invoice-index="${index}" data-invoice-field="dueDate" type="date" value="${escapeHtml(invoice.dueDate || "")}" />
+              </label>
+              <label class="invoice-field">
+                <span>Paid date</span>
+                <input data-invoice-index="${index}" data-invoice-field="paidDate" type="date" value="${escapeHtml(invoice.paidDate || "")}" />
+              </label>
+            </div>
           </div>
           <div class="btn-row">
             <button class="btn" type="button" data-invoice-open-index="${index}">Open</button>
@@ -876,6 +1169,48 @@ function renderInvoiceHistory() {
       `;
     })
     .join("");
+}
+
+function updateInvoiceTrackingField(index, field, nextValue) {
+  const deal = getSelectedDeal();
+  if (!deal) return;
+
+  const invoices = ensureDealInvoices(deal);
+  const invoice = invoices[index];
+  if (!invoice) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (field === "status") {
+    invoice.status = normalizeInvoiceStatus(nextValue);
+    if (invoice.status === "sent" && !invoice.sentDate) {
+      invoice.sentDate = today;
+    }
+    if (invoice.status === "paid") {
+      if (!invoice.sentDate) invoice.sentDate = today;
+      if (!invoice.paidDate) invoice.paidDate = today;
+    }
+  } else if (field === "sentDate") {
+    invoice.sentDate = normalizeDateInput(nextValue);
+    if (invoice.sentDate && invoice.status === "draft") {
+      invoice.status = "sent";
+    }
+  } else if (field === "dueDate") {
+    invoice.dueDate = normalizeDateInput(nextValue);
+  } else if (field === "paidDate") {
+    invoice.paidDate = normalizeDateInput(nextValue);
+    if (invoice.paidDate) {
+      invoice.status = "paid";
+      if (!invoice.sentDate) invoice.sentDate = invoice.paidDate;
+    }
+  } else {
+    return;
+  }
+
+  deal.invoices = invoices;
+  markDirty(deal.id, true);
+  renderInvoiceHistory();
+  setStatus("Invoice tracking updated. Save all changes to sync online.", false);
+  setInvoiceHistoryStatus("Invoice tracking updated for this deal.", false);
 }
 
 function setInvoicePickerStatus(message) {
@@ -1019,6 +1354,7 @@ function addInvoiceToDealFromPicker(item) {
   }
 
   const invoices = ensureDealInvoices(deal);
+  const draft = ensureInvoiceDraft(deal) || {};
   const exists = invoices.some((entry) => normalizeValue(entry.url) === normalizeValue(url));
   if (exists) {
     setInvoiceHistoryStatus("This invoice is already linked.", false);
@@ -1030,6 +1366,10 @@ function addInvoiceToDealFromPicker(item) {
     url,
     parentPath: String(item.parentPath || "").trim(),
     addedAt: new Date().toISOString(),
+    status: "draft",
+    sentDate: normalizeDateInput(draft.invoiceDate),
+    dueDate: normalizeDateInput(draft.dueDate),
+    paidDate: "",
   });
 
   deal.invoices = invoices;
@@ -1058,6 +1398,15 @@ function setupInvoiceHistory() {
   }
 
   if (list) {
+    list.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!target || !target.dataset) return;
+      const index = Number(target.dataset.invoiceIndex);
+      const field = String(target.dataset.invoiceField || "").trim();
+      if (!Number.isFinite(index) || !field) return;
+      updateInvoiceTrackingField(index, field, target.value);
+    });
+
     list.addEventListener("click", (event) => {
       const openButton = event.target.closest("button[data-invoice-open-index]");
       if (openButton) {
@@ -1231,6 +1580,69 @@ function setupInvoiceBuilder() {
   }
 }
 
+function setupDealContactsPanel() {
+  const addBtn = document.getElementById("btn-add-accounting-contact");
+  const list = document.getElementById("deal-contacts-editor-list");
+
+  if (addBtn) {
+    addBtn.addEventListener("click", () => {
+      const deal = getSelectedDeal();
+      if (!deal) return;
+      const contacts = normalizeDealContacts(deal, { keepEmpty: true });
+      contacts.push({
+        name: "",
+        title: "",
+        email: "",
+        isPrimary: !contacts.length,
+      });
+      deal.contacts = contacts;
+      renderDealContactsPanel();
+      setDealContactsStatus("Contact row added. Save all changes to persist.", false);
+    });
+  }
+
+  if (list) {
+    list.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!target || !target.dataset) return;
+      const index = Number(target.dataset.contactIndex);
+      const field = String(target.dataset.contactField || "").trim();
+      if (!Number.isFinite(index) || !field || field === "isPrimary") return;
+      updateDealContactField(index, field, target.value, target.checked);
+    });
+
+    list.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!target || !target.dataset) return;
+      const index = Number(target.dataset.contactIndex);
+      const field = String(target.dataset.contactField || "").trim();
+      if (!Number.isFinite(index) || !field) return;
+      updateDealContactField(index, field, target.value, target.checked);
+    });
+
+    list.addEventListener("click", (event) => {
+      const removeButton = event.target.closest("button[data-remove-contact-index]");
+      if (!removeButton) return;
+      const index = Number(removeButton.getAttribute("data-remove-contact-index"));
+      const deal = getSelectedDeal();
+      if (!deal) return;
+      const contacts = normalizeDealContacts(deal, { keepEmpty: true });
+      if (!Number.isFinite(index) || !contacts[index]) return;
+      contacts.splice(index, 1);
+      if (contacts.length && !contacts.some((entry) => entry.isPrimary)) {
+        contacts[0].isPrimary = true;
+      }
+      deal.contacts = contacts;
+      syncLegacyPrimaryContactFields(deal);
+      markDirty(deal.id, true);
+      renderDealContactsPanel();
+      renderTable();
+      setStatus("Deal contact removed. Save all changes to sync online.", false);
+      setDealContactsStatus("Deal contact removed.", false);
+    });
+  }
+}
+
 function handleInputChange(event) {
   const input = event.target;
   if (!input || !input.dataset || !input.dataset.dealId) return;
@@ -1281,7 +1693,7 @@ async function saveAllChanges() {
     renderTable();
     renderInvoiceBuilder();
     renderInvoiceHistory();
-    setStatus("Accounting changes saved.", false);
+    setStatus("Accounting changes saved to the shared online deals data.", false);
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "Failed to save accounting changes.", true);
   }
@@ -1298,13 +1710,15 @@ function renderTable() {
     if (singleDealMode) {
       const allHref = buildPageUrl("accounting");
       const dealsHref = buildPageUrl("deals-overview");
-      body.innerHTML = `<tr><td colspan="5">Deal not found. <a class="action-link" href="${dealsHref}">Back to deals</a> or <a class="action-link" href="${allHref}">open all accounting rows</a>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="11">Deal not found. <a class="action-link" href="${dealsHref}">Back to deals</a> or <a class="action-link" href="${allHref}">open all accounting rows</a>.</td></tr>`;
       renderInvoiceBuilder();
+      renderDealContactsPanel();
       renderInvoiceHistory();
       return;
     }
-    body.innerHTML = `<tr><td colspan="5">No deals match this filter.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="11">No deals match this filter.</td></tr>`;
     renderInvoiceBuilder();
+    renderDealContactsPanel();
     renderInvoiceHistory();
     return;
   }
@@ -1317,11 +1731,23 @@ function renderTable() {
     const paymentDay = getPaymentDay(deal);
     const nextDate = computeNextExpectedDate(paymentDay);
     const ordinal = formatDayOrdinal(paymentDay);
+    const primaryContact = getPrimaryDealContact(deal);
+    const invoices = ensureDealInvoices(deal);
+    const latestInvoice = getLatestInvoiceRecord(deal);
+    const latestStatus = latestInvoice ? buildInvoiceBadge(getInvoiceDisplayStatus(latestInvoice)) : '<span class="hint">No invoice</span>';
+    const latestSentDate = latestInvoice && latestInvoice.sentDate ? formatShortDate(latestInvoice.sentDate) : "—";
+    const latestDueDate = latestInvoice && latestInvoice.dueDate ? formatShortDate(latestInvoice.dueDate) : "—";
+    const latestPaidDate = latestInvoice && latestInvoice.paidDate ? formatShortDate(latestInvoice.paidDate) : "—";
 
     return `
       <tr>
         <td class="deal-cell"><a class="deal-link" href="${accountingHref}">${escapeHtml(String(deal.name || "Untitled deal"))}</a></td>
         <td>${String(deal.company || "—")}</td>
+        <td>
+          ${primaryContact
+            ? `<div class="contact-stack"><span class="contact-name">${escapeHtml(primaryContact.name || primaryContact.email || "Contact")}</span><span class="contact-subline">${escapeHtml([primaryContact.title, primaryContact.email].filter(Boolean).join(" · ") || "No email")}</span></div>`
+            : '<span class="hint">No contact</span>'}
+        </td>
         <td>
           <input
             class="value-input ${isDirty ? "is-dirty" : ""}"
@@ -1346,10 +1772,21 @@ function renderTable() {
           <span class="hint">${ordinal || ""}</span>
         </td>
         <td class="next-date">${nextDate}</td>
+        <td>
+          <div class="invoice-cell">
+            <strong>${invoices.length}</strong>
+            <span class="hint">${invoices.length === 1 ? "invoice" : "invoices"}</span>
+          </div>
+        </td>
+        <td>${latestStatus}</td>
+        <td class="next-date">${latestSentDate}</td>
+        <td class="next-date">${latestDueDate}</td>
+        <td class="next-date">${latestPaidDate}</td>
       </tr>
     `;
   }).join("");
   renderInvoiceBuilder();
+  renderDealContactsPanel();
   renderInvoiceHistory();
 }
 
@@ -1383,7 +1820,9 @@ function initializeAccountingPage() {
 
   setupInvoiceHistory();
   setupInvoiceBuilder();
+  setupDealContactsPanel();
   renderInvoiceBuilder();
+  renderDealContactsPanel();
   renderInvoiceHistory();
 
   if (AppCore) {
@@ -1393,6 +1832,7 @@ function initializeAccountingPage() {
         updatePageHeaderForMode();
         renderTable();
         renderInvoiceBuilder();
+        renderDealContactsPanel();
         renderInvoiceHistory();
       }
     });

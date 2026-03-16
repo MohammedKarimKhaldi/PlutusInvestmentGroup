@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const fs = require("fs");
 const path = require("path");
 
@@ -25,6 +26,7 @@ let sessionRefreshToken = "";
 
 let cachedSharedriveConfig = null;
 let sharedriveConfigLoaded = false;
+let updateCheckStarted = false;
 
 function getBundledAppCandidates(...segments) {
   return [
@@ -1002,9 +1004,76 @@ function createMainWindow() {
   win.loadFile(startupPage).catch((err) => {
     console.error(`[Main] Failed to load ${startupPage}:`, err.message);
   });
-  
-  // Open DevTools automatically to see renderer logs
-  win.webContents.openDevTools();
+
+  if (!app.isPackaged) {
+    // Keep renderer logs easy to inspect during local development.
+    win.webContents.openDevTools();
+  }
+
+  return win;
+}
+
+function setupAutoUpdates(mainWindow) {
+  if (updateCheckStarted) return;
+  updateCheckStarted = true;
+
+  if (!app.isPackaged || process.platform !== "win32") {
+    console.log("[Updater] Skipping auto-update check outside packaged Windows builds.");
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[Updater] Checking for updates.");
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    console.log(`[Updater] Update available: ${info && info.version ? info.version : "unknown"}`);
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    console.log("[Updater] No updates available.");
+  });
+
+  autoUpdater.on("error", (error) => {
+    console.error("[Updater] Update check failed:", error && error.message ? error.message : error);
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    if (!progress) return;
+    console.log(
+      `[Updater] Downloaded ${Math.round(progress.percent || 0)}% (${progress.transferred || 0}/${progress.total || 0})`,
+    );
+  });
+
+  autoUpdater.on("update-downloaded", async (info) => {
+    const detail = info && info.version ? `Version ${info.version} is ready to install.` : "An update is ready to install.";
+    const parentWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+
+    try {
+      const result = await dialog.showMessageBox(parentWindow, {
+        type: "info",
+        buttons: ["Restart now", "Later"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "Update ready",
+        message: "A new version of Plutus Investment Dashboard has been downloaded.",
+        detail,
+      });
+
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    } catch (error) {
+      console.error("[Updater] Failed to show restart prompt:", error && error.message ? error.message : error);
+    }
+  });
+
+  autoUpdater.checkForUpdates().catch((error) => {
+    console.error("[Updater] Failed to start update check:", error && error.message ? error.message : error);
+  });
 }
 
 app.whenReady().then(() => {
@@ -1152,10 +1221,14 @@ app.whenReady().then(() => {
     }
   });
 
-  createMainWindow();
+  const mainWindow = createMainWindow();
+  setupAutoUpdates(mainWindow);
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      const window = createMainWindow();
+      setupAutoUpdates(window);
+    }
   });
 });
 

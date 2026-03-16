@@ -65,6 +65,19 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
 - Launch desktop app: `npm run desktop`
 - Build the web bundle only: `npm run web:prepare`
 - Build desktop package: `npm run dist:mac`
+- Build Windows installer locally: `npm run dist:win`
+
+## Windows Releases
+
+- Windows builds now use an `NSIS` installer so installed copies can auto-update.
+- Auto-update checks run only in packaged Windows builds published from GitHub Releases.
+- To publish a new Windows version:
+  - Update `package.json` `version`
+  - Commit and push to `main`
+  - Create and push a matching tag such as `v1.0.1`
+  - GitHub Actions runs `.github/workflows/windows-release.yml`
+  - The workflow uploads the installer and `latest.yml` to the GitHub Release
+- Installed Windows apps will detect the new release and prompt the user to restart after the update downloads.
 
 ## Documentation
 

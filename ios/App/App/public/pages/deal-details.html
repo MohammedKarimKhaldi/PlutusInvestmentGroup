@@ -120,6 +120,12 @@
         </div>
 
         <div class="panel" style="margin-top: 12px;">
+          <h2>Contacts</h2>
+          <p id="deal-contacts-summary">Track the main company contacts for this deal.</p>
+          <div class="contact-card-list" id="deal-contacts-list"></div>
+        </div>
+
+        <div class="panel" style="margin-top: 12px;">
           <div class="panel-heading-row">
             <h2>Edit deal information</h2>
             <button class="btn" id="btn-toggle-deal-form" type="button">Edit deal</button>
@@ -155,6 +161,16 @@
               Choose an existing dashboard to link this deal, or type a custom dashboard ID.
             </div>
             <label>Deal summary<textarea id="deal-input-summary" rows="3"></textarea></label>
+            <div class="deal-contact-editor">
+              <div class="panel-heading-row">
+                <div>
+                  <div class="linked-asset-label">Company contacts</div>
+                  <div class="linked-asset-meta">Add multiple contacts, emails, and titles. Mark one as the main contact.</div>
+                </div>
+                <button class="btn" id="btn-add-contact-row" type="button">Add contact</button>
+              </div>
+              <div class="contact-editor-list" id="deal-contact-editor-list"></div>
+            </div>
             <div class="deal-linked-asset-editor">
               <div class="deal-linked-asset-copy">
                 <div class="linked-asset-label">Deck in Sharedrive</div>

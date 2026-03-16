@@ -3,5 +3,8 @@
 	"appName": "Plutus Investment Dashboard",
 	"webDir": "build/web",
 	"bundledWebRuntime": false,
-	"packageClassList": []
+	"packageClassList": [
+		"FilesystemPlugin",
+		"SharePlugin"
+	]
 }

@@ -1,6 +1,6 @@
 {
   "name": "plutus-investment-group-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Desktop wrapper for Plutus Investment Group dashboard",
   "main": "electron/main.cjs",
@@ -38,7 +38,8 @@
     "predist:mac:zip": "npm run web:prepare",
     "dist:mac:zip": "electron-builder --mac zip --universal --publish never",
     "predist:win": "npm run web:prepare",
-    "dist:win": "electron-builder --win portable --x64 --publish never",
+    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "dist:win:publish": "electron-builder --win nsis --x64 --publish always",
     "predist:linux": "npm run web:prepare",
     "dist:linux": "electron-builder --linux AppImage --x64 --publish never"
   },
@@ -66,16 +67,29 @@
       ],
       "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "MohammedKarimKhaldi",
+        "repo": "PlutusInvestmentGroup"
+      }
+    ],
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
         }
       ],
       "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
     },
     "linux": {
       "target": [
@@ -102,6 +116,9 @@
   "dependencies": {
     "@capacitor/android": "^8.2.0",
     "@capacitor/core": "^8.2.0",
-    "@capacitor/ios": "^8.2.0"
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/ios": "^8.2.0",
+    "@capacitor/share": "^8.0.1",
+    "electron-updater": "^6.8.3"
   }
 }

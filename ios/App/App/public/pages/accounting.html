@@ -51,9 +51,15 @@
               <tr>
                 <th>Deal</th>
                 <th>Company</th>
+                <th>Main contact</th>
                 <th>Monthly retainer</th>
                 <th>Expected payment day</th>
                 <th>Next expected date</th>
+                <th>Invoices</th>
+                <th>Latest status</th>
+                <th>Sent date</th>
+                <th>Due date</th>
+                <th>Paid date</th>
               </tr>
             </thead>
             <tbody id="accounting-body"></tbody>
@@ -103,11 +109,25 @@
           <div class="hint" id="invoice-builder-status"></div>
         </div>
 
+        <div class="invoice-history" id="deal-contacts-panel" hidden>
+          <div class="invoice-history-head">
+            <div>
+              <h2>Deal Contacts</h2>
+              <p class="hint" id="deal-contacts-subtitle">Manage the main company contacts for this deal.</p>
+            </div>
+            <div class="btn-row">
+              <button class="btn" type="button" id="btn-add-accounting-contact">Add contact</button>
+            </div>
+          </div>
+          <div class="invoice-history-list" id="deal-contacts-editor-list"></div>
+          <div class="hint" id="deal-contacts-status"></div>
+        </div>
+
         <div class="invoice-history" id="invoice-history-panel" hidden>
           <div class="invoice-history-head">
             <div>
               <h2>Historical Invoices (PDF)</h2>
-              <p class="hint" id="invoice-history-subtitle">Attach, view, and remove invoice PDFs for this deal.</p>
+              <p class="hint" id="invoice-history-subtitle">Attach, track, view, and remove invoice PDFs for this deal. Save changes to sync them online.</p>
             </div>
             <div class="btn-row">
               <button class="btn" type="button" id="btn-load-invoice-pdf">Load invoice PDF</button>

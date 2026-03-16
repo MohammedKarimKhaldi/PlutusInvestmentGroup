@@ -910,6 +910,100 @@
                     renderTable(document.getElementById('search').value.toLowerCase());
                 }
 
+                function getCapacitorPlugin(name) {
+                    const capacitor = window.Capacitor;
+                    if (!capacitor || !name) return null;
+                    if (capacitor.Plugins && capacitor.Plugins[name]) return capacitor.Plugins[name];
+                    if (typeof capacitor.registerPlugin === 'function') {
+                        try {
+                            return capacitor.registerPlugin(name);
+                        } catch (error) {
+                            console.warn(`[Dashboard] Failed to register Capacitor plugin: ${name}`, error);
+                        }
+                    }
+                    return null;
+                }
+
+                function isNativeMobileApp() {
+                    return Boolean(
+                        window.Capacitor &&
+                        typeof window.Capacitor.isNativePlatform === 'function' &&
+                        window.Capacitor.isNativePlatform()
+                    );
+                }
+
+                function sanitizeExportFileName(value) {
+                    return String(value || 'snapshot')
+                        .trim()
+                        .replace(/[^a-z0-9._-]+/gi, '-')
+                        .replace(/-+/g, '-')
+                        .replace(/^-|-$/g, '') || 'snapshot';
+                }
+
+                async function blobToBase64(blob) {
+                    const buffer = await blob.arrayBuffer();
+                    const bytes = new Uint8Array(buffer);
+                    const chunkSize = 0x8000;
+                    let binary = '';
+                    for (let index = 0; index < bytes.length; index += chunkSize) {
+                        const chunk = bytes.subarray(index, index + chunkSize);
+                        binary += String.fromCharCode(...chunk);
+                    }
+                    return btoa(binary);
+                }
+
+                async function exportBlobForCurrentPlatform(blob, fileName) {
+                    const SharePlugin = getCapacitorPlugin('Share');
+                    const FilesystemPlugin = getCapacitorPlugin('Filesystem');
+
+                    if (
+                        isNativeMobileApp() &&
+                        SharePlugin &&
+                        FilesystemPlugin &&
+                        typeof FilesystemPlugin.writeFile === 'function' &&
+                        typeof SharePlugin.share === 'function'
+                    ) {
+                        const base64Data = await blobToBase64(blob);
+                        const saved = await FilesystemPlugin.writeFile({
+                            path: fileName,
+                            data: base64Data,
+                            directory: 'Cache',
+                            recursive: true,
+                        });
+
+                        await SharePlugin.share({
+                            title: 'Export HTML',
+                            text: 'Investor dashboard snapshot',
+                            url: saved.uri,
+                            dialogTitle: 'Share investor dashboard snapshot',
+                        });
+                        return 'shared';
+                    }
+
+                    if (typeof File === 'function' && navigator.share) {
+                        const shareFile = new File([blob], fileName, { type: 'text/html' });
+                        if (!navigator.canShare || navigator.canShare({ files: [shareFile] })) {
+                            await navigator.share({
+                                title: 'Export HTML',
+                                text: 'Investor dashboard snapshot',
+                                files: [shareFile],
+                            });
+                            return 'shared';
+                        }
+                    }
+
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.download = fileName;
+                    a.href = url;
+                    a.rel = 'noopener';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    return 'downloaded';
+                }
+
                 async function exportStandaloneHtml() {
                     try {
                         const dashboardEl = document.getElementById('dashboard');
@@ -1127,15 +1221,14 @@ ${clone.outerHTML}
 </html>`;
 
                         const blob = new Blob([snapshotHtml], { type: 'text/html' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
                         const dashId = (currentDashboard && currentDashboard.id) || 'snapshot';
-                        a.download = `investor-dashboard-${dashId}.html`;
-                        a.href = url;
-                        a.click();
-                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        const fileName = `investor-dashboard-${sanitizeExportFileName(dashId)}.html`;
+                        await exportBlobForCurrentPlatform(blob, fileName);
                     } catch (err) {
+                        if (err && err.name === 'AbortError') {
+                            return;
+                        }
                         console.error('Export failed', err);
-                        alert('Could not export a snapshot. Please try again.');
+                        alert('Could not export a snapshot on this device. Please try again.');
                     }
                 }
