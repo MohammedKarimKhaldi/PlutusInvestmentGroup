@@ -79,6 +79,18 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
   - The workflow uploads the installer and `latest.yml` to the GitHub Release
 - Installed Windows apps will detect the new release and prompt the user to restart after the update downloads.
 
+## Mac App Store
+
+- Mac App Store builds use Electron Builder's `mas` target with sandbox entitlements in `electron/entitlements.mas.plist`.
+- Build a Mac App Store package locally with `npm run dist:mas:arm64` or `npm run dist:mas:x64`.
+- Use `npm run dist:mas:dev:arm64` or `npm run dist:mas:dev:x64` for development-signed MAS test builds.
+- MAS builds keep writable app data inside the app sandbox even if `team-store-path.json` sets a custom `storeDir`.
+- Apple-side setup is still required:
+  - Create the macOS app record in App Store Connect
+  - Enable App Sandbox for the app ID and provisioning profile
+  - Sign with Mac App Store-compatible certificates/profiles
+  - Upload the resulting MAS artifact with Transporter or Xcode Organizer
+
 ## Documentation
 
 - Read the Docs / MkDocs source lives in `docs/`

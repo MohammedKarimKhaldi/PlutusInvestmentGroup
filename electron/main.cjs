@@ -28,6 +28,10 @@ let cachedSharedriveConfig = null;
 let sharedriveConfigLoaded = false;
 let updateCheckStarted = false;
 
+function isMacAppStoreBuild() {
+  return process.mas === true;
+}
+
 function getBundledAppCandidates(...segments) {
   return [
     path.join(webBuildDir, ...segments),
@@ -62,19 +66,28 @@ function loadSharedriveConfig() {
 }
 
 function getStoreDir() {
+  const defaultStoreDir = path.join(app.getPath("userData"), "runtime-store");
+
   for (const teamConfigPath of getBundledDataCandidates(dataFiles.teamStorePath)) {
     if (!fs.existsSync(teamConfigPath)) continue;
     try {
       const cfg = JSON.parse(fs.readFileSync(teamConfigPath, "utf8"));
       const customDir = cfg && typeof cfg.storeDir === "string" ? cfg.storeDir.trim() : "";
-      if (customDir) return path.resolve(customDir);
+      if (!customDir) continue;
+
+      if (isMacAppStoreBuild()) {
+        console.log("[Store] Ignoring custom storeDir in Mac App Store builds to stay inside the app sandbox.");
+        return defaultStoreDir;
+      }
+
+      return path.resolve(customDir);
     } catch {
       // Ignore invalid team config and continue to the next candidate.
     }
   }
 
   // Default: OS-level app data directory.
-  return path.join(app.getPath("userData"), "runtime-store");
+  return defaultStoreDir;
 }
 
 function getEditableDataDir() {
