@@ -11,7 +11,9 @@ cd "${REPO_ROOT}"
 
 ensure_node_runtime() {
   local brew_bin=""
-  local node_formula="${XCLOUD_NODE_FORMULA:-node@20}"
+  local required_node_major="${XCLOUD_NODE_MAJOR:-22}"
+  local node_formula="${XCLOUD_NODE_FORMULA:-node@${required_node_major}}"
+  local current_node_major=""
 
   export PATH="/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin:/usr/local/opt/node/bin:/opt/homebrew/opt/${node_formula}/bin:/usr/local/opt/${node_formula}/bin:${PATH}"
 
@@ -23,8 +25,14 @@ ensure_node_runtime() {
   done
 
   if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-    echo "Using Node $(node -v) and npm $(npm -v)"
-    return
+    current_node_major="$(node -p 'process.versions.node.split(".")[0]')"
+
+    if [ "${current_node_major}" -ge "${required_node_major}" ]; then
+      echo "Using Node $(node -v) and npm $(npm -v)"
+      return
+    fi
+
+    echo "Node $(node -v) is too old; need Node >=${required_node_major}."
   fi
 
   if command -v brew >/dev/null 2>&1; then
@@ -45,6 +53,12 @@ ensure_node_runtime() {
 
   if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
     echo "Node.js/npm are unavailable after bootstrap."
+    exit 1
+  fi
+
+  current_node_major="$(node -p 'process.versions.node.split(".")[0]')"
+  if [ "${current_node_major}" -lt "${required_node_major}" ]; then
+    echo "Node $(node -v) is still too old after bootstrap; need Node >=${required_node_major}."
     exit 1
   fi
 
