@@ -79,10 +79,34 @@ install_dependencies() {
   npm install --no-package-lock
 }
 
+ensure_cocoapods() {
+  if command -v pod >/dev/null 2>&1; then
+    echo "Using CocoaPods $(pod --version)"
+    return
+  fi
+
+  if command -v brew >/dev/null 2>&1; then
+    echo "CocoaPods is not on PATH, installing cocoapods with Homebrew."
+    export HOMEBREW_NO_AUTO_UPDATE=1
+    export HOMEBREW_NO_INSTALL_CLEANUP=1
+    brew install cocoapods
+    export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}"
+  fi
+
+  if ! command -v pod >/dev/null 2>&1; then
+    echo "CocoaPods is unavailable after bootstrap."
+    exit 1
+  fi
+
+  echo "Using CocoaPods $(pod --version)"
+}
+
 if [ ! -d "node_modules/@capacitor/filesystem" ] || [ ! -d "node_modules/@capacitor/share" ]; then
   echo "Capacitor plugin packages missing, reinstalling dependencies."
   install_dependencies
 fi
+
+ensure_cocoapods
 
 echo "== Xcode Cloud: refreshing Capacitor iOS sync before xcodebuild =="
 npm run ios:sync
