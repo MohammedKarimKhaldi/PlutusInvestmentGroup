@@ -15,7 +15,7 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 install_dependencies() {
-  if [ -f package-lock.json ]; then
+  if [ -f package-lock.json ] && git ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
     if npm ci; then
       return
     fi
