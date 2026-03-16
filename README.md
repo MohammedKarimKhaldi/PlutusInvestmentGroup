@@ -85,6 +85,13 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
 - Build a Mac App Store package locally with `npm run dist:mas:arm64` or `npm run dist:mas:x64`.
 - Use `npm run dist:mas:dev:arm64` or `npm run dist:mas:dev:x64` for development-signed MAS test builds.
 - MAS builds keep writable app data inside the app sandbox even if `team-store-path.json` sets a custom `storeDir`.
+- GitHub Actions workflow: `.github/workflows/mac-app-store-release.yml`
+- Required GitHub secrets for the MAS workflow:
+  - `APPLE_MAS_APP_CERT_BASE64`
+  - `APPLE_MAS_APP_CERT_PASSWORD`
+  - `APPLE_MAS_INSTALLER_CERT_BASE64`
+  - `APPLE_MAS_INSTALLER_CERT_PASSWORD`
+  - `APPLE_MAS_PROVISIONING_PROFILE_BASE64`
 - Apple-side setup is still required:
   - Create the macOS app record in App Store Connect
   - Enable App Sandbox for the app ID and provisioning profile
