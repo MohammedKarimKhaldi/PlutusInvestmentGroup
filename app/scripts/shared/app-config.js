@@ -19,6 +19,11 @@
       file: "accounting.html",
       label: "Accounting",
       showInNav: true,
+      allowedEmails: [
+        "fl@plutus-investment.com",
+        "mj@plutus-investment.com",
+        "mk@plutus-investment.com"
+      ],
     },
     "tasks-management": {
       file: "tasks-management.html",

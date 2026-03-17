@@ -1,6 +1,7 @@
     const AppCore = window.AppCore;
     const DEALS_STORAGE_KEY = (AppCore && AppCore.STORAGE_KEYS && AppCore.STORAGE_KEYS.deals) || "deals_data_v1";
     let dealsData = [];
+    let accountingAccessState = { restricted: false, allowed: true };
 
     const STAGE_LABELS = {
       "prospect": "Prospect",
@@ -235,14 +236,31 @@
       return config.dashboards.find((dashboard) => normalizeValue(dashboard.id) === dashboardId) || null;
     }
 
+    async function refreshAccountingAccessState() {
+      if (!AppCore || typeof AppCore.getPageAccessStatus !== "function") {
+        accountingAccessState = { restricted: false, allowed: true };
+        return accountingAccessState;
+      }
+
+      try {
+        accountingAccessState = await AppCore.getPageAccessStatus("accounting");
+      } catch {
+        accountingAccessState = { restricted: false, allowed: true };
+      }
+      return accountingAccessState;
+    }
+
     function renderDealActions(deal) {
       const detailHref = buildPageUrl("deal-details", { id: deal.id });
       const accountingHref = buildPageUrl("accounting", { id: deal.id });
       const dashboard = getDealDashboard(deal);
       const links = [
         `<a class="action-link" href="${detailHref}">View deal</a>`,
-        `<a class="action-link" href="${accountingHref}">Accounting</a>`,
       ];
+
+      if (!accountingAccessState.restricted || accountingAccessState.allowed) {
+        links.push(`<a class="action-link" href="${accountingHref}">Accounting</a>`);
+      }
 
       if (dashboard && dashboard.id) {
         const dashboardHref = buildPageUrl("investor-dashboard", { dashboard: dashboard.id });
@@ -331,6 +349,7 @@
         if (AppCore && typeof AppCore.refreshDashboardConfigFromShareDrive === "function") {
           await AppCore.refreshDashboardConfigFromShareDrive();
         }
+        await refreshAccountingAccessState();
         loadDealsData();
         setupAddDealForm();
         renderDeals();
@@ -338,5 +357,9 @@
       initialize();
       if (AppCore) {
         window.addEventListener("appcore:dashboard-config-updated", renderDeals);
+        window.addEventListener("appcore:graph-session-updated", async () => {
+          await refreshAccountingAccessState();
+          renderDeals();
+        });
       }
     });

@@ -20,6 +20,7 @@
 
                 let dashboardsConfig = getMergedDashboardsConfig();
                 let currentDashboard = null;
+                let dashboardFormMode = 'edit';
 
                 // Proxy fallback chain loaded from external config if available
                 const PROXIES = window.DASHBOARD_PROXIES || [];
@@ -106,6 +107,8 @@
                     const dashboardSwitcher = document.getElementById('dashboard-switcher');
                     const searchInput = document.getElementById('search');
                     const dashboardForm = document.getElementById('dashboard-form');
+                    const editCurrentBtn = document.getElementById('btn-edit-current-dashboard');
+                    const resetDashboardFormBtn = document.getElementById('btn-reset-dashboard-form');
 
                     if (openLocalBtn && fileInput) {
                         openLocalBtn.addEventListener('click', () => fileInput.click());
@@ -125,6 +128,19 @@
                     if (dashboardForm) {
                         dashboardForm.addEventListener('submit', onAddDashboard);
                     }
+                    if (editCurrentBtn) {
+                        editCurrentBtn.addEventListener('click', () => {
+                            if (!currentDashboard) return;
+                            populateDashboardForm(currentDashboard);
+                            openDashboardSettingsPanel();
+                        });
+                    }
+                    if (resetDashboardFormBtn) {
+                        resetDashboardFormBtn.addEventListener('click', () => {
+                            resetDashboardFormForCreate();
+                            openDashboardSettingsPanel();
+                        });
+                    }
                     const exportBtn = document.getElementById('btn-export-html');
                     if (exportBtn) {
                         exportBtn.addEventListener('click', exportStandaloneHtml);
@@ -143,6 +159,159 @@
                             if (filter) toggleFilter(filter);
                         });
                     });
+
+                    window.addEventListener('appcore:dashboard-config-updated', () => {
+                        dashboardsConfig = getMergedDashboardsConfig();
+                        syncCurrentDashboardReference();
+                        refreshDashboardSwitcher();
+                        if (currentDashboard) {
+                            applyDashboardPageChrome(currentDashboard);
+                            if (dashboardFormMode !== 'create') {
+                                populateDashboardForm(currentDashboard);
+                            }
+                        }
+                    });
+                }
+
+                function openDashboardSettingsPanel() {
+                    const panel = document.getElementById('add-dashboard-panel');
+                    if (!panel) return;
+                    panel.open = true;
+                    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+
+                function getDashboardFormElements() {
+                    return {
+                        panel: document.getElementById('add-dashboard-panel'),
+                        modeEl: document.getElementById('dashboard-form-mode'),
+                        helpEl: document.getElementById('dashboard-form-help'),
+                        submitBtn: document.getElementById('btn-submit-dashboard-form'),
+                        resetBtn: document.getElementById('btn-reset-dashboard-form'),
+                        idInput: document.getElementById('dashboard-id'),
+                        nameInput: document.getElementById('dashboard-name'),
+                        descInput: document.getElementById('dashboard-description'),
+                        urlInput: document.getElementById('dashboard-excel-url'),
+                        fundsInput: document.getElementById('dashboard-sheet-funds'),
+                        foInput: document.getElementById('dashboard-sheet-fo'),
+                        figInput: document.getElementById('dashboard-sheet-figures'),
+                        makeDefaultInput: document.getElementById('dashboard-make-default'),
+                    };
+                }
+
+                function applyDashboardPageChrome(dashboard) {
+                    const settings = (dashboardsConfig && dashboardsConfig.settings) || {};
+                    const pageTitle = settings.title || dashboard.name || 'Dashboard';
+                    document.title = pageTitle;
+
+                    const titleEl = document.getElementById('dashboard-title');
+                    const subtitleEl = document.getElementById('dashboard-subtitle');
+                    if (titleEl) titleEl.textContent = dashboard.name || pageTitle;
+                    if (subtitleEl) subtitleEl.textContent = dashboard.description || 'Live Dashboard';
+                }
+
+                function refreshDashboardSwitcher() {
+                    const switcher = document.getElementById('dashboard-switcher');
+                    const dashboards = (dashboardsConfig && dashboardsConfig.dashboards) || [];
+                    if (!switcher) return;
+
+                    switcher.innerHTML = '';
+                    dashboards.forEach(d => {
+                        const opt = document.createElement('option');
+                        opt.value = d.id;
+                        opt.textContent = d.name || d.id;
+                        if (currentDashboard && d.id === currentDashboard.id) opt.selected = true;
+                        switcher.appendChild(opt);
+                    });
+                }
+
+                function syncCurrentDashboardReference() {
+                    if (!currentDashboard || !dashboardsConfig || !Array.isArray(dashboardsConfig.dashboards)) return;
+                    const next = dashboardsConfig.dashboards.find(
+                        (dashboard) => normalizeDashboardId(dashboard.id) === normalizeDashboardId(currentDashboard.id),
+                    );
+                    if (next) currentDashboard = next;
+                }
+
+                function setDashboardFormMode(mode, dashboard) {
+                    dashboardFormMode = mode === 'create' ? 'create' : 'edit';
+                    const {
+                        modeEl,
+                        helpEl,
+                        submitBtn,
+                        resetBtn,
+                        idInput,
+                    } = getDashboardFormElements();
+
+                    if (dashboardFormMode === 'create') {
+                        if (modeEl) modeEl.textContent = 'Create a new dashboard profile with its Excel link and source sheet names.';
+                        if (helpEl) helpEl.textContent = 'This saves the dashboard profile in the app and syncs it to ShareDrive when shared config is available.';
+                        if (submitBtn) submitBtn.textContent = 'Create dashboard';
+                        if (resetBtn) resetBtn.textContent = 'Clear form';
+                        if (idInput) idInput.readOnly = false;
+                        return;
+                    }
+
+                    if (modeEl) modeEl.textContent = `Editing ${dashboard && (dashboard.name || dashboard.id) ? (dashboard.name || dashboard.id) : 'selected dashboard'}. Update the Excel link or sheet names below.`;
+                    if (helpEl) helpEl.textContent = 'This saves the dashboard profile in the app and syncs it to ShareDrive when shared config is available. In edit mode the dashboard ID stays locked so linked deals keep working.';
+                    if (submitBtn) submitBtn.textContent = 'Save dashboard changes';
+                    if (resetBtn) resetBtn.textContent = 'New dashboard';
+                    if (idInput) idInput.readOnly = true;
+                }
+
+                function resetDashboardFormForCreate() {
+                    const {
+                        idInput,
+                        nameInput,
+                        descInput,
+                        urlInput,
+                        fundsInput,
+                        foInput,
+                        figInput,
+                        makeDefaultInput,
+                    } = getDashboardFormElements();
+
+                    if (idInput) idInput.value = '';
+                    if (nameInput) nameInput.value = '';
+                    if (descInput) descInput.value = '';
+                    if (urlInput) urlInput.value = '';
+                    if (fundsInput) fundsInput.value = DEFAULT_SHEET_NAMES.funds;
+                    if (foInput) foInput.value = DEFAULT_SHEET_NAMES.familyOffices;
+                    if (figInput) figInput.value = DEFAULT_SHEET_NAMES.figures;
+                    if (makeDefaultInput) makeDefaultInput.checked = false;
+                    setDashboardFormStatus('', false);
+                    setDashboardFormMode('create');
+                }
+
+                function populateDashboardForm(dashboard) {
+                    if (!dashboard) {
+                        resetDashboardFormForCreate();
+                        return;
+                    }
+
+                    const {
+                        idInput,
+                        nameInput,
+                        descInput,
+                        urlInput,
+                        fundsInput,
+                        foInput,
+                        figInput,
+                        makeDefaultInput,
+                    } = getDashboardFormElements();
+
+                    if (idInput) idInput.value = String(dashboard.id || '').trim();
+                    if (nameInput) nameInput.value = String(dashboard.name || '').trim();
+                    if (descInput) descInput.value = String(dashboard.description || '').trim();
+                    if (urlInput) urlInput.value = String(dashboard.excelUrl || '').trim();
+                    if (fundsInput) fundsInput.value = String(dashboard.sheets && dashboard.sheets.funds || '').trim() || DEFAULT_SHEET_NAMES.funds;
+                    if (foInput) foInput.value = String(dashboard.sheets && dashboard.sheets.familyOffices || '').trim() || DEFAULT_SHEET_NAMES.familyOffices;
+                    if (figInput) figInput.value = String(dashboard.sheets && dashboard.sheets.figures || '').trim() || DEFAULT_SHEET_NAMES.figures;
+                    if (makeDefaultInput) {
+                        const settings = (dashboardsConfig && dashboardsConfig.settings) || {};
+                        makeDefaultInput.checked = normalizeDashboardId(settings.defaultDashboard) === normalizeDashboardId(dashboard.id);
+                    }
+                    setDashboardFormStatus('', false);
+                    setDashboardFormMode('edit', dashboard);
                 }
 
                 async function initializeDashboard() {
@@ -170,28 +339,13 @@
                         if (!currentDashboard) {
                             throw new Error('No dashboard configuration found');
                         }
+                        refreshDashboardSwitcher();
+                        applyDashboardPageChrome(currentDashboard);
+                        populateDashboardForm(currentDashboard);
 
-                        // Populate dropdown
-                        const switcher = document.getElementById('dashboard-switcher');
-                        if (switcher) {
-                            switcher.innerHTML = '';
-                            dashboards.forEach(d => {
-                                const opt = document.createElement('option');
-                                opt.value = d.id;
-                                opt.textContent = d.name || d.id;
-                                if (d.id === currentDashboard.id) opt.selected = true;
-                                switcher.appendChild(opt);
-                            });
+                        if (String(params.get('edit') || '').trim() === '1') {
+                            openDashboardSettingsPanel();
                         }
-
-                        // Update page chrome from config
-                        const pageTitle = settings.title || currentDashboard.name || 'Dashboard';
-                        document.title = pageTitle;
-
-                        const titleEl = document.getElementById('dashboard-title');
-                        const subtitleEl = document.getElementById('dashboard-subtitle');
-                        if (titleEl) titleEl.textContent = currentDashboard.name || pageTitle;
-                        if (subtitleEl) subtitleEl.textContent = currentDashboard.description || 'Live Dashboard';
 
                         // Start sync for selected dashboard
                         console.log('[Dashboard] Starting initial sync for', currentDashboard.id, 'with URL:', currentDashboard.excelUrl);
@@ -214,15 +368,10 @@
 
                     console.log('[Dashboard] Switched dashboard via dropdown to:', currentDashboard.id, currentDashboard);
 
-                    // Update header text immediately for responsiveness
-                    const settings = (dashboardsConfig && dashboardsConfig.settings) || {};
-                    const pageTitle = settings.title || currentDashboard.name || 'Dashboard';
-                    document.title = pageTitle;
-
-                    const titleEl = document.getElementById('dashboard-title');
-                    const subtitleEl = document.getElementById('dashboard-subtitle');
-                    if (titleEl) titleEl.textContent = currentDashboard.name || pageTitle;
-                    if (subtitleEl) subtitleEl.textContent = currentDashboard.description || 'Live Dashboard';
+                    applyDashboardPageChrome(currentDashboard);
+                    if (dashboardFormMode !== 'create') {
+                        populateDashboardForm(currentDashboard);
+                    }
 
                     // Show loader while switching datasets
                     document.getElementById('dashboard').style.display = 'none';
@@ -334,6 +483,9 @@
                             Boolean(makeDefaultInput && makeDefaultInput.checked),
                         );
                         dashboardsConfig = updatedConfig;
+                        currentDashboard = (updatedConfig && Array.isArray(updatedConfig.dashboards))
+                            ? (updatedConfig.dashboards.find(d => normalizeDashboardId(d.id) === dashboardId) || currentDashboard)
+                            : currentDashboard;
 
                         setDashboardFormStatus(
                             existing ? "Dashboard updated. Reloading..." : "Dashboard created. Reloading...",

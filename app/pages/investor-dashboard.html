@@ -68,6 +68,9 @@
                         <select id="dashboard-switcher" class="dashboard-select">
                             <!-- Populated by JS -->
                         </select>
+                        <button class="btn" id="btn-edit-current-dashboard" type="button">
+                            Edit selected dashboard
+                        </button>
                         <div class="status-badge">
                             <div class="status-dot"></div>
                             <span id="sync-type">Cloud Sync Active</span>
@@ -76,8 +79,9 @@
                 </header>
 
                 <details class="toolbar add-task-panel" id="add-dashboard-panel">
-                    <summary class="add-task-summary">+ Add dashboard</summary>
+                    <summary class="add-task-summary">Dashboard settings</summary>
                     <form id="dashboard-form">
+                        <div id="dashboard-form-mode" class="hint" style="margin-bottom:12px;">Select a dashboard to edit its link and sheet names, or clear the form to create a new one.</div>
                         <div class="toolbar-row">
                             <label>
                                 Dashboard ID
@@ -115,10 +119,11 @@
                                 <input id="dashboard-make-default" type="checkbox" />
                                 <span>Make default</span>
                             </label>
-                            <button class="btn btn-primary" type="submit">Create dashboard</button>
+                            <button class="btn" id="btn-reset-dashboard-form" type="button">New dashboard</button>
+                            <button class="btn btn-primary" id="btn-submit-dashboard-form" type="submit">Save dashboard changes</button>
                         </div>
                         <div id="dashboard-form-status" class="hint"></div>
-                        <p class="hint">This saves the dashboard profile in the app and syncs it to ShareDrive when shared config is available.</p>
+                        <p class="hint" id="dashboard-form-help">This saves the dashboard profile in the app and syncs it to ShareDrive when shared config is available. In edit mode the dashboard ID stays locked so linked deals keep working.</p>
                     </form>
                 </details>
 

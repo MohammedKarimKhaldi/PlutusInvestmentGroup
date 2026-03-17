@@ -6,6 +6,11 @@ const dirtyDealIds = new Set();
 let currentSearch = "";
 let selectedDealReference = "";
 let singleDealMode = false;
+let hideNoRetainerCompanies = false;
+let groupByIncomingPayments = false;
+const DEFAULT_CURRENCY = "GBP";
+const COMMON_CURRENCIES = ["GBP", "USD", "EUR", "AED", "CHF"];
+const PAYMENT_INTERVAL_OPTIONS = [1, 2, 3, 6, 12];
 const INVOICE_SHAREDRIVE_URL_STORAGE_KEY = "invoice_sharedrive_url_v1";
 const invoicePickerState = {
   shareUrl: "",
@@ -78,11 +83,149 @@ function saveDealsData() {
   return Promise.resolve();
 }
 
+function getConfiguredAccountingAllowedEmails() {
+  const page =
+    window.PlutusAppConfig &&
+    typeof window.PlutusAppConfig.getPage === "function"
+      ? window.PlutusAppConfig.getPage("accounting")
+      : null;
+  return Array.isArray(page && page.allowedEmails)
+    ? page.allowedEmails.map((entry) => normalizeValue(entry)).filter(Boolean)
+    : [];
+}
+
+function renderAccountingAccessDenied(accessStatus) {
+  const mainColumn = document.querySelector(".main-column");
+  if (!mainColumn) return;
+
+  const allowedEmails = (accessStatus && Array.isArray(accessStatus.allowedEmails) && accessStatus.allowedEmails.length)
+    ? accessStatus.allowedEmails
+    : getConfiguredAccountingAllowedEmails();
+  const connectedPerson = accessStatus && accessStatus.person ? accessStatus.person : null;
+  const connectedLabel = connectedPerson && connectedPerson.email
+    ? `${connectedPerson.alias || connectedPerson.email} (${connectedPerson.email})`
+    : "No permitted Microsoft account connected";
+
+  mainColumn.innerHTML = `
+    <div class="header">
+      <div class="title-block">
+        <h1>Accounting Access Restricted</h1>
+        <p>This page is only available to approved Plutus finance users.</p>
+      </div>
+    </div>
+    <div class="toolbar">
+      <div class="toolbar-row"><strong>Signed in as:</strong> <span>${escapeHtml(connectedLabel)}</span></div>
+      <div class="toolbar-row"><strong>Allowed emails:</strong> <span>${escapeHtml(allowedEmails.join(", "))}</span></div>
+      <div class="toolbar-row">
+        <a class="btn" href="${buildPageUrl("deals-overview")}">Back to deals</a>
+        <a class="btn btn-primary" href="${buildPageUrl("sharedrive-folders")}">Switch Microsoft account</a>
+      </div>
+    </div>
+  `;
+}
+
+async function ensureAccountingAccess() {
+  const allowedEmails = getConfiguredAccountingAllowedEmails();
+  if (!allowedEmails.length) return true;
+
+  let accessStatus = null;
+  if (AppCore && typeof AppCore.getPageAccessStatus === "function") {
+    try {
+      accessStatus = await AppCore.getPageAccessStatus("accounting");
+    } catch {
+      accessStatus = null;
+    }
+  }
+
+  if (!accessStatus && AppCore && typeof AppCore.getCurrentConnectedPerson === "function") {
+    try {
+      const person = await AppCore.getCurrentConnectedPerson();
+      const email = normalizeValue(person && person.email);
+      accessStatus = {
+        restricted: true,
+        allowed: Boolean(email && allowedEmails.includes(email)),
+        allowedEmails,
+        person,
+      };
+    } catch {
+      accessStatus = null;
+    }
+  }
+
+  if (accessStatus && accessStatus.allowed) {
+    return true;
+  }
+
+  renderAccountingAccessDenied(accessStatus || {
+    restricted: true,
+    allowed: false,
+    allowedEmails,
+    person: null,
+  });
+  return false;
+}
+
+function normalizeCurrencyCode(value, fallback = DEFAULT_CURRENCY) {
+  const raw = String(value || "").trim().toUpperCase();
+  const cleaned = raw.replace(/[^A-Z]/g, "").slice(0, 3);
+  return cleaned || fallback;
+}
+
+function getDealCurrency(deal) {
+  if (!deal || typeof deal !== "object") return DEFAULT_CURRENCY;
+  return normalizeCurrencyCode(deal.currency, DEFAULT_CURRENCY);
+}
+
+function buildCurrencyOptionsHtml(selectedCurrency) {
+  const selected = normalizeCurrencyCode(selectedCurrency, DEFAULT_CURRENCY);
+  const values = COMMON_CURRENCIES.includes(selected)
+    ? COMMON_CURRENCIES.slice()
+    : COMMON_CURRENCIES.concat(selected);
+  return values
+    .map((currency) => `<option value="${currency}"${currency === selected ? " selected" : ""}>${currency}</option>`)
+    .join("");
+}
+
 function getRetainerMonthly(deal) {
   if (!deal || typeof deal !== "object") return "";
   if (deal.retainerMonthly != null && String(deal.retainerMonthly).trim()) return String(deal.retainerMonthly).trim();
   if (deal.Retainer != null && String(deal.Retainer).trim()) return String(deal.Retainer).trim();
   return "";
+}
+
+function normalizePaymentIntervalMonths(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.min(12, Math.max(1, Math.round(parsed)));
+}
+
+function getPaymentIntervalMonths(deal) {
+  if (!deal || typeof deal !== "object") return 1;
+  return normalizePaymentIntervalMonths(deal.retainerIntervalMonths || deal.paymentIntervalMonths || 1);
+}
+
+function buildPaymentIntervalOptionsHtml(selectedValue) {
+  const selected = normalizePaymentIntervalMonths(selectedValue);
+  return PAYMENT_INTERVAL_OPTIONS
+    .map((value) => {
+      const label =
+        value === 1 ? "Monthly" :
+          value === 3 ? "Quarterly" :
+            value === 6 ? "Every 6 months" :
+              value === 12 ? "Yearly" :
+                `Every ${value} months`;
+      return `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`;
+    })
+    .join("");
+}
+
+function getRetainerNextPaymentDate(deal) {
+  if (!deal || typeof deal !== "object") return "";
+  return normalizeDateInput(deal.retainerNextPaymentDate || deal.nextPaymentDate || "");
+}
+
+function hasPositiveRetainer(deal) {
+  return parseAmount(getRetainerMonthly(deal)) > 0;
 }
 
 function getPaymentDay(deal) {
@@ -107,8 +250,14 @@ function formatDayOrdinal(value) {
 }
 
 function computeNextExpectedDate(dayValue) {
+  const nextDate = computeNextExpectedDateObject(dayValue);
+  if (!nextDate) return "Not set";
+  return nextDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function computeNextExpectedDateObject(dayValue) {
   const day = Number(dayValue);
-  if (!Number.isFinite(day) || day < 1 || day > 31) return "Not set";
+  if (!Number.isFinite(day) || day < 1 || day > 31) return null;
 
   const now = new Date();
   const year = now.getFullYear();
@@ -118,12 +267,55 @@ function computeNextExpectedDate(dayValue) {
   const monthDays = new Date(year, month + 1, 0).getDate();
   const targetDayThisMonth = Math.min(day, monthDays);
   if (targetDayThisMonth >= today) {
-    return new Date(year, month, targetDayThisMonth).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    return new Date(year, month, targetDayThisMonth);
   }
 
   const nextMonthDays = new Date(year, month + 2, 0).getDate();
   const targetDayNextMonth = Math.min(day, nextMonthDays);
-  return new Date(year, month + 1, targetDayNextMonth).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(year, month + 1, targetDayNextMonth);
+}
+
+function addMonths(date, monthCount) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
+  const target = new Date(year, month + monthCount, 1);
+  const monthDays = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(day, monthDays));
+  return target;
+}
+
+function getNextScheduledPaymentDateObject(deal) {
+  const intervalMonths = getPaymentIntervalMonths(deal);
+  const explicitNextDate = getRetainerNextPaymentDate(deal);
+
+  if (explicitNextDate) {
+    const explicitDate = new Date(explicitNextDate);
+    if (!Number.isNaN(explicitDate.getTime())) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      let nextDate = new Date(explicitDate.getFullYear(), explicitDate.getMonth(), explicitDate.getDate());
+      while (nextDate < today) {
+        const advanced = addMonths(nextDate, intervalMonths);
+        if (!advanced) break;
+        nextDate = advanced;
+      }
+      return nextDate;
+    }
+  }
+
+  if (intervalMonths > 1) {
+    return null;
+  }
+
+  return computeNextExpectedDateObject(getPaymentDay(deal));
+}
+
+function formatScheduledPaymentDate(deal) {
+  const nextDate = getNextScheduledPaymentDateObject(deal);
+  if (!nextDate) return "Set next date";
+  return nextDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function markDirty(dealId, isDirty) {
@@ -172,19 +364,289 @@ function updateMetaRow(filteredDeals) {
   }
 
   const withRetainer = allDeals.filter((deal) => getRetainerMonthly(deal)).length;
-  const withDay = allDeals.filter((deal) => getPaymentDay(deal)).length;
+  const withSchedule = allDeals.filter((deal) => Boolean(getNextScheduledPaymentDateObject(deal))).length;
   const invoiceStats = getInvoiceSummaryStats(allDeals);
 
   row.innerHTML = [
     `<div class="chip"><strong>${allDeals.length}</strong> deals shown</div>`,
     `<div class="chip"><strong>${withRetainer}</strong> with retainer</div>`,
-    `<div class="chip"><strong>${withDay}</strong> with payment day</div>`,
+    `<div class="chip"><strong>${withSchedule}</strong> with schedule</div>`,
     `<div class="chip"><strong>${invoiceStats.totalInvoices}</strong> invoices linked</div>`,
     `<div class="chip"><strong>${invoiceStats.outstanding}</strong> awaiting payment</div>`,
     `<div class="chip"><strong>${invoiceStats.overdue}</strong> overdue</div>`,
     `<div class="chip"><strong>${invoiceStats.paid}</strong> paid</div>`,
     `<div class="chip"><strong>${dirtyDealIds.size}</strong> unsaved changes</div>`,
   ].join("");
+}
+
+function updateViewControls() {
+  const noRetainerBtn = document.getElementById("btn-toggle-no-retainer");
+  const groupBtn = document.getElementById("btn-toggle-group-payments");
+  const hintEl = document.getElementById("accounting-view-hint");
+
+  if (noRetainerBtn) {
+    noRetainerBtn.textContent = hideNoRetainerCompanies ? "Show 0 / no retainer" : "Hide 0 / no retainer";
+    noRetainerBtn.classList.toggle("is-active", hideNoRetainerCompanies);
+  }
+
+  if (groupBtn) {
+    groupBtn.textContent = groupByIncomingPayments ? "Ungroup incoming payments" : "Group by incoming payments";
+    groupBtn.classList.toggle("is-active", groupByIncomingPayments);
+  }
+
+  if (hintEl) {
+    const parts = [];
+    parts.push(hideNoRetainerCompanies ? "Zero/no-retainer companies hidden." : "Showing all companies.");
+    parts.push(groupByIncomingPayments ? "Grouped by next incoming payment date." : "Standard company order.");
+    hintEl.textContent = parts.join(" ");
+  }
+}
+
+function addCurrencyAmount(totals, currency, amount) {
+  const key = normalizeCurrencyCode(currency, DEFAULT_CURRENCY);
+  const numericAmount = Number(amount);
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) return totals;
+  totals[key] = (totals[key] || 0) + numericAmount;
+  return totals;
+}
+
+function multiplyCurrencyTotals(totals, factor) {
+  return Object.entries(totals || {}).reduce((accumulator, [currency, amount]) => {
+    addCurrencyAmount(accumulator, currency, Number(amount) * factor);
+    return accumulator;
+  }, {});
+}
+
+function formatCurrencyTotalsHtml(totals, emptyLabel) {
+  const entries = Object.entries(totals || {})
+    .filter(([, amount]) => Number(amount) > 0)
+    .sort(([left], [right]) => left.localeCompare(right));
+
+  if (!entries.length) {
+    return `<div class="analytics-empty">${escapeHtml(emptyLabel || "No values available.")}</div>`;
+  }
+
+  return `
+    <div class="analytics-lines">
+      ${entries.map(([currency, amount]) => `
+        <div class="analytics-line">
+          <span>${escapeHtml(currency)}</span>
+          <strong>${escapeHtml(formatCurrencyAmount(amount, currency, true))}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function hasCurrencyTotals(totals) {
+  return Object.values(totals || {}).some((amount) => Number(amount) > 0);
+}
+
+function getRetainerAmount(deal) {
+  return parseAmount(getRetainerMonthly(deal));
+}
+
+function getRetainerDeals(deals) {
+  return (Array.isArray(deals) ? deals : []).filter((deal) => hasPositiveRetainer(deal));
+}
+
+function buildRetainerTotalsByCurrency(deals) {
+  return getRetainerDeals(deals).reduce((totals, deal) => {
+    addCurrencyAmount(
+      totals,
+      getDealCurrency(deal),
+      getRetainerAmount(deal) / getPaymentIntervalMonths(deal),
+    );
+    return totals;
+  }, {});
+}
+
+function buildProjectionMonth(deals, monthOffset) {
+  const anchor = new Date();
+  const monthDate = new Date(anchor.getFullYear(), anchor.getMonth() + monthOffset, 1);
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const totals = {};
+  let scheduledCount = 0;
+
+  getRetainerDeals(deals).forEach((deal) => {
+    const scheduledDate = getNextScheduledPaymentDateObject(deal);
+    if (!scheduledDate || Number.isNaN(scheduledDate.getTime())) return;
+    if (scheduledDate.getFullYear() !== year || scheduledDate.getMonth() !== month) return;
+    scheduledCount += 1;
+    addCurrencyAmount(totals, getDealCurrency(deal), getRetainerAmount(deal));
+  });
+
+  return {
+    label: monthDate.toLocaleDateString("en-GB", { month: "long", year: "numeric" }),
+    totals,
+    scheduledCount,
+  };
+}
+
+function buildPaymentTimingInsights(deals) {
+  const buckets = [
+    { label: "Days 1-7", min: 1, max: 7 },
+    { label: "Days 8-14", min: 8, max: 14 },
+    { label: "Days 15-21", min: 15, max: 21 },
+    { label: "Days 22-31", min: 22, max: 31 },
+  ].map((bucket) => Object.assign({}, bucket, { count: 0, totals: {} }));
+
+  getRetainerDeals(deals).forEach((deal) => {
+    const nextScheduledDate = getNextScheduledPaymentDateObject(deal);
+    const paymentDay = nextScheduledDate ? nextScheduledDate.getDate() : Number.NaN;
+    if (!Number.isFinite(paymentDay)) return;
+    const bucket = buckets.find((entry) => paymentDay >= entry.min && paymentDay <= entry.max);
+    if (!bucket) return;
+    bucket.count += 1;
+    addCurrencyAmount(bucket.totals, getDealCurrency(deal), getRetainerAmount(deal));
+  });
+
+  return buckets;
+}
+
+function buildUnscheduledRetainerInsights(deals) {
+  return getRetainerDeals(deals)
+    .filter((deal) => !getNextScheduledPaymentDateObject(deal))
+    .sort((left, right) => normalizeValue(left.company || left.name).localeCompare(normalizeValue(right.company || right.name)))
+    .slice(0, 5);
+}
+
+function renderAnalytics(deals) {
+  const cardsEl = document.getElementById("accounting-analytics-cards");
+  const projectionEl = document.getElementById("accounting-analytics-projection");
+  const insightsEl = document.getElementById("accounting-analytics-insights");
+  const subtitleEl = document.getElementById("accounting-analytics-subtitle");
+  if (!cardsEl || !projectionEl || !insightsEl || !subtitleEl) return;
+
+  const visibleDeals = Array.isArray(deals) ? deals : [];
+  const retainerDeals = getRetainerDeals(visibleDeals);
+  const scheduledRetainerDeals = retainerDeals.filter((deal) => Boolean(getNextScheduledPaymentDateObject(deal)));
+  const unscheduledRetainerDeals = retainerDeals.filter((deal) => !getNextScheduledPaymentDateObject(deal));
+  const monthlyRecurringTotals = buildRetainerTotalsByCurrency(visibleDeals);
+  const currentMonthProjection = buildProjectionMonth(visibleDeals, 0);
+  const nextMonthProjection = buildProjectionMonth(visibleDeals, 1);
+  const annualizedTotals = multiplyCurrencyTotals(monthlyRecurringTotals, 12);
+  const invoiceStats = getInvoiceSummaryStats(visibleDeals);
+  const paymentTiming = buildPaymentTimingInsights(visibleDeals);
+  const unscheduledList = buildUnscheduledRetainerInsights(visibleDeals);
+  const projectionMonths = [0, 1, 2].map((offset) => buildProjectionMonth(visibleDeals, offset));
+  const projectionCard = projectionEl.parentElement;
+  const insightCard = insightsEl.parentElement;
+
+  subtitleEl.textContent = singleDealMode
+    ? "Recurring cash and invoice analytics for this deal."
+    : "Recurring cash, payment cadence, and incoming payment visibility based on the current accounting view.";
+
+  const analyticsCards = [
+    `
+      <div class="analytics-card">
+        <div class="analytics-card-title">Monthly Recurring Retainers</div>
+        <div class="analytics-value">${retainerDeals.length}</div>
+        <div class="analytics-subvalue">active retainer${retainerDeals.length === 1 ? "" : "s"}</div>
+        ${formatCurrencyTotalsHtml(monthlyRecurringTotals, "No active retainers in this view.")}
+      </div>
+    `,
+  ];
+
+  if (currentMonthProjection.scheduledCount > 0 || hasCurrencyTotals(currentMonthProjection.totals)) {
+    analyticsCards.push(`
+      <div class="analytics-card">
+        <div class="analytics-card-title">Scheduled This Month</div>
+        <div class="analytics-value">${currentMonthProjection.scheduledCount}</div>
+        <div class="analytics-subvalue">incoming payment${currentMonthProjection.scheduledCount === 1 ? "" : "s"} expected in ${escapeHtml(currentMonthProjection.label)}</div>
+        ${formatCurrencyTotalsHtml(currentMonthProjection.totals, "")}
+      </div>
+    `);
+  }
+
+  if (nextMonthProjection.scheduledCount > 0 || hasCurrencyTotals(nextMonthProjection.totals)) {
+    analyticsCards.push(`
+      <div class="analytics-card">
+        <div class="analytics-card-title">Scheduled Next Month</div>
+        <div class="analytics-value">${nextMonthProjection.scheduledCount}</div>
+        <div class="analytics-subvalue">incoming payment${nextMonthProjection.scheduledCount === 1 ? "" : "s"} expected in ${escapeHtml(nextMonthProjection.label)}</div>
+        ${formatCurrencyTotalsHtml(nextMonthProjection.totals, "")}
+      </div>
+    `);
+  }
+
+  analyticsCards.push(`
+      <div class="analytics-card">
+        <div class="analytics-card-title">Annualized Run Rate</div>
+        <div class="analytics-value">${retainerDeals.length}</div>
+        <div class="analytics-subvalue">${unscheduledRetainerDeals.length} retainer${unscheduledRetainerDeals.length === 1 ? "" : "s"} still missing a payment schedule</div>
+        ${formatCurrencyTotalsHtml(annualizedTotals, "No annualized cash run rate available.")}
+      </div>
+  `);
+
+  cardsEl.innerHTML = analyticsCards.join("");
+
+  const visibleProjectionMonths = projectionMonths.filter(
+    (month) => month.scheduledCount > 0 || hasCurrencyTotals(month.totals),
+  );
+
+  if (projectionCard) {
+    projectionCard.hidden = !visibleProjectionMonths.length;
+  }
+
+  projectionEl.innerHTML = visibleProjectionMonths.length
+    ? visibleProjectionMonths.map((month) => `
+        <div class="analytics-projection-item">
+          <div class="analytics-projection-copy">
+            <span>${escapeHtml(month.label)}</span>
+            <small>${month.scheduledCount} scheduled payment${month.scheduledCount === 1 ? "" : "s"}</small>
+          </div>
+          <div>${formatCurrencyTotalsHtml(month.totals, "")}</div>
+        </div>
+      `).join("")
+    : "";
+
+  if (insightCard) {
+    insightCard.hidden = false;
+  }
+
+  const visiblePaymentTiming = paymentTiming.filter(
+    (bucket) => bucket.count > 0 || hasCurrencyTotals(bucket.totals),
+  );
+
+  const paymentTimingHtml = visiblePaymentTiming.length
+    ? visiblePaymentTiming.map((bucket) => `
+        <div class="analytics-insight-item">
+          <div class="analytics-insight-copy">
+            <span>${escapeHtml(bucket.label)}</span>
+            <small>${bucket.count} scheduled retainer${bucket.count === 1 ? "" : "s"}</small>
+          </div>
+          <div>${formatCurrencyTotalsHtml(bucket.totals, "")}</div>
+        </div>
+      `).join("")
+    : '<div class="analytics-empty">Add a payment day or next scheduled date to see timing distribution.</div>';
+
+  const unscheduledHtml = unscheduledList.length
+    ? unscheduledList.map((deal) => `
+        <div class="analytics-insight-item">
+          <div class="analytics-insight-copy">
+            <span>${escapeHtml(String(deal.company || deal.name || "Deal"))}</span>
+            <small>No payment schedule assigned yet</small>
+          </div>
+          <strong>${escapeHtml(formatCurrencyAmount(getRetainerAmount(deal), getDealCurrency(deal), true))}</strong>
+        </div>
+      `).join("")
+    : '<div class="analytics-empty">All active retainers in this view have a payment schedule.</div>';
+
+  insightsEl.innerHTML = `
+    <div class="analytics-card-title">Payment Timing</div>
+    ${paymentTimingHtml}
+    <div class="analytics-card-title" style="margin-top:12px;">Unscheduled Retainers</div>
+    ${unscheduledHtml}
+    <div class="analytics-card-title" style="margin-top:12px;">Invoice Collection</div>
+    <div class="analytics-lines">
+      <div class="analytics-line"><span>Outstanding</span><strong>${invoiceStats.outstanding}</strong></div>
+      <div class="analytics-line"><span>Overdue</span><strong>${invoiceStats.overdue}</strong></div>
+      <div class="analytics-line"><span>Paid</span><strong>${invoiceStats.paid}</strong></div>
+      <div class="analytics-line"><span>Total invoices</span><strong>${invoiceStats.totalInvoices}</strong></div>
+    </div>
+  `;
 }
 
 function getVisibleDeals() {
@@ -195,9 +657,7 @@ function getVisibleDeals() {
 
   const query = normalizeValue(currentSearch);
   const source = Array.isArray(dealsData) ? dealsData.slice() : [];
-  source.sort((a, b) => normalizeValue(a.company || a.name).localeCompare(normalizeValue(b.company || b.name)));
-  if (!query) return source;
-  return source.filter((deal) => {
+  const filtered = source.filter((deal) => {
     const contacts = normalizeDealContacts(deal);
     const haystack = [
       deal && deal.name,
@@ -207,8 +667,15 @@ function getVisibleDeals() {
       deal && deal.juniorOwner,
       ...contacts.map((entry) => `${entry.name} ${entry.title} ${entry.email}`),
     ].map((value) => normalizeValue(value)).join(" ");
-    return haystack.includes(query);
+    return !query || haystack.includes(query);
   });
+
+  const retainersFiltered = hideNoRetainerCompanies
+    ? filtered.filter((deal) => hasPositiveRetainer(deal))
+    : filtered;
+
+  retainersFiltered.sort((a, b) => normalizeValue(a.company || a.name).localeCompare(normalizeValue(b.company || b.name)));
+  return retainersFiltered;
 }
 
 function findDealByReference(reference) {
@@ -235,8 +702,8 @@ function updatePageHeaderForMode() {
   const subtitle = document.querySelector(".title-block p");
   const searchInput = document.getElementById("accounting-search");
   if (!singleDealMode) {
-    if (title) title.textContent = "Retainers & Payment Days";
-    if (subtitle) subtitle.textContent = "Manage monthly retainers and expected payment day for each deal.";
+    if (title) title.textContent = "Retainers & Schedules";
+    if (subtitle) subtitle.textContent = "Manage retainers, payment cadence, and expected payment schedules for each deal.";
     if (searchInput) searchInput.disabled = false;
     return;
   }
@@ -388,7 +855,8 @@ function normalizeInvoiceDraft(deal) {
     invoiceNumber: String(source.invoiceNumber || buildDefaultInvoiceNumber(invoiceDate)).trim(),
     invoiceDate,
     dueDate,
-    description: String(source.description || `Monthly Retainer Plutus - ${currentMonthLabel}`).trim(),
+    description: String(source.description || `Retainer Plutus - ${currentMonthLabel}`).trim(),
+    currency: normalizeCurrencyCode(source.currency || getDealCurrency(deal), getDealCurrency(deal)),
     amount: String(source.amount || formatAmountInput(getRetainerMonthly(deal))).trim(),
   };
 }
@@ -679,10 +1147,21 @@ function parseAmount(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatCurrencyAmount(value, withSymbol) {
+function formatCurrencyAmount(value, currency, withSymbol) {
   const amount = parseAmount(value);
   const formatted = amount.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return withSymbol ? `GBP ${formatted}` : formatted;
+  const code = normalizeCurrencyCode(currency, DEFAULT_CURRENCY);
+  if (!withSymbol) return formatted;
+  try {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${code} ${formatted}`;
+  }
 }
 
 function getInvoiceDraftFieldMap() {
@@ -695,6 +1174,7 @@ function getInvoiceDraftFieldMap() {
     invoiceDate: document.getElementById("invoice-date"),
     dueDate: document.getElementById("invoice-due-date"),
     description: document.getElementById("invoice-description"),
+    currency: document.getElementById("invoice-currency"),
     amount: document.getElementById("invoice-amount"),
   };
 }
@@ -722,6 +1202,9 @@ function renderInvoiceBuilder() {
 
   const draft = ensureInvoiceDraft(deal);
   subtitle.textContent = `Invoice output for ${String(deal.company || deal.name || "this deal")}.`;
+  if (fieldMap.currency) {
+    fieldMap.currency.innerHTML = buildCurrencyOptionsHtml(draft.currency || getDealCurrency(deal));
+  }
   Object.entries(fieldMap).forEach(([key, input]) => {
     if (!input) return;
     input.value = draft && draft[key] != null ? String(draft[key]) : "";
@@ -740,9 +1223,10 @@ function buildInvoiceViewModel(deal) {
     invoiceNumber: draft.invoiceNumber || buildDefaultInvoiceNumber(draft.invoiceDate),
     invoiceDate: formatLongDate(draft.invoiceDate),
     dueDate: formatLongDate(draft.dueDate),
-    description: draft.description || `Monthly Retainer Plutus - ${formatMonthYear(draft.invoiceDate)}`,
-    amountText: formatCurrencyAmount(draft.amount, false),
-    amountTotalText: `£${formatCurrencyAmount(draft.amount, false)}`,
+    description: draft.description || `Retainer Plutus - ${formatMonthYear(draft.invoiceDate)}`,
+    currency: normalizeCurrencyCode(draft.currency || getDealCurrency(deal), getDealCurrency(deal)),
+    amountText: formatCurrencyAmount(draft.amount, draft.currency || getDealCurrency(deal), false),
+    amountTotalText: formatCurrencyAmount(draft.amount, draft.currency || getDealCurrency(deal), true),
   };
 }
 
@@ -813,7 +1297,7 @@ function buildInvoiceHtmlDocument(model) {
   </table>
   <table class="details-table">
     <thead>
-      <tr><th>Details</th><th>Price (£)</th></tr>
+      <tr><th>Details</th><th>Price (${escapeHtml(model.currency)})</th></tr>
     </thead>
     <tbody>
       <tr><td>${escapeHtml(model.description)}</td><td>${escapeHtml(model.amountText)}</td></tr>
@@ -821,7 +1305,7 @@ function buildInvoiceHtmlDocument(model) {
   </table>
   <table class="totals-table">
     <tr><td>Net Total</td><td>${escapeHtml(model.amountText)}</td></tr>
-    <tr class="grand"><td>GBP Total</td><td>${escapeHtml(model.amountTotalText)}</td></tr>
+    <tr class="grand"><td>${escapeHtml(model.currency)} Total</td><td>${escapeHtml(model.amountTotalText)}</td></tr>
   </table>
   <div class="payment">
     <strong>Payment Details</strong>
@@ -1042,7 +1526,7 @@ function generateInvoicePdf() {
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.text("Details", left + 12, tableTop + 16);
-  doc.text("Price (£)", right - 12, tableTop + 16, { align: "right" });
+  doc.text(`Price (${model.currency})`, right - 12, tableTop + 16, { align: "right" });
 
   const rowTop = tableTop + 24;
   doc.setFillColor(248, 249, 250);
@@ -1057,7 +1541,7 @@ function generateInvoicePdf() {
   doc.text(model.amountText, right - 12, y, { align: "right" });
   y += 22;
   doc.setFont("helvetica", "bold");
-  doc.text("GBP Total", 400, y, { align: "right" });
+  doc.text(`${model.currency} Total`, 400, y, { align: "right" });
   doc.line(430, y - 14, right, y - 14);
   doc.text(model.amountTotalText, right - 12, y, { align: "right" });
 
@@ -1551,13 +2035,16 @@ function setupInvoiceBuilder() {
         "invoice-date": "invoiceDate",
         "invoice-due-date": "dueDate",
         "invoice-description": "description",
+        "invoice-currency": "currency",
         "invoice-amount": "amount",
       };
       const key = mapping[target.id];
       if (!key) return;
-      draft[key] = String(target.value || "").trim();
+      draft[key] = key === "currency"
+        ? normalizeCurrencyCode(target.value, getDealCurrency(deal))
+        : String(target.value || "").trim();
       if (key === "invoiceDate" && !draft.description) {
-        draft.description = `Monthly Retainer Plutus - ${formatMonthYear(draft.invoiceDate)}`;
+        draft.description = `Retainer Plutus - ${formatMonthYear(draft.invoiceDate)}`;
       }
       deal.invoiceDraft = draft;
       markDirty(deal.id, true);
@@ -1649,6 +2136,7 @@ function handleInputChange(event) {
 
   const dealId = input.dataset.dealId;
   const field = input.dataset.field;
+  const isCommittedChange = event.type === "change";
   const deal = dealsData.find((entry) => normalizeValue(entry.id) === normalizeValue(dealId));
   if (!deal) return;
 
@@ -1671,12 +2159,50 @@ function handleInputChange(event) {
         deal.retainerPaymentDay = Math.min(31, Math.max(1, Math.round(parsed)));
       }
     }
-    input.value = getPaymentDay(deal);
+    if (isCommittedChange) {
+      input.value = getPaymentDay(deal);
+    }
+  } else if (field === "retainerIntervalMonths") {
+    const intervalMonths = normalizePaymentIntervalMonths(input.value);
+    deal.retainerIntervalMonths = intervalMonths;
+    deal.paymentIntervalMonths = intervalMonths;
+    if (intervalMonths === 1 && !getRetainerNextPaymentDate(deal)) {
+      delete deal.retainerNextPaymentDate;
+      delete deal.nextPaymentDate;
+    }
+  } else if (field === "retainerNextPaymentDate") {
+    const normalizedDate = normalizeDateInput(input.value);
+    if (normalizedDate) {
+      deal.retainerNextPaymentDate = normalizedDate;
+      deal.nextPaymentDate = normalizedDate;
+    } else {
+      delete deal.retainerNextPaymentDate;
+      delete deal.nextPaymentDate;
+    }
+  } else if (field === "currency") {
+    deal.currency = normalizeCurrencyCode(input.value, getDealCurrency(deal));
+    const draft = ensureInvoiceDraft(deal);
+    if (draft) {
+      draft.currency = deal.currency;
+      deal.invoiceDraft = draft;
+    }
   }
 
   markDirty(dealId, true);
   input.classList.add("is-dirty");
-  renderTable();
+  const visibleDeals = getVisibleDeals();
+  updateMetaRow(visibleDeals);
+  renderAnalytics(visibleDeals);
+  if (isCommittedChange && ["retainerPaymentDay", "retainerIntervalMonths", "retainerNextPaymentDate"].includes(field)) {
+    renderTable();
+    return;
+  }
+  if (field === "currency") {
+    renderTable();
+    renderInvoiceBuilder();
+    setStatus("You have unsaved accounting changes.", false);
+    return;
+  }
   setStatus("You have unsaved accounting changes.", false);
 }
 
@@ -1699,98 +2225,192 @@ async function saveAllChanges() {
   }
 }
 
+function getIncomingPaymentGroupDetails(deal) {
+  const nextDate = getNextScheduledPaymentDateObject(deal);
+  if (!nextDate) {
+    return {
+      key: "no-payment-date",
+      label: "No incoming payment scheduled",
+      sortValue: Number.MAX_SAFE_INTEGER,
+    };
+  }
+
+  return {
+    key: nextDate.toISOString().slice(0, 10),
+    label: `Incoming ${nextDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`,
+    sortValue: nextDate.getTime(),
+  };
+}
+
+function renderAccountingRow(deal) {
+  const dealId = String(deal.id || "");
+  const accountingHref = buildPageUrl("accounting", { id: deal.id });
+  const isDirty = dirtyDealIds.has(normalizeValue(dealId));
+  const retainerMonthly = getRetainerMonthly(deal);
+  const currency = getDealCurrency(deal);
+  const cadenceMonths = getPaymentIntervalMonths(deal);
+  const paymentDay = getPaymentDay(deal);
+  const nextDate = formatScheduledPaymentDate(deal);
+  const nextPaymentDate = getRetainerNextPaymentDate(deal);
+  const ordinal = formatDayOrdinal(paymentDay);
+  const primaryContact = getPrimaryDealContact(deal);
+  const invoices = ensureDealInvoices(deal);
+  const latestInvoice = getLatestInvoiceRecord(deal);
+  const latestStatus = latestInvoice ? buildInvoiceBadge(getInvoiceDisplayStatus(latestInvoice)) : '<span class="hint">No invoice</span>';
+  const latestSentDate = latestInvoice && latestInvoice.sentDate ? formatShortDate(latestInvoice.sentDate) : "—";
+  const latestDueDate = latestInvoice && latestInvoice.dueDate ? formatShortDate(latestInvoice.dueDate) : "—";
+  const latestPaidDate = latestInvoice && latestInvoice.paidDate ? formatShortDate(latestInvoice.paidDate) : "—";
+
+  return `
+    <tr>
+      <td class="deal-cell"><a class="deal-link" href="${accountingHref}">${escapeHtml(String(deal.name || "Untitled deal"))}</a></td>
+      <td>${String(deal.company || "—")}</td>
+      <td>
+        ${primaryContact
+          ? `<div class="contact-stack"><span class="contact-name">${escapeHtml(primaryContact.name || primaryContact.email || "Contact")}</span><span class="contact-subline">${escapeHtml([primaryContact.title, primaryContact.email].filter(Boolean).join(" · ") || "No email")}</span></div>`
+          : '<span class="hint">No contact</span>'}
+      </td>
+      <td>
+        <input
+          class="value-input ${isDirty ? "is-dirty" : ""}"
+          type="text"
+          value="${retainerMonthly.replace(/"/g, "&quot;")}"
+          data-deal-id="${dealId.replace(/"/g, "&quot;")}"
+          data-field="retainerMonthly"
+          placeholder="e.g. 5000"
+        />
+      </td>
+      <td>
+        <select
+          class="value-input ${isDirty ? "is-dirty" : ""}"
+          data-deal-id="${dealId.replace(/"/g, "&quot;")}"
+          data-field="currency"
+        >
+          ${buildCurrencyOptionsHtml(currency)}
+        </select>
+      </td>
+      <td>
+        <select
+          class="value-input ${isDirty ? "is-dirty" : ""}"
+          data-deal-id="${dealId.replace(/"/g, "&quot;")}"
+          data-field="retainerIntervalMonths"
+        >
+          ${buildPaymentIntervalOptionsHtml(cadenceMonths)}
+        </select>
+      </td>
+      <td>
+        <input
+          class="value-input day-input ${isDirty ? "is-dirty" : ""}"
+          type="number"
+          min="1"
+          max="31"
+          value="${paymentDay}"
+          data-deal-id="${dealId.replace(/"/g, "&quot;")}"
+          data-field="retainerPaymentDay"
+          placeholder="1-31"
+        />
+        <span class="hint">${ordinal || ""}</span>
+      </td>
+      <td>
+        <input
+          class="value-input ${isDirty ? "is-dirty" : ""}"
+          type="date"
+          value="${nextPaymentDate}"
+          data-deal-id="${dealId.replace(/"/g, "&quot;")}"
+          data-field="retainerNextPaymentDate"
+        />
+      </td>
+      <td class="next-date">${nextDate}</td>
+      <td>
+        <div class="invoice-cell">
+          <strong>${invoices.length}</strong>
+          <span class="hint">${invoices.length === 1 ? "invoice" : "invoices"}</span>
+        </div>
+      </td>
+      <td>${latestStatus}</td>
+      <td class="next-date">${latestSentDate}</td>
+      <td class="next-date">${latestDueDate}</td>
+      <td class="next-date">${latestPaidDate}</td>
+    </tr>
+  `;
+}
+
+function renderGroupedAccountingRows(deals) {
+  const sorted = (Array.isArray(deals) ? deals.slice() : []).sort((left, right) => {
+    const leftGroup = getIncomingPaymentGroupDetails(left);
+    const rightGroup = getIncomingPaymentGroupDetails(right);
+    if (leftGroup.sortValue !== rightGroup.sortValue) {
+      return leftGroup.sortValue - rightGroup.sortValue;
+    }
+    return normalizeValue(left.company || left.name).localeCompare(normalizeValue(right.company || right.name));
+  });
+
+  const groups = [];
+  sorted.forEach((deal) => {
+    const details = getIncomingPaymentGroupDetails(deal);
+    const existing = groups[groups.length - 1];
+    if (!existing || existing.key !== details.key) {
+      groups.push({
+        key: details.key,
+        label: details.label,
+        deals: [deal],
+      });
+      return;
+    }
+    existing.deals.push(deal);
+  });
+
+  return groups.map((group) => `
+    <tr class="group-row">
+      <td colspan="14">
+        <div class="group-row-copy">
+          <span>${escapeHtml(group.label)}</span>
+          <span class="group-row-meta">${group.deals.length} compan${group.deals.length === 1 ? "y" : "ies"}</span>
+        </div>
+      </td>
+    </tr>
+    ${group.deals.map((deal) => renderAccountingRow(deal)).join("")}
+  `).join("");
+}
+
 function renderTable() {
   const body = document.getElementById("accounting-body");
   if (!body) return;
 
   const visibleDeals = getVisibleDeals();
   updateMetaRow(visibleDeals);
+  updateViewControls();
+  renderAnalytics(visibleDeals);
 
   if (!visibleDeals.length) {
     if (singleDealMode) {
       const allHref = buildPageUrl("accounting");
       const dealsHref = buildPageUrl("deals-overview");
-      body.innerHTML = `<tr><td colspan="11">Deal not found. <a class="action-link" href="${dealsHref}">Back to deals</a> or <a class="action-link" href="${allHref}">open all accounting rows</a>.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="14">Deal not found. <a class="action-link" href="${dealsHref}">Back to deals</a> or <a class="action-link" href="${allHref}">open all accounting rows</a>.</td></tr>`;
       renderInvoiceBuilder();
       renderDealContactsPanel();
       renderInvoiceHistory();
       return;
     }
-    body.innerHTML = `<tr><td colspan="11">No deals match this filter.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="14">No deals match this filter.</td></tr>`;
     renderInvoiceBuilder();
     renderDealContactsPanel();
     renderInvoiceHistory();
     return;
   }
 
-  body.innerHTML = visibleDeals.map((deal) => {
-    const dealId = String(deal.id || "");
-    const accountingHref = buildPageUrl("accounting", { id: deal.id });
-    const isDirty = dirtyDealIds.has(normalizeValue(dealId));
-    const retainerMonthly = getRetainerMonthly(deal);
-    const paymentDay = getPaymentDay(deal);
-    const nextDate = computeNextExpectedDate(paymentDay);
-    const ordinal = formatDayOrdinal(paymentDay);
-    const primaryContact = getPrimaryDealContact(deal);
-    const invoices = ensureDealInvoices(deal);
-    const latestInvoice = getLatestInvoiceRecord(deal);
-    const latestStatus = latestInvoice ? buildInvoiceBadge(getInvoiceDisplayStatus(latestInvoice)) : '<span class="hint">No invoice</span>';
-    const latestSentDate = latestInvoice && latestInvoice.sentDate ? formatShortDate(latestInvoice.sentDate) : "—";
-    const latestDueDate = latestInvoice && latestInvoice.dueDate ? formatShortDate(latestInvoice.dueDate) : "—";
-    const latestPaidDate = latestInvoice && latestInvoice.paidDate ? formatShortDate(latestInvoice.paidDate) : "—";
-
-    return `
-      <tr>
-        <td class="deal-cell"><a class="deal-link" href="${accountingHref}">${escapeHtml(String(deal.name || "Untitled deal"))}</a></td>
-        <td>${String(deal.company || "—")}</td>
-        <td>
-          ${primaryContact
-            ? `<div class="contact-stack"><span class="contact-name">${escapeHtml(primaryContact.name || primaryContact.email || "Contact")}</span><span class="contact-subline">${escapeHtml([primaryContact.title, primaryContact.email].filter(Boolean).join(" · ") || "No email")}</span></div>`
-            : '<span class="hint">No contact</span>'}
-        </td>
-        <td>
-          <input
-            class="value-input ${isDirty ? "is-dirty" : ""}"
-            type="text"
-            value="${retainerMonthly.replace(/"/g, "&quot;")}"
-            data-deal-id="${dealId.replace(/"/g, "&quot;")}"
-            data-field="retainerMonthly"
-            placeholder="e.g. 3000 USD"
-          />
-        </td>
-        <td>
-          <input
-            class="value-input day-input ${isDirty ? "is-dirty" : ""}"
-            type="number"
-            min="1"
-            max="31"
-            value="${paymentDay}"
-            data-deal-id="${dealId.replace(/"/g, "&quot;")}"
-            data-field="retainerPaymentDay"
-            placeholder="1-31"
-          />
-          <span class="hint">${ordinal || ""}</span>
-        </td>
-        <td class="next-date">${nextDate}</td>
-        <td>
-          <div class="invoice-cell">
-            <strong>${invoices.length}</strong>
-            <span class="hint">${invoices.length === 1 ? "invoice" : "invoices"}</span>
-          </div>
-        </td>
-        <td>${latestStatus}</td>
-        <td class="next-date">${latestSentDate}</td>
-        <td class="next-date">${latestDueDate}</td>
-        <td class="next-date">${latestPaidDate}</td>
-      </tr>
-    `;
-  }).join("");
+  body.innerHTML = groupByIncomingPayments
+    ? renderGroupedAccountingRows(visibleDeals)
+    : visibleDeals.map((deal) => renderAccountingRow(deal)).join("");
   renderInvoiceBuilder();
   renderDealContactsPanel();
   renderInvoiceHistory();
 }
 
-function initializeAccountingPage() {
+async function initializeAccountingPage() {
+  const hasAccess = await ensureAccountingAccess();
+  if (!hasAccess) return;
+
   selectedDealReference = getSelectedDealReference();
   singleDealMode = Boolean(selectedDealReference);
   loadDealsData();
@@ -1803,6 +2423,22 @@ function initializeAccountingPage() {
     searchInput.addEventListener("input", (event) => {
       if (singleDealMode) return;
       currentSearch = String(event.target && event.target.value || "");
+      renderTable();
+    });
+  }
+
+  const toggleNoRetainerBtn = document.getElementById("btn-toggle-no-retainer");
+  if (toggleNoRetainerBtn) {
+    toggleNoRetainerBtn.addEventListener("click", () => {
+      hideNoRetainerCompanies = !hideNoRetainerCompanies;
+      renderTable();
+    });
+  }
+
+  const toggleGroupPaymentsBtn = document.getElementById("btn-toggle-group-payments");
+  if (toggleGroupPaymentsBtn) {
+    toggleGroupPaymentsBtn.addEventListener("click", () => {
+      groupByIncomingPayments = !groupByIncomingPayments;
       renderTable();
     });
   }
@@ -1824,8 +2460,12 @@ function initializeAccountingPage() {
   renderInvoiceBuilder();
   renderDealContactsPanel();
   renderInvoiceHistory();
+  updateViewControls();
 
   if (AppCore) {
+    window.addEventListener("appcore:graph-session-updated", () => {
+      window.location.reload();
+    });
     window.addEventListener("appcore:deals-updated", (event) => {
       if (event && event.detail && Array.isArray(event.detail.deals)) {
         dealsData = event.detail.deals.slice();

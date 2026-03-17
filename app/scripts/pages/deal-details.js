@@ -6,6 +6,7 @@ let allDeals = [];
 let allTasks = [];
 let currentDeal = null;
 let groupMode = "owner";
+let accountingAccessState = { restricted: false, allowed: true };
 const AUTO_CONTACT_TASK_PREFIX = (AppCore && AppCore.AUTO_CONTACT_TASK_PREFIX) || "auto-contact-status";
 
 const STAGE_LABELS = {
@@ -70,6 +71,20 @@ function saveTasksData() {
   } catch (e) {
     console.warn("Failed to save tasks to storage", e);
   }
+}
+
+async function refreshAccountingAccessState() {
+  if (!AppCore || typeof AppCore.getPageAccessStatus !== "function") {
+    accountingAccessState = { restricted: false, allowed: true };
+    return accountingAccessState;
+  }
+
+  try {
+    accountingAccessState = await AppCore.getPageAccessStatus("accounting");
+  } catch {
+    accountingAccessState = { restricted: false, allowed: true };
+  }
+  return accountingAccessState;
 }
 
 function stageClass(stage) {
@@ -246,6 +261,133 @@ function syncLegacyPrimaryContactFields(deal) {
   deal.mainContactTitle = primary ? primary.title : "";
   deal.mainContactEmail = primary ? primary.email : "";
   deal.email = primary ? primary.email : "";
+}
+
+function normalizeDealLegalLinks(deal, options = {}) {
+  const { keepEmpty = false } = options;
+  const source =
+    deal && Array.isArray(deal.legalLinks)
+      ? deal.legalLinks
+      : deal && Array.isArray(deal.legalAspects)
+        ? deal.legalAspects
+        : [];
+
+  const normalized = source
+    .map((entry, index) => {
+      if (typeof entry === "string") {
+        const url = String(entry || "").trim();
+        if (!keepEmpty && !url) return null;
+        return {
+          title: url ? `Legal link ${index + 1}` : "",
+          url,
+        };
+      }
+      if (!entry || typeof entry !== "object") return null;
+      const title = String(entry.title || entry.label || entry.name || "").trim();
+      const url = String(entry.url || entry.href || entry.link || "").trim();
+      if (!keepEmpty && !title && !url) return null;
+      return {
+        title: title || (url ? `Legal link ${index + 1}` : ""),
+        url,
+      };
+    })
+    .filter(Boolean);
+
+  if (deal && typeof deal === "object") {
+    deal.legalLinks = normalized;
+  }
+  return normalized;
+}
+
+function toSafeExternalUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    const protocol = String(parsed.protocol || "").toLowerCase();
+    if (protocol !== "http:" && protocol !== "https:") return "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function buildLegalLinkEditorRow(link, index) {
+  return `
+    <div class="legal-link-editor-row" data-legal-link-row="${index}">
+      <div class="contact-editor-grid">
+        <label>Title<input type="text" data-legal-link-field="title" value="${escapeHtml(link.title || "")}" placeholder="Term sheet, NDA, counsel notes..." /></label>
+        <label>URL<input type="url" data-legal-link-field="url" value="${escapeHtml(link.url || "")}" placeholder="https://..." /></label>
+      </div>
+      <div class="legal-link-editor-actions">
+        <div class="linked-asset-meta">Use a full SharePoint, Google Drive, DocuSign, or other legal document link.</div>
+        <button class="btn" type="button" data-remove-legal-link-row="${index}">Remove</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderDealLegalLinkEditor() {
+  const listEl = document.getElementById("deal-legal-editor-list");
+  if (!listEl || !currentDeal) return;
+  const links = normalizeDealLegalLinks(currentDeal, { keepEmpty: true });
+  listEl.innerHTML = links.length
+    ? links.map((link, index) => buildLegalLinkEditorRow(link, index)).join("")
+    : '<div class="legal-link-empty">No legal links yet. Add one to keep deal documents one click away.</div>';
+}
+
+function collectDealLegalLinksFromEditor() {
+  const listEl = document.getElementById("deal-legal-editor-list");
+  if (!listEl) return [];
+  const rows = Array.from(listEl.querySelectorAll("[data-legal-link-row]"));
+  return rows
+    .map((row, index) => {
+      const title = String((row.querySelector('[data-legal-link-field="title"]') || {}).value || "").trim();
+      const url = String((row.querySelector('[data-legal-link-field="url"]') || {}).value || "").trim();
+      if (!title && !url) return null;
+      return {
+        title: title || `Legal link ${index + 1}`,
+        url,
+      };
+    })
+    .filter(Boolean);
+}
+
+function renderDealLegalLinks() {
+  const listEl = document.getElementById("deal-legal-links-list");
+  const summaryEl = document.getElementById("deal-legal-links-summary");
+  if (!listEl || !summaryEl || !currentDeal) return;
+
+  const legalLinks = normalizeDealLegalLinks(currentDeal);
+  if (!legalLinks.length) {
+    summaryEl.textContent = "Add legal document and deal counsel links in the editor below.";
+    listEl.innerHTML = '<div class="legal-link-empty">No legal links saved for this deal yet.</div>';
+    return;
+  }
+
+  summaryEl.textContent = `${legalLinks.length} legal link${legalLinks.length === 1 ? "" : "s"} linked to this deal.`;
+  listEl.innerHTML = legalLinks
+    .map((link) => {
+      const safeUrl = toSafeExternalUrl(link.url);
+      if (!safeUrl) {
+        return `
+          <div class="legal-link-card is-invalid">
+            <div class="legal-link-title">${escapeHtml(link.title || "Legal link")}</div>
+            <div class="legal-link-meta">This entry does not have a valid http(s) URL yet.</div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="legal-link-card">
+          <div class="legal-link-title">${escapeHtml(link.title || "Legal link")}</div>
+          <a class="btn legal-link-button" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">
+            Open ${escapeHtml(link.title || "legal document")}
+          </a>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function renderDealContactsSummary() {
@@ -905,12 +1047,18 @@ function renderDealHeader() {
   }
 
   const btnDashboard = document.getElementById("btn-open-dashboard");
+  const btnEditDashboardConfig = document.getElementById("btn-edit-dashboard-config");
   const btnAccounting = document.getElementById("btn-open-accounting");
   const dashboard = getDashboardForCurrentDeal();
 
   if (btnAccounting) {
-    if (currentDeal && currentDeal.id) {
+    if (accountingAccessState.restricted && !accountingAccessState.allowed) {
+      btnAccounting.disabled = true;
+      btnAccounting.textContent = "Accounting restricted";
+      btnAccounting.onclick = null;
+    } else if (currentDeal && currentDeal.id) {
       btnAccounting.disabled = false;
+      btnAccounting.textContent = "Open accounting";
       btnAccounting.onclick = () => {
         window.location.href = buildPageUrl("accounting", { id: currentDeal.id });
       };
@@ -926,13 +1074,26 @@ function renderDealHeader() {
     btnDashboard.onclick = () => {
       window.location.href = buildPageUrl("investor-dashboard", { dashboard: dashboard.id });
     };
+    if (btnEditDashboardConfig) {
+      btnEditDashboardConfig.disabled = false;
+      btnEditDashboardConfig.textContent = "Edit dashboard config";
+      btnEditDashboardConfig.onclick = () => {
+        window.location.href = buildPageUrl("investor-dashboard", { dashboard: dashboard.id, edit: "1" });
+      };
+    }
   } else {
     btnDashboard.disabled = true;
     btnDashboard.textContent = "No dashboard linked";
     btnDashboard.onclick = null;
+    if (btnEditDashboardConfig) {
+      btnEditDashboardConfig.disabled = true;
+      btnEditDashboardConfig.textContent = "No dashboard to edit";
+      btnEditDashboardConfig.onclick = null;
+    }
   }
 
   syncLegacyPrimaryContactFields(currentDeal);
+  renderDealLegalLinks();
   renderDealContactsSummary();
   refreshStageButton();
 }
@@ -972,9 +1133,11 @@ function populateDealForm() {
   document.getElementById("deal-input-equity").value = currentDeal.EquityCommission || "";
   document.getElementById("deal-input-retainer").value = currentDeal.Retainer || "";
   document.getElementById("deal-input-summary").value = currentDeal.summary || "";
+  normalizeDealLegalLinks(currentDeal);
   document.getElementById("deal-input-deck-name").value = currentDeal.deckName || "";
   document.getElementById("deal-input-deck-url").value = currentDeal.deckUrl || "";
   document.getElementById("deal-input-deck-parent-path").value = currentDeal.deckParentPath || "";
+  renderDealLegalLinkEditor();
   refreshDeckEditorSummary();
   renderDealContactEditor();
 }
@@ -1112,6 +1275,8 @@ function setupDealForm() {
   const clearLinkBtn = document.getElementById("btn-clear-dashboard-link");
   const browseDeckBtn = document.getElementById("btn-browse-deck");
   const clearDeckBtn = document.getElementById("btn-clear-deck-link");
+  const addLegalLinkBtn = document.getElementById("btn-add-legal-link-row");
+  const legalLinkEditorList = document.getElementById("deal-legal-editor-list");
   const addContactBtn = document.getElementById("btn-add-contact-row");
   const contactEditorList = document.getElementById("deal-contact-editor-list");
 
@@ -1161,6 +1326,34 @@ function setupDealForm() {
           statusEl.textContent = "";
         }
       }, 1200);
+    });
+  }
+
+  if (addLegalLinkBtn) {
+    addLegalLinkBtn.addEventListener("click", () => {
+      if (!currentDeal) return;
+      const legalLinks = normalizeDealLegalLinks(currentDeal, { keepEmpty: true });
+      legalLinks.push({
+        title: "",
+        url: "",
+      });
+      currentDeal.legalLinks = legalLinks;
+      renderDealLegalLinkEditor();
+      if (statusEl) statusEl.textContent = "Legal link row added in form";
+    });
+  }
+
+  if (legalLinkEditorList) {
+    legalLinkEditorList.addEventListener("click", (event) => {
+      const removeBtn = event.target.closest("button[data-remove-legal-link-row]");
+      if (!removeBtn || !currentDeal) return;
+      const index = Number(removeBtn.getAttribute("data-remove-legal-link-row"));
+      const legalLinks = normalizeDealLegalLinks(currentDeal, { keepEmpty: true });
+      if (!Number.isFinite(index) || !legalLinks[index]) return;
+      legalLinks.splice(index, 1);
+      currentDeal.legalLinks = legalLinks;
+      renderDealLegalLinkEditor();
+      if (statusEl) statusEl.textContent = "Legal link removed in form";
     });
   }
 
@@ -1215,6 +1408,16 @@ function setupDealForm() {
     currentDeal.EquityCommission = document.getElementById("deal-input-equity").value.trim();
     currentDeal.Retainer = document.getElementById("deal-input-retainer").value.trim();
     currentDeal.summary = document.getElementById("deal-input-summary").value.trim();
+    const legalLinks = collectDealLegalLinksFromEditor();
+    const invalidLegalLink = legalLinks.find((entry) => !toSafeExternalUrl(entry.url));
+    if (invalidLegalLink) {
+      statusEl.textContent = `Legal link "${invalidLegalLink.title || "Untitled"}" needs a valid http(s) URL.`;
+      return;
+    }
+    currentDeal.legalLinks = legalLinks.map((entry, index) => ({
+      title: entry.title || `Legal link ${index + 1}`,
+      url: toSafeExternalUrl(entry.url),
+    }));
     currentDeal.deckName = document.getElementById("deal-input-deck-name").value.trim();
     currentDeal.deckUrl = document.getElementById("deal-input-deck-url").value.trim();
     currentDeal.deckParentPath = document.getElementById("deal-input-deck-parent-path").value.trim();
@@ -1429,6 +1632,7 @@ async function loadDealPage() {
     if (typeof AppCore.refreshDealsFromShareDrive === "function") {
       await AppCore.refreshDealsFromShareDrive("deal-details");
     }
+    await refreshAccountingAccessState();
     window.addEventListener("appcore:tasks-updated", (event) => {
       if (event && event.detail && Array.isArray(event.detail.tasks)) {
         allTasks = event.detail.tasks;
@@ -1452,6 +1656,10 @@ async function loadDealPage() {
         renderDealHeader();
         populateDealForm();
       }
+    });
+    window.addEventListener("appcore:graph-session-updated", async () => {
+      await refreshAccountingAccessState();
+      if (currentDeal) renderDealHeader();
     });
   }
 

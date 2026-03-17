@@ -2184,6 +2184,43 @@
     };
   }
 
+  function getAllowedEmailsForPage(pageId) {
+    const config = global.PlutusAppConfig;
+    const page =
+      config && typeof config.getPage === "function"
+        ? config.getPage(pageId)
+        : (config && config.pages && config.pages[pageId]) || null;
+    const allowedEmails = page && Array.isArray(page.allowedEmails) ? page.allowedEmails : [];
+    return Array.from(new Set(allowedEmails.map((entry) => normalizeValue(entry)).filter(Boolean)));
+  }
+
+  async function getPageAccessStatus(pageId) {
+    const allowedEmails = getAllowedEmailsForPage(pageId);
+    if (!allowedEmails.length) {
+      return {
+        pageId,
+        restricted: false,
+        allowed: true,
+        allowedEmails: [],
+        connected: false,
+        email: "",
+        person: null,
+      };
+    }
+
+    const person = await getCurrentConnectedPerson();
+    const email = normalizeValue(person && person.email);
+    return {
+      pageId,
+      restricted: true,
+      allowed: Boolean(email && allowedEmails.includes(email)),
+      allowedEmails,
+      connected: Boolean(person && person.connected),
+      email,
+      person,
+    };
+  }
+
   async function resolveShareDriveDownloadUrl(shareUrl, accessToken) {
     const cleanShareUrl = String(shareUrl || "").trim();
     if (!cleanShareUrl) return "";
@@ -2314,6 +2351,7 @@
     downloadBinary,
     inspectSharedJsonSource,
     getCurrentConnectedPerson,
+    getPageAccessStatus,
     refreshConnectedPersonUi: renderSidebarUserCard,
   };
 

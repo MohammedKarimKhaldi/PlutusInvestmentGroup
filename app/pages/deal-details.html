@@ -101,9 +101,17 @@
               <div class="linked-asset-name" id="deal-deck-name">No deck linked</div>
               <div class="linked-asset-meta" id="deal-deck-meta">Choose a PDF from Sharedrive and save the deal to keep the link.</div>
             </div>
+            <div class="linked-asset-card">
+              <div class="linked-asset-label">Legal aspects</div>
+              <div class="linked-asset-meta" id="deal-legal-links-summary">Add legal document and deal counsel links in the editor below.</div>
+              <div class="legal-link-list" id="deal-legal-links-list"></div>
+            </div>
             <div class="btn-row">
               <button class="btn btn-primary" type="button" id="btn-open-dashboard">
                 Open fundraising dashboard
+              </button>
+              <button class="btn" type="button" id="btn-edit-dashboard-config">
+                Edit dashboard config
               </button>
               <button class="btn" type="button" id="btn-open-accounting">
                 Open accounting
@@ -161,6 +169,16 @@
               Choose an existing dashboard to link this deal, or type a custom dashboard ID.
             </div>
             <label>Deal summary<textarea id="deal-input-summary" rows="3"></textarea></label>
+            <div class="deal-legal-editor">
+              <div class="panel-heading-row">
+                <div>
+                  <div class="linked-asset-label">Legal links</div>
+                  <div class="linked-asset-meta">Track term sheets, NDAs, subscription documents, counsel notes, or other legal URLs for this deal.</div>
+                </div>
+                <button class="btn" id="btn-add-legal-link-row" type="button">Add legal link</button>
+              </div>
+              <div class="legal-link-editor-list" id="deal-legal-editor-list"></div>
+            </div>
             <div class="deal-contact-editor">
               <div class="panel-heading-row">
                 <div>

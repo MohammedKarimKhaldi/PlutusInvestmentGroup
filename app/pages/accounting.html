@@ -21,8 +21,8 @@
       <div class="main-column">
         <div class="header">
           <div class="title-block">
-            <h1>Retainers & Payment Days</h1>
-            <p>Manage monthly retainers and expected payment day for each deal.</p>
+            <h1>Retainers & Schedules</h1>
+            <p>Manage retainers, payment cadence, and expected payment schedules for each deal.</p>
           </div>
           <div class="header-actions">
             <div class="pill">
@@ -35,6 +35,26 @@
 
         <div class="meta-row" id="accounting-meta-row"></div>
 
+        <div class="accounting-analytics" id="accounting-analytics-panel">
+          <div class="analytics-head">
+            <div>
+              <h2>Cash Analytics</h2>
+              <p class="hint" id="accounting-analytics-subtitle">Recurring cash, payment cadence, and incoming payment visibility based on the current accounting view.</p>
+            </div>
+          </div>
+          <div class="analytics-grid" id="accounting-analytics-cards"></div>
+          <div class="analytics-split">
+            <div class="analytics-card">
+              <div class="analytics-card-title">3-Month Incoming Projection</div>
+              <div class="analytics-projection-list" id="accounting-analytics-projection"></div>
+            </div>
+            <div class="analytics-card">
+              <div class="analytics-card-title">Operational Insights</div>
+              <div class="analytics-insights-list" id="accounting-analytics-insights"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="toolbar">
           <div class="toolbar-row">
             <label class="search-label">
@@ -42,6 +62,11 @@
               <input id="accounting-search" type="search" placeholder="Find by deal or company..." />
             </label>
             <span class="hint" id="accounting-status-line">No unsaved changes.</span>
+          </div>
+          <div class="toolbar-row">
+            <button class="btn" id="btn-toggle-no-retainer" type="button">Hide 0 / no retainer</button>
+            <button class="btn" id="btn-toggle-group-payments" type="button">Group by incoming payments</button>
+            <span class="hint" id="accounting-view-hint">Showing all companies in standard order.</span>
           </div>
         </div>
 
@@ -52,8 +77,11 @@
                 <th>Deal</th>
                 <th>Company</th>
                 <th>Main contact</th>
-                <th>Monthly retainer</th>
+                <th>Retainer amount</th>
+                <th>Currency</th>
+                <th>Cadence</th>
                 <th>Expected payment day</th>
+                <th>Next scheduled date</th>
                 <th>Next expected date</th>
                 <th>Invoices</th>
                 <th>Latest status</th>
@@ -102,7 +130,10 @@
             <label>Description
               <input id="invoice-description" type="text" />
             </label>
-            <label>Amount (GBP)
+            <label>Currency
+              <select id="invoice-currency"></select>
+            </label>
+            <label>Amount
               <input id="invoice-amount" type="text" />
             </label>
           </div>
