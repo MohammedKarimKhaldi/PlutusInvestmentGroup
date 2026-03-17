@@ -351,6 +351,7 @@
 			baseConfigurationReference = FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 8574X8NBPZ;
@@ -362,7 +363,7 @@
 				MARKETING_VERSION = 1.0.1;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.plutus.investment.dashboard;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.plutus.investment.dashboard.8574X8NBPZ;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.plutus.investment.dashboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -378,6 +379,7 @@
 			baseConfigurationReference = AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 8574X8NBPZ;
@@ -388,7 +390,7 @@
 				"LS_REQUIRES_IPHONE_OS[sdk=macosx*]" = NO;
 				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.plutus.investment.dashboard;
-				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.plutus.investment.dashboard.8574X8NBPZ;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.plutus.investment.dashboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
