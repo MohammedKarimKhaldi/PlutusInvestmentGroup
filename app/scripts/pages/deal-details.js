@@ -1049,6 +1049,7 @@ function renderDealHeader() {
   const btnDashboard = document.getElementById("btn-open-dashboard");
   const btnEditDashboardConfig = document.getElementById("btn-edit-dashboard-config");
   const btnAccounting = document.getElementById("btn-open-accounting");
+  const btnLegalWorkspace = document.getElementById("btn-open-legal-workspace");
   const dashboard = getDashboardForCurrentDeal();
 
   if (btnAccounting) {
@@ -1065,6 +1066,19 @@ function renderDealHeader() {
     } else {
       btnAccounting.disabled = true;
       btnAccounting.onclick = null;
+    }
+  }
+
+  if (btnLegalWorkspace) {
+    if (currentDeal && currentDeal.id) {
+      btnLegalWorkspace.disabled = false;
+      btnLegalWorkspace.textContent = "Open legal workspace";
+      btnLegalWorkspace.onclick = () => {
+        window.location.href = buildPageUrl("legal-management", { id: currentDeal.id });
+      };
+    } else {
+      btnLegalWorkspace.disabled = true;
+      btnLegalWorkspace.onclick = null;
     }
   }
 

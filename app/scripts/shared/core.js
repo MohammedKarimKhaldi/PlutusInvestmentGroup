@@ -14,6 +14,7 @@
   }, APP_CONFIG.dataFiles || {});
 
   const AUTO_CONTACT_TASK_PREFIX = "auto-contact-status";
+  const AUTO_DEAL_READINESS_TASK_PREFIX = "auto-deal-readiness";
   const SHARED_TASKS_DEFAULTS = {
     enabled: false,
     shareUrl: "",
@@ -1635,7 +1636,7 @@
   function publishTasksUpdate(source) {
     try {
       const detail = {
-        tasks: cloneArray(tasksCache || []),
+        tasks: getResolvedTasksData(),
         source: source || "local",
         syncedAt: sharedTasksState.lastSyncAt || "",
       };
@@ -1695,14 +1696,141 @@
     }
   }
 
+  function ensureDealsCacheInitialized() {
+    if (dealsCache) return;
+    const config = getSharedDealsConfig();
+    const desktopDeals = readDataJson("deals");
+    dealsCache = Array.isArray(desktopDeals)
+      ? cloneArray(desktopDeals)
+      : (readArrayFromStorage(STORAGE_KEYS.deals) || (config.enabled ? [] : cloneArray(global.DEALS)));
+  }
+
+  function ensureTasksCacheInitialized() {
+    if (tasksCache) return;
+    const desktopTasks = readDataJson("tasks");
+    console.log("[AppCore] Local desktopTasks:", desktopTasks);
+    tasksCache = Array.isArray(desktopTasks)
+      ? cloneArray(desktopTasks)
+      : (readArrayFromStorage(STORAGE_KEYS.tasks) || cloneArray(global.TASKS));
+    console.log("[AppCore] Initialized tasksCache:", tasksCache);
+  }
+
+  function normalizeDealLegalLinksForTasks(deal) {
+    const source =
+      deal && Array.isArray(deal.legalLinks)
+        ? deal.legalLinks
+        : deal && Array.isArray(deal.legalAspects)
+          ? deal.legalAspects
+          : [];
+
+    return source
+      .map((entry, index) => {
+        if (typeof entry === "string") {
+          const url = String(entry || "").trim();
+          return url ? { title: `Legal link ${index + 1}`, url } : null;
+        }
+        if (!entry || typeof entry !== "object") return null;
+        const title = String(entry.title || entry.label || entry.name || "").trim();
+        const url = String(entry.url || entry.href || entry.link || "").trim();
+        if (!title && !url) return null;
+        return {
+          title: title || (url ? `Legal link ${index + 1}` : ""),
+          url,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function toSafeExternalTaskUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      const parsed = new URL(raw);
+      const protocol = String(parsed.protocol || "").toLowerCase();
+      if (protocol !== "http:" && protocol !== "https:") return "";
+      return parsed.toString();
+    } catch {
+      return "";
+    }
+  }
+
+  function stripComputedAutoTasks(tasks) {
+    return (Array.isArray(tasks) ? tasks : []).filter((task) => {
+      const metaSource = normalizeValue(task && task.metaSource);
+      const taskId = normalizeValue(task && task.id);
+      return !(
+        metaSource === "deal-readiness-status" ||
+        taskId.startsWith(`${AUTO_DEAL_READINESS_TASK_PREFIX}-`)
+      );
+    });
+  }
+
+  function buildAutoDealReadinessTasks(deals) {
+    const createdAt = new Date().toISOString().slice(0, 10);
+    return (Array.isArray(deals) ? deals : [])
+      .flatMap((deal) => {
+        if (!deal || typeof deal !== "object" || !String(deal.id || "").trim()) return [];
+
+        const dealId = String(deal.id || "").trim();
+        const owner = String(deal.seniorOwner || deal.owner || "System").trim() || "System";
+        const companyLabel = String(deal.company || deal.name || dealId).trim();
+        const legalLinks = normalizeDealLegalLinksForTasks(deal);
+        const hasLegalDocument = legalLinks.some((entry) => Boolean(toSafeExternalTaskUrl(entry.url)));
+        const hasDeck = Boolean(toSafeExternalTaskUrl(deal.deckUrl));
+        const hasDashboard = Boolean(String(deal.fundraisingDashboardId || "").trim());
+
+        const requirements = [
+          {
+            category: "legal",
+            missing: !hasLegalDocument,
+            title: `[Auto] Add legal document for ${companyLabel}`,
+            type: "Legal setup",
+            notes: `Auto-generated on ${createdAt}. Attach at least one legal document link to this deal.`,
+          },
+          {
+            category: "deck",
+            missing: !hasDeck,
+            title: `[Auto] Add deck for ${companyLabel}`,
+            type: "Deck setup",
+            notes: `Auto-generated on ${createdAt}. Link a deck PDF to this deal.`,
+          },
+          {
+            category: "dashboard",
+            missing: !hasDashboard,
+            title: `[Auto] Attach dashboard for ${companyLabel}`,
+            type: "Dashboard setup",
+            notes: `Auto-generated on ${createdAt}. Attach a fundraising dashboard to this deal.`,
+          },
+        ];
+
+        return requirements
+          .filter((entry) => entry.missing)
+          .map((entry) => ({
+            id: `${AUTO_DEAL_READINESS_TASK_PREFIX}-${dealId}-${entry.category}`,
+            owner,
+            dealId,
+            title: entry.title,
+            type: entry.type,
+            status: "in progress",
+            dueDate: "",
+            notes: entry.notes,
+            metaSource: "deal-readiness-status",
+            metaCategory: entry.category,
+          }));
+      });
+  }
+
+  function getResolvedTasksData() {
+    ensureTasksCacheInitialized();
+    ensureDealsCacheInitialized();
+    const baseTasks = stripComputedAutoTasks(tasksCache);
+    const autoDealReadinessTasks = buildAutoDealReadinessTasks(dealsCache);
+    return cloneArray(baseTasks.concat(autoDealReadinessTasks));
+  }
+
   function loadDealsData() {
     const config = getSharedDealsConfig();
-    if (!dealsCache) {
-      const desktopDeals = readDataJson("deals");
-      dealsCache = Array.isArray(desktopDeals)
-        ? cloneArray(desktopDeals)
-        : (readArrayFromStorage(STORAGE_KEYS.deals) || (config.enabled ? [] : cloneArray(global.DEALS)));
-    }
+    ensureDealsCacheInitialized();
 
     if (config.enabled) {
       ensureSharedDealsSync();
@@ -1717,6 +1845,7 @@
     writeArrayToStorage(STORAGE_KEYS.deals, dealsCache);
     writeDataJson("deals", Array.isArray(dealsCache) ? dealsCache : []);
     publishDealsUpdate("local");
+    publishTasksUpdate("deals-local");
     if (!config.enabled) {
       return Promise.resolve();
     }
@@ -1774,26 +1903,19 @@
     console.log("[AppCore] loadTasksData called");
     const config = getSharedTasksConfig();
     console.log("[AppCore] Tasks config:", config);
-    if (!tasksCache) {
-      const desktopTasks = readDataJson("tasks");
-      console.log("[AppCore] Local desktopTasks:", desktopTasks);
-      tasksCache = Array.isArray(desktopTasks)
-        ? cloneArray(desktopTasks)
-        : (readArrayFromStorage(STORAGE_KEYS.tasks) || cloneArray(global.TASKS));
-      console.log("[AppCore] Initialized tasksCache:", tasksCache);
-    }
+    ensureTasksCacheInitialized();
 
     if (config.enabled) {
       console.log("[AppCore] Triggering task sync from loadTasksData");
       ensureSharedTasksSync();
     }
     publishSharedTasksStatus(sharedTasksState.started ? "ready" : "idle");
-    return cloneArray(tasksCache);
+    return getResolvedTasksData();
   }
 
   function saveTasksData(tasks) {
     const config = getSharedTasksConfig();
-    tasksCache = cloneArray(tasks);
+    tasksCache = stripComputedAutoTasks(tasks);
     if (config.enabled) {
       sharedTasksDirty = true;
       sharedTasksState.lastActionAt = new Date().toISOString();
@@ -1938,6 +2060,7 @@
         sharedDealsState.lastError = "";
         publishSharedDealsStatus("synced");
         publishDealsUpdate(reason || "sharedrive");
+        publishTasksUpdate(reason || "sharedrive");
       }
     } catch (error) {
       sharedDealsState.lastError = error instanceof Error ? error.message : "Deals sync failed.";
@@ -2299,7 +2422,9 @@
     return (
       title.startsWith("[auto]") ||
       metaSource === "dashboard-contact-status" ||
-      taskId.startsWith(`${AUTO_CONTACT_TASK_PREFIX}-`)
+      metaSource === "deal-readiness-status" ||
+      taskId.startsWith(`${AUTO_CONTACT_TASK_PREFIX}-`) ||
+      taskId.startsWith(`${AUTO_DEAL_READINESS_TASK_PREFIX}-`)
     );
   }
 

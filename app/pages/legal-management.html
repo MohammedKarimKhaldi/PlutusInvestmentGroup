@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Legal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/legal-management.css" />
+  <script src="../scripts/shared/app-config.js"></script>
+  <script src="../scripts/shared/sharedrive-gate.js"></script>
+</head>
+
+<body data-page-id="legal-management">
+  <div class="shell">
+    <div class="layout">
+      <aside class="sidebar-nav" data-sidebar-nav></aside>
+
+      <div class="main-column">
+        <div class="header">
+          <div class="title-block">
+            <h1>Legal Workspace</h1>
+            <p>Manage term sheets, NDAs, counsel links, and other deal legal aspects in one place.</p>
+          </div>
+          <div class="header-actions">
+            <div class="pill">
+              <span class="dot"></span>
+              <span id="legal-status-pill">Ready</span>
+            </div>
+            <button class="btn btn-primary" id="save-legal-btn" type="button">Save all changes</button>
+          </div>
+        </div>
+
+        <div class="meta-row" id="legal-meta-row"></div>
+
+        <div class="toolbar">
+          <div class="toolbar-row">
+            <label class="search-label">
+              Search
+              <input id="legal-search" type="search" placeholder="Find by deal or company..." />
+            </label>
+            <button class="btn" id="btn-toggle-missing-legal" type="button">Show only missing legal</button>
+            <span class="hint" id="legal-status-line">No unsaved changes.</span>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Deal</th>
+                <th>Company</th>
+                <th>Links</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="legal-deals-body"></tbody>
+          </table>
+        </div>
+
+        <section class="legal-editor-panel" id="legal-editor-panel" hidden>
+          <div class="legal-editor-head">
+            <div>
+              <h2 id="legal-editor-title">Legal links</h2>
+              <p class="hint" id="legal-editor-subtitle">Select a deal to manage its legal aspects.</p>
+            </div>
+            <div class="btn-row">
+              <button class="btn" id="btn-open-selected-deal" type="button">Open deal</button>
+              <button class="btn" id="btn-browse-legal-docs" type="button">Browse Sharedrive docs</button>
+              <button class="btn" id="btn-add-legal-row" type="button">Add legal link</button>
+            </div>
+          </div>
+
+          <div class="legal-preview-grid" id="legal-preview-grid"></div>
+          <div class="legal-editor-list" id="legal-editor-list"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="legal-picker-modal" hidden>
+    <div class="modal-panel">
+      <div class="legal-editor-head">
+        <div>
+          <h2>Select Legal Document</h2>
+          <p class="hint">Browse Sharedrive and attach a PDF, Word, Excel, or PowerPoint legal document to this deal.</p>
+        </div>
+        <button class="btn" id="btn-close-legal-picker" type="button">Close</button>
+      </div>
+      <div class="toolbar-row" style="margin-top:10px;">
+        <label class="search-label" style="flex:1 1 320px;">
+          Sharedrive folder URL
+          <input id="legal-share-url-input" type="text" placeholder="Paste a Sharedrive folder URL" />
+        </label>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-primary" id="btn-load-legal-root" type="button">Load location</button>
+        <button class="btn" id="btn-legal-go-back" type="button">Back one folder</button>
+        <span class="hint" id="legal-picker-status"></span>
+      </div>
+      <div class="legal-picker-path" id="legal-picker-path">Not connected to a Sharedrive folder yet.</div>
+      <div class="legal-picker-list" id="legal-picker-list"></div>
+    </div>
+  </div>
+
+  <script src="../scripts/shared/layout.js"></script>
+  <script src="../scripts/shared/data-loader.js"></script>
+  <script src="../scripts/shared/core.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/legal-management.js"></script>
+</body>
+
+</html>

@@ -25,6 +25,11 @@
         "mk@plutus-investment.com"
       ],
     },
+    "legal-management": {
+      file: "legal-management.html",
+      label: "Legal",
+      showInNav: true,
+    },
     "tasks-management": {
       file: "tasks-management.html",
       label: "Tasks by owner",
