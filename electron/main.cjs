@@ -666,6 +666,10 @@ async function getShareDriveDownloadUrl({ shareUrl, accessToken, driveId, itemId
   
   const driveIdOfItem = driveId || (item && item.parentReference && item.parentReference.driveId) || (item && item.remoteItem && item.remoteItem.parentReference && item.remoteItem.parentReference.driveId) || "";
   const itemIdOfItem = itemId || (item && item.id) || (item && item.remoteItem && item.remoteItem.id) || "";
+  const parentItemIdOfItem =
+    (item && item.parentReference && item.parentReference.id) ||
+    (item && item.remoteItem && item.remoteItem.parentReference && item.remoteItem.parentReference.id) ||
+    "";
 
   console.log(`[Main] getShareDriveDownloadUrl: shareUrl=${shareUrl?shareUrl.substring(0,30)+'...':''} driveId=${driveIdOfItem} itemId=${itemIdOfItem} hasDownloadUrl=${!!downloadUrl}`);
 
@@ -684,9 +688,11 @@ async function getShareDriveDownloadUrl({ shareUrl, accessToken, driveId, itemId
         console.log(`[Main] Success: Resolved downloadUrl via direct driveItem fetch.`);
         return {
           id: itemIdOfItem,
+          itemId: itemIdOfItem,
           name: item && item.name ? item.name : (retryResponse.name || ""),
           webUrl: item && item.webUrl ? item.webUrl : "",
           driveId: driveIdOfItem,
+          parentItemId: parentItemIdOfItem,
           downloadUrl: retryResponse["@microsoft.graph.downloadUrl"],
         };
       }
@@ -723,7 +729,9 @@ async function getShareDriveDownloadUrl({ shareUrl, accessToken, driveId, itemId
           console.log(`[Main] Success: Resolved downloadUrl via content redirect.`);
           return {
             id: itemIdOfItem,
+            itemId: itemIdOfItem,
             driveId: driveIdOfItem,
+            parentItemId: parentItemIdOfItem,
             downloadUrl: loc,
           };
         }
@@ -740,9 +748,11 @@ async function getShareDriveDownloadUrl({ shareUrl, accessToken, driveId, itemId
 
   return {
     id: itemIdOfItem,
+    itemId: itemIdOfItem,
     name: item && item.name ? item.name : "",
     webUrl: item && item.webUrl ? item.webUrl : "",
     driveId: driveIdOfItem,
+    parentItemId: parentItemIdOfItem,
     downloadUrl,
   };
 }

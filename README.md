@@ -108,6 +108,8 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
 - The repo's Xcode Cloud scripts run `npm run ios:sync` and rely on CocoaPods integration.
 - If Xcode Cloud is pointed at `App.xcodeproj`, builds fail with missing Capacitor modules during archive.
 - If a workflow still logs `-project /Volumes/workspace/repository/ios/App/App.xcodeproj`, edit or recreate it so the container is `ios/App/App.xcworkspace`.
+- If a build fails during `npm ci` or `npm install` with `ENOTFOUND registry.npmjs.org`, that is an npm registry/DNS connectivity problem in the Xcode Cloud environment, not an Xcode compile error.
+- In that case, retry the build first. If it persists, set `XCLOUD_NPM_REGISTRY` in the workflow Environment settings to a reachable registry URL and rerun.
 
 ## Documentation
 

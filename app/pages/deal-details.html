@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="../styles/base.css" />
   <link rel="stylesheet" href="../styles/components.css" />
   <link rel="stylesheet" href="../styles/deal-details.css" />
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
   <script src="../scripts/shared/app-config.js"></script>
   <script src="../scripts/shared/sharedrive-gate.js"></script>
 </head>
@@ -65,6 +66,10 @@
           <div class="meta-card">
             <div class="meta-label">Junior</div>
             <div class="meta-value" id="deal-junior">–</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Sub owners</div>
+            <div class="meta-value" id="deal-sub-owners">–</div>
           </div>
           <div class="meta-card">
             <div class="meta-label">Target amount</div>
@@ -147,6 +152,7 @@
               <label>Company<input id="deal-input-company" type="text" required /></label>
               <label>Senior<input id="deal-input-senior" type="text" required /></label>
               <label>Junior<input id="deal-input-junior" type="text" required /></label>
+              <label class="deal-form-full">Sub owners<textarea id="deal-input-sub-owners" rows="2" placeholder="Comma or line separated, e.g. Alice, Bob"></textarea></label>
               <label>Stage
                 <select id="deal-input-stage">
                   <option value="prospect">Prospect</option>
@@ -222,7 +228,7 @@
           <form id="deal-task-form" class="deal-form" hidden>
             <div class="deal-form-grid">
               <label>Title<input id="task-input-title" type="text" required /></label>
-              <label>Owner<input id="task-input-owner" type="text" required /></label>
+              <label>Owner<input id="task-input-owner" type="text" list="deal-task-owner-options" required /></label>
               <label>Type<input id="task-input-type" type="text" placeholder="Meeting, Document..." /></label>
               <label>Status
                 <select id="task-input-status">
@@ -232,6 +238,10 @@
                 </select>
               </label>
               <label>Due date<input id="task-input-due" type="date" /></label>
+            </div>
+            <datalist id="deal-task-owner-options"></datalist>
+            <div class="dashboard-link-help" id="task-owner-help">
+              Suggested assignees for this deal will appear here after you save senior, junior, or sub owners.
             </div>
             <label>Notes<textarea id="task-input-notes" rows="3"></textarea></label>
             <div class="btn-row">

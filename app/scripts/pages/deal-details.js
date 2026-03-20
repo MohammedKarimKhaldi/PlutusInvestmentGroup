@@ -210,6 +210,89 @@ function getJuniorOwner(deal) {
   return (deal && deal.juniorOwner) || "";
 }
 
+function normalizeDealSubOwners(deal) {
+  const source = deal && deal.subOwners;
+  const values = Array.isArray(source)
+    ? source
+    : typeof source === "string"
+      ? source.split(/[\n,;]+/)
+      : [];
+  const normalized = values
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const deduped = Array.from(new Set(normalized));
+  if (deal && typeof deal === "object") {
+    deal.subOwners = deduped;
+  }
+  return deduped;
+}
+
+function parseDealSubOwnersInput(value) {
+  return Array.from(
+    new Set(
+      String(value || "")
+        .split(/[\n,;]+/)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function getAssignableOwnersForDeal(deal) {
+  const seen = new Set();
+  return [
+    getSeniorOwner(deal),
+    getJuniorOwner(deal),
+    ...normalizeDealSubOwners(deal),
+  ].filter((entry) => {
+    const value = String(entry || "").trim();
+    const key = normalizeValue(value);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderOwnerOptionsIntoDatalist(listEl, values) {
+  if (!listEl) return;
+  listEl.innerHTML = "";
+  values.forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    listEl.appendChild(option);
+  });
+}
+
+function refreshDealTaskOwnerSuggestions() {
+  const ownerInput = document.getElementById("task-input-owner");
+  const datalist = document.getElementById("deal-task-owner-options");
+  const helpEl = document.getElementById("task-owner-help");
+  if (!ownerInput || !datalist) return;
+
+  const owners = getAssignableOwnersForDeal(currentDeal);
+  renderOwnerOptionsIntoDatalist(datalist, owners);
+
+  if (helpEl) {
+    helpEl.textContent = owners.length
+      ? `Suggested assignees for this deal: ${owners.join(", ")}. These names also flow through to the task views.`
+      : "Add senior, junior, or sub owners in the deal editor to suggest them here.";
+  }
+
+  if (!String(ownerInput.value || "").trim() && owners.length) {
+    ownerInput.value = owners[0];
+  }
+}
+
+function buildOwnerTaskLinksHtml(owners) {
+  return owners
+    .map((owner) => {
+      const label = escapeHtml(owner);
+      const href = buildPageUrl("owner-tasks", { owner });
+      return `<a class="meta-owner-link" href="${href}">${label}</a>`;
+    })
+    .join("");
+}
+
 function normalizeDealContacts(deal, options = {}) {
   const { keepEmpty = false } = options;
   const source = deal && Array.isArray(deal.contacts) ? deal.contacts : [];
@@ -518,6 +601,15 @@ function getDashboardForCurrentDeal() {
     dashboard = dashboards.find((entry) => normalizeValue(entry.id) === dashboardId) || null;
   }
   return dashboard;
+}
+
+function getOwnershipDashboardConfig() {
+  const dashboardsConfig = getDashboardConfig();
+  if (!dashboardsConfig || !Array.isArray(dashboardsConfig.dashboards)) return null;
+  if (AppCore && typeof AppCore.getDashboardById === "function") {
+    return AppCore.getDashboardById(dashboardsConfig, "deal-ownership");
+  }
+  return dashboardsConfig.dashboards.find((entry) => normalizeValue(entry && entry.id) === "deal-ownership") || null;
 }
 
 function getDefaultDeckShareUrl() {
@@ -931,6 +1023,244 @@ async function fetchDashboardWorkbook(excelUrl, proxies) {
   return null;
 }
 
+function arrayBufferToBase64(payload) {
+  let bytes = null;
+  if (payload instanceof ArrayBuffer) {
+    bytes = new Uint8Array(payload);
+  } else if (ArrayBuffer.isView(payload)) {
+    bytes = new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+  } else {
+    return "";
+  }
+
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const slice = bytes.subarray(index, Math.min(index + chunkSize, bytes.length));
+    binary += String.fromCharCode.apply(null, slice);
+  }
+  return btoa(binary);
+}
+
+function looksLikeHtmlBuffer(buffer) {
+  try {
+    const bytes = new Uint8Array(buffer || new ArrayBuffer(0)).slice(0, 512);
+    const text = new TextDecoder("utf-8").decode(bytes).trim().toLowerCase();
+    return text.startsWith("<!doctype html") || text.startsWith("<html") || text.includes("<head") || text.includes("<body");
+  } catch {
+    return false;
+  }
+}
+
+function getOwnershipWorkbookSheet(workbook, sheetsConfig) {
+  if (!workbook || !Array.isArray(workbook.SheetNames) || !workbook.SheetNames.length) {
+    return { sheetName: "", sheet: null };
+  }
+
+  const preferred = String(sheetsConfig && sheetsConfig.funds || "").trim();
+  let sheetName = "";
+  if (preferred) {
+    sheetName = workbook.SheetNames.find((entry) => {
+      const normalizedEntry = normalizeValue(entry);
+      const normalizedPreferred = normalizeValue(preferred);
+      return normalizedEntry === normalizedPreferred || normalizedEntry.includes(normalizedPreferred);
+    }) || "";
+  }
+  if (!sheetName) {
+    sheetName = workbook.SheetNames[0] || "";
+  }
+  return {
+    sheetName,
+    sheet: sheetName ? workbook.Sheets[sheetName] : null,
+  };
+}
+
+function detectOwnershipHeaderRowIndex(rows, maxScanRows = 12) {
+  const upperBound = Math.min(Array.isArray(rows) ? rows.length : 0, maxScanRows);
+  for (let index = 0; index < upperBound; index += 1) {
+    const headers = Array.isArray(rows[index]) ? rows[index].map((cell) => String(cell || "").trim()) : [];
+    const hasDealHeader = headers.some((header) => /deal|company|project/i.test(header));
+    const hasStaffHeader = headers.some((header) => /^staff$/i.test(header) || /^name$/i.test(header) || /^lead$/i.test(header) || /staff|owner/i.test(header));
+    if (hasDealHeader && hasStaffHeader) {
+      return index;
+    }
+  }
+  return 0;
+}
+
+function findOwnershipHeaderIndex(headers, patterns) {
+  return headers.findIndex((header) => patterns.some((pattern) => pattern.test(String(header || "").trim())));
+}
+
+function ensureRowLength(row, length) {
+  const nextRow = Array.isArray(row) ? row.slice() : [];
+  while (nextRow.length < length) nextRow.push("");
+  return nextRow;
+}
+
+function buildCurrentDealReferenceSet(extraReferences = []) {
+  if (!currentDeal) return new Set();
+  return new Set(
+    [
+      currentDeal.id,
+      currentDeal.name,
+      currentDeal.company,
+      currentDeal.fundraisingDashboardId,
+      currentDeal.company && currentDeal.name ? `${currentDeal.company} ${currentDeal.name}` : "",
+      currentDeal.name && currentDeal.company ? `${currentDeal.name} ${currentDeal.company}` : "",
+      ...extraReferences,
+    ]
+      .map((value) => normalizeValue(value))
+      .filter(Boolean),
+  );
+}
+
+function rowMatchesCurrentDealInOwnershipSheet(row, dealColumnIndexes, dealReferenceSet) {
+  const references = dealColumnIndexes
+    .map((index) => row[index])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  if (!references.length) return false;
+
+  if (AppCore && typeof AppCore.findDealByReference === "function") {
+    const matchedDeal = AppCore.findDealByReference(allDeals, references);
+    if (matchedDeal && normalizeValue(matchedDeal.id) === normalizeValue(currentDeal && currentDeal.id)) {
+      return true;
+    }
+  }
+
+  return references.some((value) => dealReferenceSet.has(normalizeValue(value)));
+}
+
+function isOwnershipSubOwnerRow(row, roleColumnIndex) {
+  if (!Array.isArray(row) || roleColumnIndex < 0) return false;
+  return normalizeValue(row[roleColumnIndex]).startsWith("sub owner");
+}
+
+async function syncDealSubOwnersToOwnershipWorkbook(options = {}) {
+  if (!currentDeal) return { attempted: false, skipped: true };
+  if (!window.XLSX) {
+    throw new Error("Workbook sync is unavailable because the Excel parser did not load.");
+  }
+  if (
+    !AppCore ||
+    typeof AppCore.resolveShareDriveFile !== "function" ||
+    typeof AppCore.downloadBinary !== "function" ||
+    typeof AppCore.uploadShareDriveFile !== "function"
+  ) {
+    throw new Error("Workbook sync is unavailable in this mode.");
+  }
+
+  const ownershipDashboard = getOwnershipDashboardConfig();
+  if (!ownershipDashboard || !ownershipDashboard.excelUrl) {
+    return { attempted: false, skipped: true };
+  }
+
+  const resolvedFile = await AppCore.resolveShareDriveFile({
+    shareUrl: ownershipDashboard.excelUrl,
+  });
+  if (!resolvedFile || !resolvedFile.downloadUrl) {
+    throw new Error("Could not resolve the deal ownership workbook download URL.");
+  }
+  if (!resolvedFile.name || !resolvedFile.parentItemId) {
+    throw new Error("Could not resolve the deal ownership workbook location for upload.");
+  }
+
+  const buffer = await AppCore.downloadBinary(resolvedFile.downloadUrl, { cache: "no-store" });
+  if (looksLikeHtmlBuffer(buffer)) {
+    throw new Error("Deal ownership workbook download returned an HTML page. Reconnect Sharedrive and try again.");
+  }
+
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const { sheetName, sheet } = getOwnershipWorkbookSheet(workbook, ownershipDashboard.sheets || {});
+  if (!sheet || !sheetName) {
+    throw new Error("Deal ownership sheet not found in the linked workbook.");
+  }
+
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  if (!rows.length) {
+    throw new Error("Deal ownership sheet is empty.");
+  }
+
+  const headerRowIndex = detectOwnershipHeaderRowIndex(rows);
+  const headers = ensureRowLength(rows[headerRowIndex], rows[headerRowIndex] ? rows[headerRowIndex].length : 0)
+    .map((header) => String(header || "").trim());
+  const dealColumnIndexes = headers
+    .map((header, index) => (/deal|company|project/i.test(header) ? index : -1))
+    .filter((index) => index >= 0);
+  const primaryDealColumnIndex = findOwnershipHeaderIndex(headers, [/deal/i, /company/i, /project/i]);
+  const dealNameColumnIndex = findOwnershipHeaderIndex(headers, [/deal/i, /project/i]);
+  const companyColumnIndex = findOwnershipHeaderIndex(headers, [/company/i]);
+  const staffColumnIndex = findOwnershipHeaderIndex(headers, [/^staff$/i, /^name$/i, /^lead$/i, /staff/i, /owner/i]);
+  let roleColumnIndex = findOwnershipHeaderIndex(headers, [/^role$/i, /title/i, /position/i, /function/i, /team/i]);
+
+  if (primaryDealColumnIndex < 0 || staffColumnIndex < 0) {
+    throw new Error("Deal ownership sheet needs both a deal column and a staff/owner column.");
+  }
+
+  if (roleColumnIndex < 0) {
+    roleColumnIndex = headers.length;
+    headers.push("Role");
+  }
+
+  const rowLength = headers.length;
+  const prefixRows = rows
+    .slice(0, headerRowIndex + 1)
+    .map((row, index) => (index === headerRowIndex ? headers.slice() : ensureRowLength(row, rowLength)));
+  const dataRows = rows.slice(headerRowIndex + 1).map((row) => ensureRowLength(row, rowLength));
+  const dealReferenceSet = buildCurrentDealReferenceSet([
+    options.previousName,
+    options.previousCompany,
+    options.previousName && currentDeal && currentDeal.company ? `${options.previousName} ${currentDeal.company}` : "",
+    options.previousCompany && currentDeal && currentDeal.name ? `${currentDeal.name} ${options.previousCompany}` : "",
+    options.previousCompany && options.previousName ? `${options.previousCompany} ${options.previousName}` : "",
+    options.previousName && options.previousCompany ? `${options.previousName} ${options.previousCompany}` : "",
+  ]);
+  const filteredDataRows = dataRows.filter((row) => !(
+    rowMatchesCurrentDealInOwnershipSheet(row, dealColumnIndexes, dealReferenceSet) &&
+    isOwnershipSubOwnerRow(row, roleColumnIndex)
+  ));
+  const removedCount = dataRows.length - filteredDataRows.length;
+
+  const subOwners = normalizeDealSubOwners(currentDeal);
+  const newRows = subOwners.map((subOwner) => {
+    const row = new Array(rowLength).fill("");
+    const dealLabel = currentDeal.name || currentDeal.company || currentDeal.id || "";
+    if (dealNameColumnIndex >= 0) row[dealNameColumnIndex] = dealLabel;
+    if (companyColumnIndex >= 0) row[companyColumnIndex] = currentDeal.company || dealLabel;
+    if (dealNameColumnIndex < 0 && primaryDealColumnIndex >= 0) row[primaryDealColumnIndex] = dealLabel;
+    row[staffColumnIndex] = subOwner;
+    row[roleColumnIndex] = "Sub owner";
+    return row;
+  });
+
+  if (!removedCount && !newRows.length) {
+    return { attempted: false, skipped: true };
+  }
+
+  const nextRows = prefixRows.concat(filteredDataRows, newRows);
+  const nextSheet = XLSX.utils.aoa_to_sheet(nextRows);
+  if (sheet["!cols"]) nextSheet["!cols"] = sheet["!cols"];
+  if (sheet["!merges"]) nextSheet["!merges"] = sheet["!merges"];
+  workbook.Sheets[sheetName] = nextSheet;
+
+  const updatedWorkbook = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
+  await AppCore.uploadShareDriveFile({
+    shareUrl: ownershipDashboard.excelUrl,
+    parentItemId: resolvedFile.parentItemId,
+    fileName: resolvedFile.name,
+    contentBase64: arrayBufferToBase64(updatedWorkbook),
+    conflictBehavior: "replace",
+  });
+
+  return {
+    attempted: true,
+    sheetName,
+    syncedCount: newRows.length,
+    removedCount,
+  };
+}
+
 async function syncContactStatusTasksFromDashboard() {
   if (!currentDeal || !window.XLSX) return;
   const dashboardsConfig =
@@ -995,6 +1325,10 @@ function renderDealHeader() {
   document.getElementById("deal-company").textContent = currentDeal.company || "–";
   document.getElementById("deal-senior").textContent = getSeniorOwner(currentDeal) || "–";
   document.getElementById("deal-junior").textContent = getJuniorOwner(currentDeal) || "–";
+  const subOwners = normalizeDealSubOwners(currentDeal);
+  document.getElementById("deal-sub-owners").innerHTML = subOwners.length
+    ? `<div class="meta-owner-links">${buildOwnerTaskLinksHtml(subOwners)}</div>`
+    : "–";
   document.getElementById("deal-target").textContent = formatAmount(currentDeal.targetAmount, currentDeal.currency);
   document.getElementById("deal-raised").textContent = formatAmount(currentDeal.raisedAmount, currentDeal.currency);
 
@@ -1109,6 +1443,7 @@ function renderDealHeader() {
   syncLegacyPrimaryContactFields(currentDeal);
   renderDealLegalLinks();
   renderDealContactsSummary();
+  refreshDealTaskOwnerSuggestions();
   refreshStageButton();
 }
 
@@ -1137,6 +1472,7 @@ function populateDealForm() {
   document.getElementById("deal-input-company").value = currentDeal.company || "";
   document.getElementById("deal-input-senior").value = getSeniorOwner(currentDeal);
   document.getElementById("deal-input-junior").value = getJuniorOwner(currentDeal);
+  document.getElementById("deal-input-sub-owners").value = normalizeDealSubOwners(currentDeal).join("\n");
   document.getElementById("deal-input-stage").value = normalizeValue(currentDeal.stage) || "prospect";
   document.getElementById("deal-input-target").value = currentDeal.targetAmount ?? "";
   document.getElementById("deal-input-raised").value = currentDeal.raisedAmount ?? "";
@@ -1408,10 +1744,15 @@ function setupDealForm() {
     event.preventDefault();
     if (!currentDeal) return;
 
+    const previousName = String(currentDeal.name || "").trim();
+    const previousCompany = String(currentDeal.company || "").trim();
+    const previousSubOwners = normalizeDealSubOwners(currentDeal).slice();
+
     currentDeal.name = document.getElementById("deal-input-name").value.trim();
     currentDeal.company = document.getElementById("deal-input-company").value.trim();
     currentDeal.seniorOwner = document.getElementById("deal-input-senior").value.trim();
     currentDeal.juniorOwner = document.getElementById("deal-input-junior").value.trim();
+    currentDeal.subOwners = parseDealSubOwnersInput(document.getElementById("deal-input-sub-owners").value);
     currentDeal.owner = currentDeal.seniorOwner; // legacy compatibility
     currentDeal.stage = document.getElementById("deal-input-stage").value;
     currentDeal.targetAmount = parseNumericAmount(document.getElementById("deal-input-target").value);
@@ -1438,12 +1779,37 @@ function setupDealForm() {
     currentDeal.contacts = collectDealContactsFromEditor();
     syncLegacyPrimaryContactFields(currentDeal);
 
+    const shouldSyncSubOwners =
+      previousName !== currentDeal.name ||
+      previousCompany !== currentDeal.company ||
+      previousSubOwners.join("\n") !== currentDeal.subOwners.join("\n");
+
     statusEl.textContent = "Saving...";
     try {
       await saveDealsData();
+      let subOwnerSyncResult = null;
+      let subOwnerSyncError = null;
+      if (shouldSyncSubOwners) {
+        try {
+          subOwnerSyncResult = await syncDealSubOwnersToOwnershipWorkbook({
+            previousName,
+            previousCompany,
+          });
+        } catch (error) {
+          subOwnerSyncError = error;
+        }
+      }
       renderDealHeader();
       populateDealForm();
-      statusEl.textContent = currentDeal.fundraisingDashboardId || currentDeal.deckUrl ? "Saved and linked" : "Saved";
+      if (subOwnerSyncError) {
+        statusEl.textContent = `Saved locally, but sub owner workbook sync failed: ${subOwnerSyncError.message || "Unknown error"}`;
+      } else if (subOwnerSyncResult && subOwnerSyncResult.attempted) {
+        statusEl.textContent = subOwnerSyncResult.syncedCount
+          ? `Saved and synced ${subOwnerSyncResult.syncedCount} sub owner${subOwnerSyncResult.syncedCount === 1 ? "" : "s"}`
+          : "Saved and cleared sub owner sync rows";
+      } else {
+        statusEl.textContent = currentDeal.fundraisingDashboardId || currentDeal.deckUrl ? "Saved and linked" : "Saved";
+      }
       window.setTimeout(() => {
         statusEl.textContent = "";
       }, 1500);
@@ -1457,9 +1823,7 @@ function setupDealTaskForm() {
   const form = document.getElementById("deal-task-form");
   const statusEl = document.getElementById("task-save-status");
 
-  if (currentDeal) {
-    document.getElementById("task-input-owner").value = getSeniorOwner(currentDeal) || "";
-  }
+  refreshDealTaskOwnerSuggestions();
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();

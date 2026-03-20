@@ -30,3 +30,4 @@ Thumbs.db
 # Xcode transient dependency resolution state
 ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
 !ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+.DS_Store

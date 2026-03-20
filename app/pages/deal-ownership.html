@@ -47,8 +47,9 @@
         <div class="layout">
             <aside class="sidebar-nav" data-sidebar-nav></aside>
             <div class="main-column" id="dashboard" style="display:none;">
-                <header>
-                    <div>
+                <header class="dashboard-hero">
+                    <div class="dashboard-hero-copy">
+                        <div class="dashboard-eyebrow">Ownership Dashboard</div>
                         <h1 id="dashboard-title" style="font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em;">
                             Deal Ownership
                         </h1>
@@ -56,7 +57,7 @@
                             Live Staffing & Resource Allocation
                         </p>
                     </div>
-                    <div class="header-right">
+                    <div class="header-right dashboard-hero-actions">
                         <div class="status-badge">
                             <div class="status-dot"></div>
                             <span id="sync-type">Cloud Sync Active</span>
@@ -64,27 +65,69 @@
                     </div>
                 </header>
 
-                <div class="kpi-grid" id="staffing-kpis">
+                <div class="kpi-grid dashboard-kpis" id="staffing-kpis">
                     <!-- Dynamic KPIs based on headers -->
                 </div>
 
-                <div class="chart-grid">
+                <div class="chart-grid dashboard-chart-grid">
                     <div class="card-panel">
                         <div class="card-title">Staff Allocation</div>
                         <div style="height: 300px;"><canvas id="staffChart"></canvas></div>
                     </div>
                     <div class="card-panel">
-                        <div class="card-title">Deal Distribution</div>
+                        <div class="card-title">Coverage Health</div>
                         <div style="height: 300px;"><canvas id="dealChart"></canvas></div>
                     </div>
                 </div>
 
-                <div class="toolbar" style="margin-top:20px; padding: 15px;">
-                    <input type="text" class="search-box" id="search" style="margin-bottom:0;"
-                        placeholder="Search by staff, deal, or role...">
+                <div class="card-panel ownership-watchlist" id="ownership-watchlist">
+                    <!-- JS Injected -->
                 </div>
 
-                <div class="table-wrap">
+                <div class="toolbar dashboard-inline-toolbar ownership-filter-bar" style="margin-top:20px; padding: 15px;">
+                    <div class="toolbar-row ownership-filter-row">
+                        <input type="text" class="search-box ownership-search" id="search" style="margin-bottom:0;"
+                            placeholder="Search by staff, deal, owner, or role...">
+                        <label>
+                            View
+                            <select id="ownership-view-filter">
+                                <option value="summary">Summary</option>
+                                <option value="rows">Raw staffing rows</option>
+                            </select>
+                        </label>
+                        <label>
+                            Link status
+                            <select id="ownership-link-filter">
+                                <option value="all">All</option>
+                                <option value="linked">Linked</option>
+                                <option value="unlinked">Unlinked</option>
+                                <option value="missing-staffing">Needs staffing</option>
+                            </select>
+                        </label>
+                        <label>
+                            Coverage
+                            <select id="ownership-coverage-filter">
+                                <option value="all">All</option>
+                                <option value="healthy">Healthy</option>
+                                <option value="risk">At risk</option>
+                            </select>
+                        </label>
+                        <label>
+                            Stage
+                            <select id="ownership-stage-filter">
+                                <option value="all">All stages</option>
+                                <option value="prospect">Prospect</option>
+                                <option value="signing">Signing</option>
+                                <option value="onboarding">Onboarding</option>
+                                <option value="contacting investors">Contacting investors</option>
+                            </select>
+                        </label>
+                        <button class="btn" id="ownership-reset-filters" type="button">Reset filters</button>
+                    </div>
+                    <div class="composition-caption" id="ownership-filter-summary">Showing all coverage rows.</div>
+                </div>
+
+                <div class="table-wrap dashboard-table-wrap">
                     <table id="data-table">
                         <thead id="table-head">
                             <!-- JS Injected -->

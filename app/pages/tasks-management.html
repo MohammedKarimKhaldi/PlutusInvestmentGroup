@@ -74,7 +74,7 @@
             <div class="toolbar-row">
               <label>
                 Owner
-                <input type="text" id="task-owner" required placeholder="Owner" />
+                <input type="text" id="task-owner" list="task-owner-options" required placeholder="Owner" />
               </label>
               <label>
                 Deal
@@ -91,6 +91,8 @@
                 <input type="text" id="task-type" placeholder="e.g. Call, Doc" />
               </label>
             </div>
+            <datalist id="task-owner-options"></datalist>
+            <div class="task-owner-help" id="task-owner-help">Select a deal to suggest its senior, junior, and sub owners, or type any owner name.</div>
             <div class="toolbar-row">
               <label>
                 Status

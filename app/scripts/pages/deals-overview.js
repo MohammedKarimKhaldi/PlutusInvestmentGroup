@@ -2,6 +2,12 @@
     const DEALS_STORAGE_KEY = (AppCore && AppCore.STORAGE_KEYS && AppCore.STORAGE_KEYS.deals) || "deals_data_v1";
     let dealsData = [];
     let accountingAccessState = { restricted: false, allowed: true };
+    let dealsFilterState = {
+      keyword: "",
+      stage: "all",
+      owner: "all",
+      setup: "all",
+    };
 
     const STAGE_LABELS = {
       "prospect": "Prospect",
@@ -41,6 +47,287 @@
       const query = new URLSearchParams(params || {});
       const queryString = query.toString();
       return queryString ? `${pageId}.html?${queryString}` : `${pageId}.html`;
+    }
+
+    function hasDashboardLinked(deal) {
+      return Boolean(String(deal && deal.fundraisingDashboardId || "").trim());
+    }
+
+    function hasDeckLinked(deal) {
+      return Boolean(String(deal && deal.deckUrl || "").trim());
+    }
+
+    function normalizeDealLegalLinksForFilters(deal) {
+      const source =
+        deal && Array.isArray(deal.legalLinks)
+          ? deal.legalLinks
+          : deal && Array.isArray(deal.legalAspects)
+            ? deal.legalAspects
+            : [];
+
+      return source
+        .map((entry) => {
+          if (typeof entry === "string") return String(entry || "").trim();
+          if (!entry || typeof entry !== "object") return "";
+          return String(entry.url || entry.href || entry.link || "").trim();
+        })
+        .filter(Boolean);
+    }
+
+    function hasLegalLinked(deal) {
+      return normalizeDealLegalLinksForFilters(deal).length > 0;
+    }
+
+    function getSubOwners(deal) {
+      const source = deal && deal.subOwners;
+      const values = Array.isArray(source)
+        ? source
+        : typeof source === "string"
+          ? source.split(/[\n,;]+/)
+          : [];
+      return Array.from(
+        new Set(
+          values
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean)
+        )
+      );
+    }
+
+    function getDealOwners(deal) {
+      return [
+        String(deal && (deal.seniorOwner || deal.owner) || "").trim(),
+        String(deal && deal.juniorOwner || "").trim(),
+        ...getSubOwners(deal),
+      ].filter(Boolean);
+    }
+
+    function parseSubOwnersInput(value) {
+      return Array.from(
+        new Set(
+          String(value || "")
+            .split(/[\n,;]+/)
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean)
+        )
+      );
+    }
+
+    function getPeopleInChargeText(deal) {
+      const primaryOwners = [getSeniorOwner(deal), getJuniorOwner(deal)]
+        .map((entry) => String(entry || "").trim())
+        .filter((entry) => entry && entry !== "–");
+      const subOwners = getSubOwners(deal);
+      if (!subOwners.length) {
+        return `${getSeniorOwner(deal)} / ${getJuniorOwner(deal)}`;
+      }
+      return `${primaryOwners.join(" / ") || "–"} · +${subOwners.length} sub`;
+    }
+
+    function syncDealFilterStateFromUi() {
+      const searchInput = document.getElementById("deal-search-input");
+      const stageFilter = document.getElementById("deal-stage-filter");
+      const ownerFilter = document.getElementById("deal-owner-filter");
+      const setupFilter = document.getElementById("deal-setup-filter");
+
+      dealsFilterState = {
+        keyword: String(searchInput && searchInput.value || "").trim().toLowerCase(),
+        stage: String(stageFilter && stageFilter.value || "all").trim().toLowerCase() || "all",
+        owner: String(ownerFilter && ownerFilter.value || "all").trim().toLowerCase() || "all",
+        setup: String(setupFilter && setupFilter.value || "all").trim().toLowerCase() || "all",
+      };
+    }
+
+    function applyDealFilterStateToUi() {
+      const searchInput = document.getElementById("deal-search-input");
+      const stageFilter = document.getElementById("deal-stage-filter");
+      const ownerFilter = document.getElementById("deal-owner-filter");
+      const setupFilter = document.getElementById("deal-setup-filter");
+
+      if (searchInput) searchInput.value = dealsFilterState.keyword || "";
+      if (stageFilter) stageFilter.value = dealsFilterState.stage || "all";
+      if (ownerFilter) ownerFilter.value = dealsFilterState.owner || "all";
+      if (setupFilter) setupFilter.value = dealsFilterState.setup || "all";
+    }
+
+    function populateDealOwnerFilter() {
+      const ownerFilter = document.getElementById("deal-owner-filter");
+      if (!ownerFilter) return;
+
+      const currentValue = String(dealsFilterState.owner || ownerFilter.value || "all").trim().toLowerCase() || "all";
+      const owners = Array.from(
+        new Set(
+          (Array.isArray(dealsData) ? dealsData : [])
+            .flatMap((deal) => getDealOwners(deal))
+            .map((owner) => owner.trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b));
+
+      ownerFilter.innerHTML = ['<option value="all">All owners</option>']
+        .concat(owners.map((owner) => `<option value="${owner.toLowerCase()}">${owner}</option>`))
+        .join("");
+
+      ownerFilter.value = owners.some((owner) => owner.toLowerCase() === currentValue) ? currentValue : "all";
+      dealsFilterState.owner = ownerFilter.value;
+    }
+
+    function matchesDealFilters(deal) {
+      if (!deal) return false;
+
+      const keyword = dealsFilterState.keyword;
+      if (keyword) {
+        const haystack = [
+          deal.id,
+          deal.name,
+          deal.company,
+          deal.stage,
+          getSeniorOwner(deal),
+          getJuniorOwner(deal),
+          getSubOwners(deal).join(" "),
+          deal.currency,
+          deal.summary,
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(keyword)) return false;
+      }
+
+      const stageValue = normalizeValue(deal.stage);
+      if (dealsFilterState.stage !== "all" && stageValue !== dealsFilterState.stage) {
+        return false;
+      }
+
+      if (dealsFilterState.owner !== "all") {
+        const owners = getDealOwners(deal).map((owner) => owner.toLowerCase());
+        if (!owners.includes(dealsFilterState.owner)) return false;
+      }
+
+      const hasDashboard = hasDashboardLinked(deal);
+      const hasDeck = hasDeckLinked(deal);
+      const hasLegal = hasLegalLinked(deal);
+      if (dealsFilterState.setup === "missing-dashboard" && hasDashboard) return false;
+      if (dealsFilterState.setup === "missing-deck" && hasDeck) return false;
+      if (dealsFilterState.setup === "missing-legal" && hasLegal) return false;
+      if (dealsFilterState.setup === "missing-any" && hasDashboard && hasDeck && hasLegal) return false;
+      if (dealsFilterState.setup === "ready" && !(hasDashboard && hasDeck && hasLegal)) return false;
+
+      return true;
+    }
+
+    function getFilteredDeals() {
+      return (Array.isArray(dealsData) ? dealsData : []).filter((deal) => matchesDealFilters(deal));
+    }
+
+    function buildDealStageCounts(source) {
+      const counts = {
+        total: Array.isArray(source) ? source.length : 0,
+        prospect: 0,
+        signing: 0,
+        onboarding: 0,
+        contacting: 0,
+      };
+
+      (Array.isArray(source) ? source : []).forEach((deal) => {
+        const stage = String(deal && deal.stage || "").toLowerCase();
+        if (stage === "prospect") counts.prospect += 1;
+        else if (stage === "signing") counts.signing += 1;
+        else if (stage === "onboarding") counts.onboarding += 1;
+        else if (stage === "contacting investors") counts.contacting += 1;
+      });
+
+      return counts;
+    }
+
+    function renderStageFilterChips(metaRow, counts) {
+      if (!metaRow) return;
+      const chips = [
+        { value: "all", label: "All deals", count: counts.total },
+        { value: "prospect", label: "Prospect", count: counts.prospect },
+        { value: "signing", label: "Signing", count: counts.signing },
+        { value: "onboarding", label: "Onboarding", count: counts.onboarding },
+        { value: "contacting investors", label: "Contacting investors", count: counts.contacting },
+      ];
+
+      metaRow.innerHTML = chips.map((chip) => `
+        <button class="chip${dealsFilterState.stage === chip.value ? " is-active" : ""}" type="button" data-deal-stage-chip="${chip.value}">
+          <strong>${chip.count}</strong> ${chip.label}
+        </button>
+      `).join("");
+    }
+
+    function updateDealFilterSummary(filteredDeals) {
+      const summaryEl = document.getElementById("deal-filter-summary");
+      if (!summaryEl) return;
+      const ownerFilter = document.getElementById("deal-owner-filter");
+      const setupFilter = document.getElementById("deal-setup-filter");
+
+      const total = Array.isArray(dealsData) ? dealsData.length : 0;
+      const shown = Array.isArray(filteredDeals) ? filteredDeals.length : 0;
+      const summaryParts = [`Showing ${shown} of ${total} deal${total === 1 ? "" : "s"}`];
+
+      if (dealsFilterState.stage !== "all") {
+        summaryParts.push(`stage: ${STAGE_LABELS[dealsFilterState.stage] || dealsFilterState.stage}`);
+      }
+      if (dealsFilterState.owner !== "all") {
+        const ownerLabel = ownerFilter && ownerFilter.selectedOptions && ownerFilter.selectedOptions[0]
+          ? ownerFilter.selectedOptions[0].text
+          : dealsFilterState.owner;
+        summaryParts.push(`owner: ${ownerLabel}`);
+      }
+      if (dealsFilterState.setup !== "all") {
+        const setupLabel = setupFilter && setupFilter.selectedOptions && setupFilter.selectedOptions[0]
+          ? setupFilter.selectedOptions[0].text
+          : dealsFilterState.setup.replace(/-/g, " ");
+        summaryParts.push(`setup: ${setupLabel}`);
+      }
+      if (dealsFilterState.keyword) {
+        summaryParts.push(`search: "${dealsFilterState.keyword}"`);
+      }
+
+      summaryEl.textContent = `${summaryParts.join(" / ")}.`;
+    }
+
+    function setupDealFilters() {
+      const searchInput = document.getElementById("deal-search-input");
+      const stageFilter = document.getElementById("deal-stage-filter");
+      const ownerFilter = document.getElementById("deal-owner-filter");
+      const setupFilter = document.getElementById("deal-setup-filter");
+      const resetBtn = document.getElementById("btn-reset-deal-filters");
+      const metaRow = document.getElementById("meta-row");
+
+      [searchInput, stageFilter, ownerFilter, setupFilter].forEach((control) => {
+        if (!control) return;
+        const eventName = control.tagName === "INPUT" ? "input" : "change";
+        control.addEventListener(eventName, () => {
+          syncDealFilterStateFromUi();
+          renderDeals();
+        });
+      });
+
+      if (resetBtn) {
+        resetBtn.addEventListener("click", () => {
+          dealsFilterState = {
+            keyword: "",
+            stage: "all",
+            owner: "all",
+            setup: "all",
+          };
+          applyDealFilterStateToUi();
+          renderDeals();
+        });
+      }
+
+      if (metaRow) {
+        metaRow.addEventListener("click", (event) => {
+          const chip = event.target.closest("[data-deal-stage-chip]");
+          if (!chip) return;
+          const nextStage = String(chip.getAttribute("data-deal-stage-chip") || "all").trim().toLowerCase() || "all";
+          dealsFilterState.stage = dealsFilterState.stage === nextStage && nextStage !== "all" ? "all" : nextStage;
+          applyDealFilterStateToUi();
+          renderDeals();
+        });
+      }
     }
 
     function toDealId(value) {
@@ -85,6 +372,7 @@
       const companyInput = document.getElementById("deal-company-input");
       const seniorInput = document.getElementById("deal-senior-input");
       const juniorInput = document.getElementById("deal-junior-input");
+      const subOwnersInput = document.getElementById("deal-sub-owners-input");
       const targetInput = document.getElementById("deal-target-input");
       const raisedInput = document.getElementById("deal-raised-input");
       const currencyInput = document.getElementById("deal-currency-input");
@@ -107,6 +395,7 @@
         const company = String(companyInput.value || "").trim();
         const seniorOwner = String(seniorInput.value || "").trim();
         const juniorOwner = String(juniorInput.value || "").trim();
+        const subOwners = parseSubOwnersInput(subOwnersInput && subOwnersInput.value);
         if (!name || !company || !seniorOwner || !juniorOwner) return;
 
         const dashboardUrl = String(dashboardUrlInput && dashboardUrlInput.value || "").trim();
@@ -149,6 +438,7 @@
             stage: "prospect",
             seniorOwner,
             juniorOwner,
+            subOwners,
             owner: seniorOwner,
             targetAmount: parseNumericAmount(targetInput.value),
             raisedAmount: parseNumericAmount(raisedInput.value),
@@ -276,16 +566,13 @@
       const footerMeta = document.getElementById("footer-meta");
       loadDealsData();
       if (!Array.isArray(dealsData)) return;
+      populateDealOwnerFilter();
+      applyDealFilterStateToUi();
+
+      const filteredDeals = getFilteredDeals();
+      const allCounts = buildDealStageCounts(dealsData);
 
       body.innerHTML = "";
-
-      let counts = {
-        total: dealsData.length,
-        prospect: 0,
-        signing: 0,
-        onboarding: 0,
-        contacting: 0
-      };
 
       const formatTextOrUnknown = (value) => {
         if (value == null || String(value).trim() === "") {
@@ -294,13 +581,9 @@
         return String(value);
       };
 
-      dealsData.forEach(deal => {
+      filteredDeals.forEach(deal => {
         const tr = document.createElement("tr");
         const stage = String(deal.stage || "").toLowerCase();
-        if (stage === "prospect") counts.prospect++;
-        else if (stage === "signing") counts.signing++;
-        else if (stage === "onboarding") counts.onboarding++;
-        else if (stage === "contacting investors") counts.contacting++;
 
         tr.innerHTML = `
           <td class="name-cell">
@@ -313,7 +596,7 @@
               ${STAGE_LABELS[stage] || "Prospect"}
             </span>
           </td>
-          <td>${getSeniorOwner(deal)} / ${getJuniorOwner(deal)}</td>
+          <td>${getPeopleInChargeText(deal)}</td>
           <td class="amount">${formatAmountCell(deal.targetAmount, deal.currency)}</td>
           <td class="amount">${formatAmountCell(deal.raisedAmount, deal.currency)}</td>
           <td>${formatTextOrUnknown(deal.CashCommission)}</td>
@@ -325,23 +608,15 @@
         body.appendChild(tr);
       });
 
-      metaRow.innerHTML = "";
-      const chips = [
-        { label: "Total deals", value: counts.total },
-        { label: "Prospect", value: counts.prospect },
-        { label: "Signing", value: counts.signing },
-        { label: "Onboarding", value: counts.onboarding },
-        { label: "Contacting investors", value: counts.contacting },
-      ];
+      if (!filteredDeals.length) {
+        body.innerHTML = '<tr><td colspan="10" class="amount-unknown">No deals match the current filters.</td></tr>';
+      }
 
-      chips.forEach(ch => {
-        const div = document.createElement("div");
-        div.className = "chip";
-        div.innerHTML = `<strong>${ch.value}</strong> ${ch.label}`;
-        metaRow.appendChild(div);
-      });
-
-      footerMeta.textContent = `${counts.total} active deal${counts.total === 1 ? "" : "s"} in pipeline.`;
+      renderStageFilterChips(metaRow, allCounts);
+      updateDealFilterSummary(filteredDeals);
+      footerMeta.textContent = filteredDeals.length === dealsData.length
+        ? `${allCounts.total} active deal${allCounts.total === 1 ? "" : "s"} in pipeline.`
+        : `${filteredDeals.length} shown of ${allCounts.total} active deal${allCounts.total === 1 ? "" : "s"}.`;
     }
 
     document.addEventListener("DOMContentLoaded", () => {
@@ -351,11 +626,13 @@
         }
         await refreshAccountingAccessState();
         loadDealsData();
+        setupDealFilters();
         setupAddDealForm();
         renderDeals();
       };
       initialize();
       if (AppCore) {
+        window.addEventListener("appcore:deals-updated", renderDeals);
         window.addEventListener("appcore:dashboard-config-updated", renderDeals);
         window.addEventListener("appcore:graph-session-updated", async () => {
           await refreshAccountingAccessState();

@@ -1186,6 +1186,10 @@
       (item && item.parentReference && item.parentReference.driveId) ||
       (item && item.remoteItem && item.remoteItem.parentReference && item.remoteItem.parentReference.driveId) ||
       "";
+    const resolvedParentItemId =
+      (item && item.parentReference && item.parentReference.id) ||
+      (item && item.remoteItem && item.remoteItem.parentReference && item.remoteItem.parentReference.id) ||
+      "";
     if (!driveId) throw new Error("Unable to resolve SharePoint drive ID.");
 
     const normalizedFileName = normalizeValue(fileName);
@@ -1194,6 +1198,8 @@
         token,
         driveId,
         itemId: item && item.id ? item.id : "",
+        name: item && item.name ? item.name : "",
+        parentItemId: resolvedParentItemId,
         downloadUrl: item && item["@microsoft.graph.downloadUrl"] ? item["@microsoft.graph.downloadUrl"] : "",
       };
     }
@@ -1219,6 +1225,8 @@
       token,
       driveId,
       itemId: child.id,
+      name: child && child.name ? child.name : "",
+      parentItemId: targetParentId,
       downloadUrl: child && child["@microsoft.graph.downloadUrl"] ? child["@microsoft.graph.downloadUrl"] : "",
     };
   }
@@ -2370,6 +2378,91 @@
     return "";
   }
 
+  async function resolveShareDriveFile({ shareUrl, parentItemId, fileName, accessToken }) {
+    const cleanShareUrl = String(shareUrl || "").trim();
+    if (!cleanShareUrl) {
+      throw new Error("Sharedrive share URL is required.");
+    }
+
+    if (
+      hasShareDriveBridge() &&
+      global.PlutusDesktop &&
+      typeof global.PlutusDesktop.getShareDriveDownloadUrl === "function"
+    ) {
+      const result = await global.PlutusDesktop.getShareDriveDownloadUrl({
+        shareUrl: cleanShareUrl,
+        accessToken: String(accessToken || "").trim(),
+      });
+      if (!result || !result.ok || !result.data) {
+        throw new Error((result && result.error) || "Failed to resolve sharedrive file.");
+      }
+      const data = result.data || {};
+      return {
+        id: String(data.itemId || data.id || "").trim(),
+        itemId: String(data.itemId || data.id || "").trim(),
+        name: String(data.name || fileName || "").trim(),
+        driveId: String(data.driveId || "").trim(),
+        parentItemId: String(data.parentItemId || parentItemId || "").trim(),
+        downloadUrl: String(data.downloadUrl || "").trim(),
+      };
+    }
+
+    if (getBrowserAuthConfig()) {
+      const resolved = await resolveShareDriveFileBrowser({
+        shareUrl: cleanShareUrl,
+        parentItemId,
+        fileName,
+      });
+      return {
+        id: String(resolved.itemId || "").trim(),
+        itemId: String(resolved.itemId || "").trim(),
+        name: String(resolved.name || fileName || "").trim(),
+        driveId: String(resolved.driveId || "").trim(),
+        parentItemId: String(resolved.parentItemId || parentItemId || "").trim(),
+        downloadUrl: String(resolved.downloadUrl || "").trim(),
+      };
+    }
+
+    throw new Error("Sharedrive sync unavailable (sign in required).");
+  }
+
+  async function uploadShareDriveFile(payload) {
+    const config = payload && typeof payload === "object" ? payload : {};
+    const shareUrl = String(config.shareUrl || "").trim();
+    const fileName = String(config.fileName || "").trim();
+    const contentBase64 = String(config.contentBase64 || "").trim();
+
+    if (!shareUrl) throw new Error("Sharedrive share URL is required.");
+    if (!fileName) throw new Error("File name is required.");
+    if (!contentBase64) throw new Error("Upload content is empty.");
+
+    if (hasShareDriveBridge()) {
+      const result = await global.PlutusDesktop.uploadShareDriveFile({
+        shareUrl,
+        accessToken: String(config.accessToken || "").trim(),
+        parentItemId: String(config.parentItemId || "").trim(),
+        fileName,
+        contentBase64,
+        conflictBehavior: String(config.conflictBehavior || "replace").trim() || "replace",
+      });
+      if (!result || !result.ok) {
+        throw new Error((result && result.error) || "Sharedrive upload failed.");
+      }
+      return result.data || null;
+    }
+
+    if (getBrowserAuthConfig()) {
+      return uploadShareDriveFileBrowser({
+        shareUrl,
+        parentItemId: String(config.parentItemId || "").trim(),
+        fileName,
+        contentBase64,
+      });
+    }
+
+    throw new Error("Sharedrive sync unavailable (sign in required).");
+  }
+
   function ensureSidebarUserCard() {
     if (!global.document) return null;
     const sidebar = global.document.querySelector(".sidebar-nav");
@@ -2472,8 +2565,10 @@
     getDashboardById,
     getDashboardForDeal,
     isAutoTask,
+    resolveShareDriveFile,
     resolveShareDriveDownloadUrl,
     downloadBinary,
+    uploadShareDriveFile,
     inspectSharedJsonSource,
     getCurrentConnectedPerson,
     getPageAccessStatus,

@@ -145,6 +145,12 @@
   margin-top: 9px;
 }
 
+.task-owner-help {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
 .toolbar label {
   display: grid;
   gap: 5px;

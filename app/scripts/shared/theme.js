@@ -1,6 +1,8 @@
 (function initThemeSwitcher(global) {
   const THEME_STORAGE_KEY = "app_theme_v1";
+  const DASHBOARD_THEME_STORAGE_KEY = "dashboard_theme_v1";
   const THEMES = ["classic", "coastal"];
+  const DASHBOARD_THEMES = ["dark", "light"];
 
   function readTheme() {
     try {
@@ -20,6 +22,31 @@
     }
   }
 
+  function isDashboardPage() {
+    const body = document.body;
+    if (!body) return false;
+    const pageId = String(body.getAttribute("data-page-id") || "").trim().toLowerCase();
+    return pageId === "investor-dashboard" || pageId === "deal-ownership";
+  }
+
+  function readDashboardTheme() {
+    try {
+      const raw = localStorage.getItem(DASHBOARD_THEME_STORAGE_KEY);
+      if (DASHBOARD_THEMES.includes(raw)) return raw;
+    } catch (e) {
+      console.warn("Dashboard theme read failed", e);
+    }
+    return "dark";
+  }
+
+  function writeDashboardTheme(theme) {
+    try {
+      localStorage.setItem(DASHBOARD_THEME_STORAGE_KEY, theme);
+    } catch (e) {
+      console.warn("Dashboard theme write failed", e);
+    }
+  }
+
   function applyTheme(theme) {
     const root = document.documentElement;
     if (!root) return;
@@ -27,10 +54,20 @@
     else root.setAttribute("data-theme", theme);
   }
 
+  function applyDashboardTheme(theme) {
+    const body = document.body;
+    if (!body || !isDashboardPage()) return;
+    body.setAttribute("data-dashboard-theme", theme === "light" ? "light" : "dark");
+  }
+
   function nextTheme(current) {
     const idx = THEMES.indexOf(current);
     if (idx < 0) return THEMES[0];
     return THEMES[(idx + 1) % THEMES.length];
+  }
+
+  function nextDashboardTheme(current) {
+    return current === "light" ? "dark" : "light";
   }
 
   function ensureToggle() {
@@ -47,11 +84,26 @@
       sidebar.appendChild(wrap);
 
       const renderLabel = () => {
+        if (isDashboardPage()) {
+          const active = readDashboardTheme();
+          button.textContent = active === "light" ? "Theme: Light Gray" : "Theme: Dark";
+          return;
+        }
+
         const active = readTheme();
         button.textContent = active === "classic" ? "Theme: Classic" : "Theme: Coastal";
       };
 
       button.addEventListener("click", () => {
+        if (isDashboardPage()) {
+          const current = readDashboardTheme();
+          const updated = nextDashboardTheme(current);
+          writeDashboardTheme(updated);
+          applyDashboardTheme(updated);
+          renderLabel();
+          return;
+        }
+
         const current = readTheme();
         const updated = nextTheme(current);
         writeTheme(updated);
@@ -63,10 +115,19 @@
     });
   }
 
+  function applyStoredThemes() {
+    if (isDashboardPage()) applyTheme("classic");
+    else applyTheme(readTheme());
+    applyDashboardTheme(readDashboardTheme());
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
-    applyTheme(readTheme());
+    applyStoredThemes();
     ensureToggle();
+    setTimeout(ensureToggle, 0);
   });
 
-  applyTheme(readTheme());
+  global.addEventListener("load", ensureToggle, { once: true });
+
+  applyStoredThemes();
 })(window);

@@ -43,6 +43,102 @@
       return String(value || "").trim().toLowerCase();
     }
 
+    function buildUniqueOwnerList(values) {
+      const seen = new Set();
+      return (Array.isArray(values) ? values : []).filter((entry) => {
+        const value = String(entry || "").trim();
+        const key = normalizeValue(value);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    function getSubOwners(deal) {
+      const source = deal && deal.subOwners;
+      const values = Array.isArray(source)
+        ? source
+        : typeof source === "string"
+          ? source.split(/[\n,;]+/)
+          : [];
+      return buildUniqueOwnerList(values);
+    }
+
+    function getAssignableOwnersForDeal(deal) {
+      return buildUniqueOwnerList([
+        deal && (deal.seniorOwner || deal.owner),
+        deal && deal.juniorOwner,
+        ...getSubOwners(deal),
+      ]);
+    }
+
+    function getAllKnownTaskOwners() {
+      const ownersFromDeals = (Array.isArray(dealsData) ? dealsData : []).flatMap((deal) => getAssignableOwnersForDeal(deal));
+      const ownersFromTasks = (Array.isArray(tasks) ? tasks : []).map((task) => task && task.owner);
+      return buildUniqueOwnerList(ownersFromDeals.concat(ownersFromTasks))
+        .sort((a, b) => a.localeCompare(b));
+    }
+
+    function findDealById(dealId) {
+      const key = normalizeValue(dealId);
+      if (!key || !Array.isArray(dealsData)) return null;
+      return dealsData.find((deal) => normalizeValue(deal && deal.id) === key) || null;
+    }
+
+    function populateTaskDealOptions(selectEl) {
+      if (!selectEl) return;
+      const currentValue = String(selectEl.value || "").trim();
+      selectEl.innerHTML = '<option value="">(General)</option>';
+      (Array.isArray(dealsData) ? dealsData : []).forEach((deal) => {
+        const option = document.createElement("option");
+        option.value = deal.id;
+        option.textContent = deal.name || deal.company || deal.id;
+        selectEl.appendChild(option);
+      });
+
+      const hasCurrent = currentValue && (Array.isArray(dealsData) ? dealsData : []).some((deal) => normalizeValue(deal && deal.id) === normalizeValue(currentValue));
+      selectEl.value = hasCurrent ? currentValue : "";
+    }
+
+    function populateOwnerDatalist(listEl, values) {
+      if (!listEl) return;
+      listEl.innerHTML = "";
+      values.forEach((value) => {
+        const option = document.createElement("option");
+        option.value = value;
+        listEl.appendChild(option);
+      });
+    }
+
+    function refreshTaskOwnerSuggestions() {
+      const ownerInput = document.getElementById("task-owner");
+      const dealSelect = document.getElementById("task-deal");
+      const datalist = document.getElementById("task-owner-options");
+      const helpEl = document.getElementById("task-owner-help");
+      if (!ownerInput || !dealSelect || !datalist) return;
+
+      const selectedDeal = findDealById(dealSelect.value);
+      const teamOwners = getAssignableOwnersForDeal(selectedDeal);
+      const allKnownOwners = getAllKnownTaskOwners();
+      const suggestions = buildUniqueOwnerList(teamOwners.concat(allKnownOwners));
+      populateOwnerDatalist(datalist, suggestions);
+
+      if (helpEl) {
+        if (selectedDeal) {
+          const label = selectedDeal.name || selectedDeal.company || selectedDeal.id || "this deal";
+          helpEl.textContent = teamOwners.length
+            ? `Suggested assignees for ${label}: ${teamOwners.join(", ")}.`
+            : `No senior, junior, or sub owners are saved on ${label} yet.`;
+        } else {
+          helpEl.textContent = "Select a deal to suggest its senior, junior, and sub owners, or type any owner name.";
+        }
+      }
+
+      if (!String(ownerInput.value || "").trim() && teamOwners.length) {
+        ownerInput.value = teamOwners[0];
+      }
+    }
+
     function buildPageUrl(pageId, params) {
       if (AppCore && typeof AppCore.getPageUrl === "function") {
         return AppCore.getPageUrl(pageId, params);
@@ -398,12 +494,12 @@
       const dueInput = document.getElementById("task-due");
       const notesInput = document.getElementById("task-notes");
 
-      if (Array.isArray(dealsData)) {
-        dealsData.forEach(d => {
-          const opt = document.createElement("option");
-          opt.value = d.id;
-          opt.textContent = d.name || d.company || d.id;
-          dealSelect.appendChild(opt);
+      populateTaskDealOptions(dealSelect);
+      refreshTaskOwnerSuggestions();
+
+      if (dealSelect) {
+        dealSelect.addEventListener("change", () => {
+          refreshTaskOwnerSuggestions();
         });
       }
 
@@ -428,10 +524,12 @@
         saveTasksData();
         renderTasks();
 
-        ownerInput.value = "";
         titleInput.value = "";
+        statusSelect.value = "in progress";
         typeInput.value = "";
+        dueInput.value = "";
         notesInput.value = "";
+        refreshTaskOwnerSuggestions();
       });
     }
 
@@ -446,9 +544,17 @@
       loadTasksData();
       setupForm();
       if (AppCore) {
+        window.addEventListener("appcore:deals-updated", () => {
+          loadDealsData();
+          const dealSelect = document.getElementById("task-deal");
+          populateTaskDealOptions(dealSelect);
+          refreshTaskOwnerSuggestions();
+          renderTasks();
+        });
         window.addEventListener("appcore:tasks-updated", (event) => {
           if (event && event.detail && Array.isArray(event.detail.tasks)) {
             tasks = event.detail.tasks;
+            refreshTaskOwnerSuggestions();
             renderTasks();
           }
         });

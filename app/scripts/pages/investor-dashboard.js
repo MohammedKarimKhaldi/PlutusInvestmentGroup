@@ -28,11 +28,101 @@
                 // --- STATE ---
                 let rawData = { vc: [], fo: [] };
                 let activeType = 'vc';
-                let charts = {};
                 let activeFilters = { all: true, calls: false, meetings: false, forward: false };
+                let compositionSelection = { groupKey: '', stageLabel: '' };
                 let typeColors = {};
-                let chartDrillDownStack = [];
                 const COLOR_PALETTE = ['#818cf8', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#22d3ee', '#fb7185'];
+                const COMPOSITION_STAGE_ORDER = [
+                    'Target',
+                    'Contact Started',
+                    'Contacted / Meeting Done',
+                    'Waiting / Ongoing',
+                    'Replied / Moving Forward',
+                    'Passed',
+                ];
+                const COMPOSITION_GROUPS = [
+                    { key: 'vc', label: 'VC Funds', shortLabel: 'VC', color: '#4f46e5', childColors: ['#312e81', '#3730a3', '#4338ca', '#6366f1', '#818cf8', '#a5b4fc'] },
+                    { key: 'hnwi', label: 'HNWI / Angels', shortLabel: 'HNWI', color: '#10b981', childColors: ['#065f46', '#047857', '#059669', '#10b981', '#34d399', '#6ee7b7'] },
+                    { key: 'fo', label: 'Family Offices', shortLabel: 'FO', color: '#f59e0b', childColors: ['#92400e', '#b45309', '#d97706', '#f59e0b', '#fbbf24', '#fcd34d'] },
+                ];
+
+                function normalizeDashboardText(value) {
+                    return String(value || '').trim().toLowerCase();
+                }
+
+                function isHNWIOrAngelRow(row) {
+                    const t = String(row && row["Type"] || "").toLowerCase();
+                    const d = String(row && row["Description"] || "").toLowerCase();
+                    return t.includes('angel') || d.includes('angel') || t.includes('individual') || d.includes('individual') || t.includes('hnwi') || d.includes('hnwi');
+                }
+
+                function getCompositionGroupMeta(groupKey) {
+                    return COMPOSITION_GROUPS.find((group) => group.key === groupKey) || null;
+                }
+
+                function getCompositionRowsForGroup(groupKey) {
+                    if (groupKey === 'vc') return rawData.vc.slice();
+                    if (groupKey === 'hnwi') return rawData.fo.filter((row) => isHNWIOrAngelRow(row));
+                    if (groupKey === 'fo') return rawData.fo.filter((row) => !isHNWIOrAngelRow(row));
+                    return [];
+                }
+
+                function polarPoint(cx, cy, radius, angle) {
+                    const radians = ((angle - 90) * Math.PI) / 180;
+                    return {
+                        x: cx + radius * Math.cos(radians),
+                        y: cy + radius * Math.sin(radians),
+                    };
+                }
+
+                function buildArcPath(cx, cy, innerRadius, outerRadius, startAngle, endAngle) {
+                    const outerStart = polarPoint(cx, cy, outerRadius, startAngle);
+                    const outerEnd = polarPoint(cx, cy, outerRadius, endAngle);
+                    const innerEnd = polarPoint(cx, cy, innerRadius, endAngle);
+                    const innerStart = polarPoint(cx, cy, innerRadius, startAngle);
+                    const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+
+                    return [
+                        'M', outerStart.x.toFixed(3), outerStart.y.toFixed(3),
+                        'A', outerRadius, outerRadius, 0, largeArc, 1, outerEnd.x.toFixed(3), outerEnd.y.toFixed(3),
+                        'L', innerEnd.x.toFixed(3), innerEnd.y.toFixed(3),
+                        'A', innerRadius, innerRadius, 0, largeArc, 0, innerStart.x.toFixed(3), innerStart.y.toFixed(3),
+                        'Z',
+                    ].join(' ');
+                }
+
+                function buildCompositionHierarchy() {
+                    const groups = [
+                        { meta: COMPOSITION_GROUPS[0], rows: getCompositionRowsForGroup('vc') },
+                        { meta: COMPOSITION_GROUPS[1], rows: getCompositionRowsForGroup('hnwi') },
+                        { meta: COMPOSITION_GROUPS[2], rows: getCompositionRowsForGroup('fo') },
+                    ];
+
+                    return groups
+                        .map(({ meta, rows }) => {
+                            const stageCounts = COMPOSITION_STAGE_ORDER.map((label) => ({ label, count: 0 }));
+                            rows.forEach((row) => {
+                                const status = getStatusText(row);
+                                const match = stageCounts.find((entry) => entry.label === status);
+                                if (match) match.count += 1;
+                            });
+                            return {
+                                ...meta,
+                                count: rows.length,
+                                children: stageCounts
+                                    .filter((entry) => entry.count > 0)
+                                    .map((entry, index) => ({
+                                        ...entry,
+                                        shortLabel: entry.label
+                                            .replace(' / Moving Forward', '')
+                                            .replace(' / Meeting Done', '')
+                                            .replace(' / Ongoing', ''),
+                                        color: meta.childColors[index % meta.childColors.length],
+                                    })),
+                            };
+                        })
+                        .filter((group) => group.count > 0);
+                }
 
                 function buildPageUrl(pageId, params) {
                     if (window.AppCore && typeof window.AppCore.getPageUrl === "function") {
@@ -106,6 +196,7 @@
                     const retryBtn = document.getElementById('btn-retry-sync');
                     const dashboardSwitcher = document.getElementById('dashboard-switcher');
                     const searchInput = document.getElementById('search');
+                    const compositionResetBtn = document.getElementById('composition-reset');
                     const dashboardForm = document.getElementById('dashboard-form');
                     const editCurrentBtn = document.getElementById('btn-edit-current-dashboard');
                     const resetDashboardFormBtn = document.getElementById('btn-reset-dashboard-form');
@@ -124,6 +215,9 @@
                     }
                     if (searchInput) {
                         searchInput.addEventListener('input', filterData);
+                    }
+                    if (compositionResetBtn) {
+                        compositionResetBtn.addEventListener('click', () => clearCompositionSelection());
                     }
                     if (dashboardForm) {
                         dashboardForm.addEventListener('submit', onAddDashboard);
@@ -644,25 +738,13 @@
                     const hasTypeColumn = rawData.fo.some(r => Object.prototype.hasOwnProperty.call(r, "Type"));
                     console.log('[Dashboard] Has "Type" column on FO sheet:', hasTypeColumn);
 
-                    const classifyHNWI = (row) => {
-                        const t = String(row["Type"] || "").toLowerCase();
-                        const d = String(row["Description"] || "").toLowerCase();
-                        return t.includes('angel') || d.includes('angel') || t.includes('individual') || d.includes('individual') || t.includes('hnwi') || d.includes('hnwi');
-                    };
-
-                    const classifyFO = (row) => {
-                        const t = String(row["Type"] || "").toLowerCase();
-                        const d = String(row["Description"] || "").toLowerCase();
-                        return t.includes('family') || d.includes('family') || t.includes('mfo') || t.includes('sfo') || t === 'fo' || d === 'fo';
-                    };
-
                     if (!hasTypeColumn) {
                         // If there's no "Type" column on the FO sheet at all, treat all FO rows as Family Offices
                         foCount = rawData.fo.length;
                         hnwiCount = 0;
                     } else {
                         rawData.fo.forEach(r => {
-                            if (classifyHNWI(r)) hnwiCount++;
+                            if (isHNWIOrAngelRow(r)) hnwiCount++;
                             else foCount++; // Default for F.O sheet
                         });
                     }
@@ -724,141 +806,13 @@
                     setText('k-meetings', meetingsCount);
 
                     // 4. Visuals Refresh
-                    chartDrillDownStack = [];
-                    renderDonut(
-                        [vcCount, hnwiCount, foCount],
-                        ['VC Funds', 'HNWI / Angels', 'Family Offices'],
-                        ['#4f46e5', '#10b981', '#f59e0b']
-                    );
                     renderRangeBars();
-                    switchTab('vc');
+                    resetCompositionSelectionState();
+                    switchTab('vc', document.querySelector('[data-tab-type="vc"]'), { keepCompositionSelection: true });
 
                     // 5. Show Dashboard
                     document.getElementById('loader').style.display = 'none';
                     document.getElementById('dashboard').style.display = 'block';
-                }
-
-                function renderDonut(values, labels, colors) {
-                    const ctx = document.getElementById('donutChart').getContext('2d');
-                    if (charts.donut) charts.donut.destroy();
-
-                    const ringValueLabelPlugin = {
-                        id: 'ringValueLabels',
-                        afterDatasetsDraw(chart) {
-                            const { ctx } = chart;
-                            ctx.save();
-                            ctx.fillStyle = '#e2e8f0';
-                            ctx.font = '600 12px Outfit';
-                            ctx.textAlign = 'center';
-                            ctx.textBaseline = 'middle';
-
-                            chart.data.datasets.forEach((_dataset, datasetIndex) => {
-                                const meta = chart.getDatasetMeta(datasetIndex);
-                                if (!meta || !meta.data || !meta.data[0]) return;
-                                
-                                meta.data.forEach((arc, i) => {
-                                    const val = chart.data.datasets[datasetIndex].data[i];
-                                    if (!val) return;
-                                    const midAngle = (arc.startAngle + arc.endAngle) / 2;
-                                    const radius = (arc.innerRadius + arc.outerRadius) / 2;
-                                    const x = arc.x + Math.cos(midAngle) * radius;
-                                    const y = arc.y + Math.sin(midAngle) * radius;
-                                    ctx.fillText(String(val), x, y);
-                                });
-                            });
-
-                            ctx.restore();
-                        }
-                    };
-
-                    charts.donut = new Chart(ctx, {
-                        type: 'doughnut',
-                        data: {
-                            labels: labels,
-                            datasets: [{
-                                data: values,
-                                backgroundColor: colors,
-                                borderWidth: 0, hoverOffset: 12
-                            }]
-                        },
-                        options: {
-                            cutout: '75%', responsive: true, maintainAspectRatio: false,
-                            plugins: { 
-                                legend: { position: 'bottom', labels: { color: '#94a3b8', font: { family: 'Outfit', size: 12 }, padding: 25 } },
-                                tooltip: {
-                                    callbacks: {
-                                        label(context) {
-                                            const label = context.label || '';
-                                            const value = context.parsed || 0;
-                                            return `${label}: ${value}`;
-                                        }
-                                    }
-                                } 
-                            },
-                            onClick(event, elements) {
-                                if (elements && elements.length > 0) {
-                                    const index = elements[0].index;
-                                    const label = labels[index];
-                                    handleChartClick(label);
-                                }
-                            }
-                        },
-                        plugins: [ringValueLabelPlugin]
-                    });
-
-                    updateChartControls();
-                }
-
-                function handleChartClick(label) {
-                    if (chartDrillDownStack.length > 0) return; // Only drill down from level 1 for now
-
-                    const combined = [...rawData.vc, ...rawData.fo];
-                    let filteredData = [];
-
-                    if (label === 'VC Funds') {
-                        filteredData = rawData.vc;
-                    } else if (label === 'HNWI / Angels') {
-                        filteredData = rawData.fo.filter(r => {
-                            const t = String(r["Type"] || "").toLowerCase();
-                            const d = String(r["Description"] || "").toLowerCase();
-                            return t.includes('angel') || d.includes('angel') || t.includes('individual') || d.includes('individual') || t.includes('hnwi') || d.includes('hnwi');
-                        });
-                    } else if (label === 'Family Offices') {
-                        filteredData = rawData.fo.filter(r => {
-                            const t = String(r["Type"] || "").toLowerCase();
-                            const d = String(r["Description"] || "").toLowerCase();
-                            return t.includes('family') || d.includes('family') || t.includes('mfo') || t.includes('sfo') || t === 'fo' || d === 'fo';
-                        });
-                    }
-
-                    if (filteredData.length === 0) return;
-
-                    // Drill down to Stages
-                    const stageCounts = {};
-                    filteredData.forEach(item => {
-                        const stage = getStatusText(item);
-                        stageCounts[stage] = (stageCounts[stage] || 0) + 1;
-                    });
-
-                    // Sort by value (descending)
-                    const sortedStages = Object.entries(stageCounts)
-                        .sort((a, b) => b[1] - a[1])
-                        .filter(entry => entry[1] > 0);
-
-                    const drillLabels = sortedStages.map(s => s[0]);
-                    const drillValues = sortedStages.map(s => s[1]);
-                    const drillColors = drillLabels.map((_, i) => COLOR_PALETTE[i % COLOR_PALETTE.length]);
-
-                    const currentValues = charts.donut.data.datasets[0].data;
-                    const currentLabels = charts.donut.data.labels;
-                    const currentColors = charts.donut.data.datasets[0].backgroundColor;
-
-                    chartDrillDownStack.push({ labels: currentLabels, values: currentValues, colors: currentColors, title: 'Investor Composition' });
-                    
-                    renderDonut(drillValues, drillLabels, drillColors);
-                    
-                    const cardTitle = document.querySelector('.card-panel .card-title');
-                    if (cardTitle) cardTitle.textContent = `Breakdown: ${label}`;
                 }
 
                 function getStatusText(item) {
@@ -874,32 +828,209 @@
                     return 'Target';
                 }
 
-                function updateChartControls() {
-                    const container = document.getElementById('donut-level-controls');
-                    if (!container) return;
+                function resetCompositionSelectionState() {
+                    compositionSelection = { groupKey: '', stageLabel: '' };
+                }
 
-                    if (chartDrillDownStack.length > 0) {
-                        container.style.display = 'flex';
-                        container.innerHTML = `
-                            <button class="btn btn-ghost" style="padding: 4px 12px; font-size: 0.75rem;" onclick="goBackInChart()">
-                                ← Back to Overview
-                            </button>
-                        `;
-                    } else {
-                        container.style.display = 'none';
-                        container.innerHTML = '';
+                function getNormalizedCompositionStage(stageLabel) {
+                    const normalized = normalizeDashboardText(stageLabel);
+                    return COMPOSITION_STAGE_ORDER.find((label) => normalizeDashboardText(label) === normalized) || '';
+                }
+
+                function getCurrentSearchKeyword() {
+                    return String(document.getElementById('search') && document.getElementById('search').value || '').toLowerCase();
+                }
+
+                function getCompositionSelectionCount() {
+                    if (!compositionSelection.groupKey) return 0;
+                    const rows = getCompositionRowsForGroup(compositionSelection.groupKey);
+                    if (!compositionSelection.stageLabel) return rows.length;
+                    return rows.filter((row) => getStatusText(row) === compositionSelection.stageLabel).length;
+                }
+
+                function updateCompositionSelectionUi() {
+                    const caption = document.getElementById('composition-caption');
+                    const resetBtn = document.getElementById('composition-reset');
+                    const hasSelection = Boolean(compositionSelection.groupKey);
+
+                    if (caption) {
+                        if (!hasSelection) {
+                            caption.textContent = 'Click a ring segment to filter the investor table.';
+                        } else {
+                            const groupMeta = getCompositionGroupMeta(compositionSelection.groupKey);
+                            const groupLabel = groupMeta ? groupMeta.label : 'Selected investors';
+                            const count = getCompositionSelectionCount();
+                            const countLabel = `${count} investor${count === 1 ? '' : 's'}`;
+                            caption.textContent = compositionSelection.stageLabel
+                                ? `Filtering ${groupLabel} / ${compositionSelection.stageLabel} / ${countLabel}.`
+                                : `Filtering ${groupLabel} / ${countLabel}.`;
+                        }
+                    }
+
+                    if (resetBtn) {
+                        resetBtn.hidden = !hasSelection;
+                        resetBtn.disabled = !hasSelection;
                     }
                 }
 
-                // Make goBackInChart available globally for the inline onclick handler
-                window.goBackInChart = function() {
-                    const previous = chartDrillDownStack.pop();
-                    if (previous) {
-                        renderDonut(previous.values, previous.labels, previous.colors);
-                        const cardTitle = document.querySelector('.card-panel .card-title');
-                        if (cardTitle) cardTitle.textContent = previous.title;
+                function clearCompositionSelection(options = {}) {
+                    resetCompositionSelectionState();
+                    if (options.render === false) return;
+                    renderCompositionChart();
+                    renderTable(getCurrentSearchKeyword());
+                    updateCompositionSelectionUi();
+                }
+
+                function setCompositionSelection(groupKey, stageLabel) {
+                    const groupMeta = getCompositionGroupMeta(groupKey);
+                    if (!groupMeta) {
+                        clearCompositionSelection();
+                        return;
                     }
-                };
+
+                    const normalizedStage = getNormalizedCompositionStage(stageLabel);
+                    const isSameSelection =
+                        compositionSelection.groupKey === groupKey &&
+                        compositionSelection.stageLabel === normalizedStage;
+
+                    if (isSameSelection) {
+                        clearCompositionSelection();
+                        return;
+                    }
+
+                    compositionSelection = {
+                        groupKey,
+                        stageLabel: normalizedStage,
+                    };
+
+                    const nextType = groupKey === 'vc' ? 'vc' : 'fo';
+                    const nextButton = document.querySelector(`[data-tab-type="${nextType}"]`);
+                    switchTab(nextType, nextButton, { keepCompositionSelection: true });
+                }
+
+                function matchesCompositionSelection(item) {
+                    if (!compositionSelection.groupKey) return true;
+
+                    if (compositionSelection.groupKey === 'vc') {
+                        if (activeType !== 'vc') return false;
+                    } else {
+                        if (activeType !== 'fo') return false;
+                        const isHnwi = isHNWIOrAngelRow(item);
+                        if (compositionSelection.groupKey === 'hnwi' && !isHnwi) return false;
+                        if (compositionSelection.groupKey === 'fo' && isHnwi) return false;
+                    }
+
+                    if (compositionSelection.stageLabel && getStatusText(item) !== compositionSelection.stageLabel) {
+                        return false;
+                    }
+
+                    return true;
+                }
+
+                function handleCompositionSelectionClick(event) {
+                    const target = event.currentTarget;
+                    const groupKey = String(target && target.getAttribute('data-composition-group') || '').trim();
+                    const stageLabel = String(target && target.getAttribute('data-composition-stage') || '').trim();
+                    if (!groupKey) return;
+                    setCompositionSelection(groupKey, stageLabel);
+                }
+
+                function handleCompositionSelectionKeydown(event) {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    handleCompositionSelectionClick(event);
+                }
+
+                function renderCompositionChart() {
+                    const svg = document.getElementById('composition-sunburst');
+                    const legend = document.getElementById('composition-legend');
+                    if (!svg || !legend) return;
+
+                    const hierarchy = buildCompositionHierarchy();
+                    const total = hierarchy.reduce((sum, group) => sum + group.count, 0);
+                    if (!total) {
+                        svg.innerHTML = '';
+                        legend.innerHTML = '';
+                        updateCompositionSelectionUi();
+                        return;
+                    }
+
+                    const hasSelection = Boolean(compositionSelection.groupKey);
+                    let startAngle = 0;
+                    let markup = '';
+
+                    hierarchy.forEach((group) => {
+                        const span = (group.count / total) * 360;
+                        const endAngle = startAngle + span;
+                        const groupIsActive = compositionSelection.groupKey === group.key;
+                        const groupIsMuted = hasSelection && !groupIsActive;
+                        markup += `<path class="composition-segment is-clickable${groupIsActive ? ' is-active' : ''}${groupIsMuted ? ' is-muted' : ''}" data-composition-group="${group.key}" d="${buildArcPath(50, 50, 18, 34, startAngle, endAngle)}" fill="${group.color}" aria-label="${group.label}" />`;
+
+                        if (span >= 18) {
+                            const innerPoint = polarPoint(50, 50, 26, startAngle + span / 2);
+                            markup += `<text x="${innerPoint.x.toFixed(2)}" y="${innerPoint.y.toFixed(2)}" class="composition-label" font-size="${span > 70 ? 4.2 : 3.2}">${group.shortLabel} (${group.count})</text>`;
+                        }
+
+                        let childStartAngle = startAngle;
+                        group.children.forEach((child) => {
+                            const childSpan = (child.count / total) * 360;
+                            const childEndAngle = childStartAngle + childSpan;
+                            const childIsActive =
+                                compositionSelection.groupKey === group.key &&
+                                (compositionSelection.stageLabel
+                                    ? compositionSelection.stageLabel === child.label
+                                    : true);
+                            const childIsMuted =
+                                hasSelection &&
+                                (
+                                    compositionSelection.groupKey !== group.key ||
+                                    (compositionSelection.stageLabel && compositionSelection.stageLabel !== child.label)
+                                );
+                            markup += `<path class="composition-segment is-clickable${childIsActive ? ' is-active' : ''}${childIsMuted ? ' is-muted' : ''}" data-composition-group="${group.key}" data-composition-stage="${child.label}" d="${buildArcPath(50, 50, 36, 49.5, childStartAngle, childEndAngle)}" fill="${child.color}" aria-label="${group.label} ${child.label}" />`;
+
+                            if (childSpan >= 14) {
+                                const outerPoint = polarPoint(50, 50, 42.5, childStartAngle + childSpan / 2);
+                                markup += `<text x="${outerPoint.x.toFixed(2)}" y="${outerPoint.y.toFixed(2)}" class="composition-label" font-size="${childSpan > 28 ? 2.8 : 2.2}">${child.shortLabel}</text>`;
+                            }
+
+                            childStartAngle = childEndAngle;
+                        });
+
+                        startAngle = endAngle;
+                    });
+
+                    markup += `<circle cx="50" cy="50" r="11.5" fill="rgba(255,255,255,0.06)" stroke="rgba(148,163,184,0.16)" />`;
+                    markup += `<text x="50" y="48.6" class="composition-center-note">pool</text>`;
+                    markup += `<text x="50" y="55.3" class="composition-center-total">${total}</text>`;
+                    svg.innerHTML = markup;
+
+                    legend.innerHTML = hierarchy.map((group) => `
+                        <div class="composition-legend-group">
+                            <div class="composition-legend-head composition-interactive${compositionSelection.groupKey === group.key ? ' is-active' : ''}${hasSelection && compositionSelection.groupKey !== group.key ? ' is-muted' : ''}" data-composition-group="${group.key}" role="button" tabindex="0" aria-pressed="${compositionSelection.groupKey === group.key && !compositionSelection.stageLabel ? 'true' : 'false'}">
+                                <div class="composition-legend-title">
+                                    <span class="composition-legend-dot" style="background:${group.color}"></span>
+                                    <span>${group.label}</span>
+                                </div>
+                                <span class="composition-legend-total">${group.count}</span>
+                            </div>
+                            ${group.children.map((child) => `
+                                <div class="composition-legend-item composition-interactive${compositionSelection.groupKey === group.key && (!compositionSelection.stageLabel || compositionSelection.stageLabel === child.label) ? ' is-active' : ''}${hasSelection && (compositionSelection.groupKey !== group.key || (compositionSelection.stageLabel && compositionSelection.stageLabel !== child.label)) ? ' is-muted' : ''}" data-composition-group="${group.key}" data-composition-stage="${child.label}" role="button" tabindex="0" aria-pressed="${compositionSelection.groupKey === group.key && compositionSelection.stageLabel === child.label ? 'true' : 'false'}">
+                                    <span class="composition-legend-swatch" style="background:${child.color}"></span>
+                                    <span>${child.label}</span>
+                                    <strong>${child.count}</strong>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `).join('');
+
+                    svg.querySelectorAll('[data-composition-group]').forEach((segment) => {
+                        segment.addEventListener('click', handleCompositionSelectionClick);
+                    });
+                    legend.querySelectorAll('[data-composition-group]').forEach((item) => {
+                        item.addEventListener('click', handleCompositionSelectionClick);
+                        item.addEventListener('keydown', handleCompositionSelectionKeydown);
+                    });
+                }
 
                 function renderRangeBars() {
                     const combined = [...rawData.vc, ...rawData.fo];
@@ -955,12 +1086,14 @@
                     });
                 }
 
-                function switchTab(type, btn) {
+                function switchTab(type, btn, options = {}) {
                     activeType = type;
-                    if (btn) {
-                        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                        btn.classList.add('active');
+                    if (!options.keepCompositionSelection) {
+                        resetCompositionSelectionState();
                     }
+                    const activeButton = btn || document.querySelector(`[data-tab-type="${type}"]`);
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    if (activeButton) activeButton.classList.add('active');
 
                     const header = document.getElementById('table-head');
                     if (type === 'vc') {
@@ -968,7 +1101,9 @@
                     } else {
                         header.innerHTML = '<tr><th>Investor Name</th><th>Investor Type</th><th>Investment Size</th><th>Stage</th></tr>';
                     }
-                    renderTable();
+                    renderCompositionChart();
+                    renderTable(getCurrentSearchKeyword());
+                    updateCompositionSelectionUi();
                 }
 
                 function toggleFilter(filter) {
@@ -992,7 +1127,7 @@
                         else btn.classList.remove('active');
                     });
 
-                    renderTable(document.getElementById('search').value.toLowerCase());
+                    renderTable(getCurrentSearchKeyword());
                 }
 
                 function getStatusBadge(item) {
@@ -1012,6 +1147,7 @@
                     const tbody = document.getElementById('table-body');
                     tbody.innerHTML = '';
                     const data = activeType === 'vc' ? rawData.vc : rawData.fo;
+                    const normalizedKeyword = String(keyword || '').toLowerCase();
 
                     data.forEach(item => {
                         const name = item["Investor"] || "";
@@ -1020,8 +1156,9 @@
                         const note = item["Description"] || "–";
 
                         // Filter logic
-                        if (keyword && !JSON.stringify(item).toLowerCase().includes(keyword)) return;
+                        if (normalizedKeyword && !JSON.stringify(item).toLowerCase().includes(normalizedKeyword)) return;
                         if (!name) return;
+                        if (!matchesCompositionSelection(item)) return;
 
                         if (!activeFilters.all) {
                             let match = false;
@@ -1059,7 +1196,7 @@
                 }
 
                 function filterData() {
-                    renderTable(document.getElementById('search').value.toLowerCase());
+                    renderTable(getCurrentSearchKeyword());
                 }
 
                 function getCapacitorPlugin(name) {
@@ -1182,20 +1319,6 @@
                         // Drop the “Add dashboard” controls from the snapshot
                         const addPanel = clone.querySelector('#add-dashboard-panel');
                         if (addPanel) addPanel.remove();
-
-                        // Snapshot the donut chart into an <img> to preserve visuals without JS
-                        const liveDonut = document.getElementById('donutChart');
-                        const cloneDonut = clone.querySelector('#donutChart');
-                        if (liveDonut && cloneDonut) {
-                            const dataUrl = liveDonut.toDataURL('image/png');
-                            const img = document.createElement('img');
-                            img.src = dataUrl;
-                            img.alt = 'Investor composition chart';
-                            img.style.width = '100%';
-                            img.style.height = '100%';
-                            img.style.objectFit = 'contain';
-                            cloneDonut.parentNode.replaceChild(img, cloneDonut);
-                        }
 
                         // Bundle the CSS used on this page so the export is fully standalone
                         const cssPaths = Array.from(

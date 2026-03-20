@@ -9,6 +9,25 @@ echo "Repository root: ${REPO_ROOT}"
 
 cd "${REPO_ROOT}"
 
+configure_npm() {
+  local npm_registry="${XCLOUD_NPM_REGISTRY:-${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org/}}"
+
+  export NPM_CONFIG_REGISTRY="${npm_registry}"
+  export npm_config_registry="${npm_registry}"
+  export NPM_CONFIG_AUDIT=false
+  export npm_config_audit=false
+  export NPM_CONFIG_FUND=false
+  export npm_config_fund=false
+  export NPM_CONFIG_FETCH_RETRIES="${NPM_CONFIG_FETCH_RETRIES:-5}"
+  export npm_config_fetch_retries="${NPM_CONFIG_FETCH_RETRIES}"
+  export NPM_CONFIG_FETCH_RETRY_MINTIMEOUT="${NPM_CONFIG_FETCH_RETRY_MINTIMEOUT:-20000}"
+  export npm_config_fetch_retry_mintimeout="${NPM_CONFIG_FETCH_RETRY_MINTIMEOUT}"
+  export NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT="${NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT:-120000}"
+  export npm_config_fetch_retry_maxtimeout="${NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT}"
+
+  echo "Using npm registry ${NPM_CONFIG_REGISTRY}"
+}
+
 ensure_xcode_cloud_workspace_selection() {
   if [ "${CI_XCODE_CLOUD:-}" != "TRUE" ]; then
     return
@@ -82,17 +101,42 @@ ensure_node_runtime() {
 
 ensure_node_runtime
 ensure_xcode_cloud_workspace_selection
+configure_npm
+
+run_npm_install() {
+  local command_name="$1"
+  shift
+  local log_file
+
+  log_file="$(mktemp -t xcloud-npm-install.XXXXXX.log)"
+  if "$@" 2>&1 | tee "${log_file}"; then
+    rm -f "${log_file}"
+    return 0
+  fi
+
+  if grep -Eq 'ENOTFOUND|EAI_AGAIN|getaddrinfo|network request to https?://.+' "${log_file}"; then
+    echo "npm could not reach ${NPM_CONFIG_REGISTRY} from Xcode Cloud."
+    echo "This is a network/DNS issue during dependency installation, not a source-code compile error."
+    echo "Try rerunning the build. If it keeps failing, set XCLOUD_NPM_REGISTRY to a reachable registry mirror in the workflow Environment settings."
+    echo "Failed command: ${command_name}"
+    rm -f "${log_file}"
+    exit 1
+  fi
+
+  rm -f "${log_file}"
+  return 1
+}
 
 install_dependencies() {
   if [ -f package-lock.json ] && git ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
-    if npm ci; then
+    if run_npm_install "npm ci" npm ci --no-audit --fund=false; then
       return
     fi
 
     echo "package-lock.json is out of sync, falling back to npm install."
   fi
 
-  npm install --no-package-lock
+  run_npm_install "npm install --no-package-lock" npm install --no-package-lock --no-audit --fund=false
 }
 
 ensure_cocoapods() {

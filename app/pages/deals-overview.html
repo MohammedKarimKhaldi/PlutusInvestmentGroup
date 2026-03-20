@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../styles/base.css" />
   <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/deals-overview.css" />
   <script src="../scripts/shared/app-config.js"></script>
   <script src="../scripts/shared/sharedrive-gate.js"></script>
 </head>
@@ -37,6 +38,44 @@
           <!-- Filled by JS: counts per stage, totals -->
         </div>
 
+        <div class="toolbar deal-filters" id="deal-filters-bar">
+          <div class="toolbar-row deal-filters-row">
+            <label class="deal-filter-search">
+              Search
+              <input id="deal-search-input" type="search" placeholder="Search by deal, company, or owner" />
+            </label>
+            <label>
+              Stage
+              <select id="deal-stage-filter">
+                <option value="all">All stages</option>
+                <option value="prospect">Prospect</option>
+                <option value="signing">Signing</option>
+                <option value="onboarding">Onboarding</option>
+                <option value="contacting investors">Contacting investors</option>
+              </select>
+            </label>
+            <label>
+              Owner
+              <select id="deal-owner-filter">
+                <option value="all">All owners</option>
+              </select>
+            </label>
+            <label>
+              Setup
+              <select id="deal-setup-filter">
+                <option value="all">All deals</option>
+                <option value="missing-dashboard">Missing dashboard</option>
+                <option value="missing-deck">Missing deck</option>
+                <option value="missing-legal">Missing legal</option>
+                <option value="missing-any">Missing any setup item</option>
+                <option value="ready">Dashboard, deck, and legal ready</option>
+              </select>
+            </label>
+            <button class="btn" id="btn-reset-deal-filters" type="button">Reset filters</button>
+          </div>
+          <div class="deal-filter-summary" id="deal-filter-summary">Showing all deals.</div>
+        </div>
+
         <details class="toolbar" id="add-deal-panel">
           <summary style="font-weight:600; color:var(--text-main); cursor:pointer;">+ Add deal</summary>
           <form id="deal-form">
@@ -56,6 +95,10 @@
               <label>
                 Junior
                 <input id="deal-junior-input" type="text" required placeholder="Junior owner" />
+              </label>
+              <label style="flex: 1 1 320px;">
+                Sub owners
+                <input id="deal-sub-owners-input" type="text" placeholder="Optional - comma separated" />
               </label>
             </div>
             <div class="toolbar-row">
