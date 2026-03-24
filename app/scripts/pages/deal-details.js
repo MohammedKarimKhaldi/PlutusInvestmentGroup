@@ -16,6 +16,11 @@ const STAGE_LABELS = {
   "contacting investors": "Contacting investors",
 };
 const STAGE_ORDER = ["prospect", "signing", "onboarding", "contacting investors"];
+const DEAL_LIFECYCLE_LABELS = {
+  active: "Active",
+  finished: "Finished",
+  closed: "Closed - not concluded",
+};
 const SHAREDRIVE_URL_STORAGE_KEY = "sharedrive_url_v2";
 const deckPickerState = {
   shareUrl: "",
@@ -96,6 +101,31 @@ function stageClass(stage) {
   return "stage-prospect";
 }
 
+function normalizeDealLifecycleStatus(value) {
+  const normalized = normalizeValue(value);
+  if (normalized === "finished") return "finished";
+  if (normalized === "closed") return "closed";
+  return "active";
+}
+
+function getCurrentDealLifecycleStatus() {
+  return normalizeDealLifecycleStatus(currentDeal && (currentDeal.lifecycleStatus || currentDeal.dealStatus));
+}
+
+function isCurrentDealClosedLifecycle() {
+  return getCurrentDealLifecycleStatus() !== "active";
+}
+
+async function updateDealLifecycleStatus(nextStatus) {
+  if (!currentDeal) return;
+  currentDeal.lifecycleStatus = normalizeDealLifecycleStatus(nextStatus);
+  currentDeal.dealStatus = currentDeal.lifecycleStatus;
+  await saveDealsData();
+  renderDealHeader();
+  populateDealForm();
+  renderRelatedTasks();
+}
+
 function relatedTasksForCurrentDeal() {
   if (!currentDeal) return [];
   return allTasks.filter((task) => normalizeValue(task.dealId) === normalizeValue(currentDeal.id));
@@ -124,6 +154,7 @@ function getSigningTaskProgress() {
 
 function advanceDealStage(nextStage) {
   if (!currentDeal) return;
+  if (isCurrentDealClosedLifecycle()) return;
   currentDeal.stage = nextStage;
   saveDealsData();
   renderDealHeader();
@@ -134,6 +165,12 @@ function advanceDealStage(nextStage) {
 function refreshStageButton() {
   const button = document.getElementById("btn-complete-stage");
   if (!button || !currentDeal) return;
+
+  if (isCurrentDealClosedLifecycle()) {
+    button.disabled = true;
+    button.textContent = getCurrentDealLifecycleStatus() === "finished" ? "Deal finished" : "Deal closed";
+    return;
+  }
 
   const stage = normalizeValue(currentDeal.stage);
   const signing = getSigningTaskProgress();
@@ -162,12 +199,74 @@ function refreshStageButton() {
   button.textContent = "Final stage reached";
 }
 
+function refreshDealLifecycleControls() {
+  const finishedBtn = document.getElementById("btn-mark-deal-finished");
+  const closedBtn = document.getElementById("btn-mark-deal-closed");
+  const reopenBtn = document.getElementById("btn-reopen-deal");
+  if (!finishedBtn || !closedBtn || !reopenBtn || !currentDeal) return;
+
+  const lifecycleStatus = getCurrentDealLifecycleStatus();
+  finishedBtn.hidden = lifecycleStatus === "finished";
+  closedBtn.hidden = lifecycleStatus === "closed";
+  reopenBtn.hidden = lifecycleStatus === "active";
+
+  finishedBtn.disabled = lifecycleStatus === "finished";
+  closedBtn.disabled = lifecycleStatus === "closed";
+  reopenBtn.disabled = lifecycleStatus === "active";
+}
+
+function setupDealLifecycleButtons() {
+  const finishedBtn = document.getElementById("btn-mark-deal-finished");
+  const closedBtn = document.getElementById("btn-mark-deal-closed");
+  const reopenBtn = document.getElementById("btn-reopen-deal");
+
+  if (finishedBtn) {
+    finishedBtn.addEventListener("click", async () => {
+      if (!currentDeal) return;
+      const confirmed = window.confirm(`Move "${currentDeal.name || "this deal"}" to finished deals?`);
+      if (!confirmed) return;
+      try {
+        await updateDealLifecycleStatus("finished");
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "Failed to update deal status.");
+      }
+    });
+  }
+
+  if (closedBtn) {
+    closedBtn.addEventListener("click", async () => {
+      if (!currentDeal) return;
+      const confirmed = window.confirm(`Close "${currentDeal.name || "this deal"}" as not concluded?`);
+      if (!confirmed) return;
+      try {
+        await updateDealLifecycleStatus("closed");
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "Failed to update deal status.");
+      }
+    });
+  }
+
+  if (reopenBtn) {
+    reopenBtn.addEventListener("click", async () => {
+      if (!currentDeal) return;
+      const confirmed = window.confirm(`Reopen "${currentDeal.name || "this deal"}" and move it back into active deals?`);
+      if (!confirmed) return;
+      try {
+        await updateDealLifecycleStatus("active");
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "Failed to update deal status.");
+      }
+    });
+  }
+}
+
 function setupStageProgressionButton() {
   const button = document.getElementById("btn-complete-stage");
   if (!button) return;
 
   button.addEventListener("click", () => {
     if (!currentDeal) return;
+    if (isCurrentDealClosedLifecycle()) return;
     const stage = normalizeValue(currentDeal.stage);
     const signing = getSigningTaskProgress();
 
@@ -192,6 +291,7 @@ function setupStageProgressionButton() {
 
 function autoPromoteFromOnboardingIfReady() {
   if (!currentDeal) return false;
+  if (isCurrentDealClosedLifecycle()) return false;
   if (normalizeValue(currentDeal.stage) !== "onboarding") return false;
 
   const signing = getSigningTaskProgress();
@@ -236,6 +336,79 @@ function parseDealSubOwnersInput(value) {
         .filter(Boolean),
     ),
   );
+}
+
+function normalizeDealKeywords(deal) {
+  const source = deal && deal.keywords;
+  const values = Array.isArray(source)
+    ? source
+    : typeof source === "string"
+      ? source.split(/[\n,;]+/)
+      : [];
+  const normalized = values
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const deduped = Array.from(new Set(normalized));
+  if (deal && typeof deal === "object") {
+    deal.keywords = deduped;
+  }
+  return deduped;
+}
+
+function normalizeDealSectors(deal) {
+  const source = deal && (
+    Array.isArray(deal.sectors)
+      ? deal.sectors
+      : typeof deal.sectors === "string"
+        ? deal.sectors.split(/[\n,;]+/)
+        : typeof deal.sector === "string"
+          ? deal.sector.split(/[\n,;]+/)
+          : []
+  );
+  const normalized = Array.from(
+    new Set(
+      (Array.isArray(source) ? source : [])
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (deal && typeof deal === "object") {
+    deal.sectors = normalized;
+    deal.sector = normalized.join(", ");
+  }
+  return normalized;
+}
+
+function parseDealSectorsInput(value) {
+  return Array.from(
+    new Set(
+      String(value || "")
+        .split(/[\n,;]+/)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function parseDealKeywordsInput(value) {
+  return Array.from(
+    new Set(
+      String(value || "")
+        .split(/[\n,;]+/)
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function buildDealKeywordsHtml(keywords) {
+  const values = Array.isArray(keywords) ? keywords : [];
+  if (!values.length) {
+    return '<span class="deal-keyword-chip is-empty">No thematics, sector tags, or keywords added yet.</span>';
+  }
+  return values
+    .map((keyword) => `<span class="deal-keyword-chip">${escapeHtml(keyword)}</span>`)
+    .join("");
 }
 
 function getAssignableOwnersForDeal(deal) {
@@ -1317,15 +1490,20 @@ async function syncContactStatusTasksFromDashboard() {
 function renderDealHeader() {
   if (!currentDeal) return;
 
+  const lifecycleStatus = getCurrentDealLifecycleStatus();
+  const lifecycleLabel = DEAL_LIFECYCLE_LABELS[lifecycleStatus] || "Active";
+  const stageText = STAGE_LABELS[normalizeValue(currentDeal.stage)] || "Prospect";
+
   document.getElementById("crumb-deal-name").textContent = currentDeal.name || "Deal";
   document.getElementById("deal-name").textContent = currentDeal.name || "Deal";
   document.getElementById("deal-subtitle").textContent =
-    `${currentDeal.company || "Company"} • ${STAGE_LABELS[normalizeValue(currentDeal.stage)] || "Prospect"}`;
+    `${currentDeal.company || "Company"} • ${stageText}${lifecycleStatus !== "active" ? ` • ${lifecycleLabel}` : ""}`;
 
   document.getElementById("deal-company").textContent = currentDeal.company || "–";
   document.getElementById("deal-senior").textContent = getSeniorOwner(currentDeal) || "–";
   document.getElementById("deal-junior").textContent = getJuniorOwner(currentDeal) || "–";
   const subOwners = normalizeDealSubOwners(currentDeal);
+  const sectorLabel = normalizeDealSectors(currentDeal).join(", ");
   document.getElementById("deal-sub-owners").innerHTML = subOwners.length
     ? `<div class="meta-owner-links">${buildOwnerTaskLinksHtml(subOwners)}</div>`
     : "–";
@@ -1333,6 +1511,14 @@ function renderDealHeader() {
   document.getElementById("deal-raised").textContent = formatAmount(currentDeal.raisedAmount, currentDeal.currency);
 
   const textOrDash = (value) => (value == null || String(value).trim() === "" ? "–" : String(value));
+  document.getElementById("deal-sector").textContent = textOrDash(sectorLabel);
+  document.getElementById("deal-location").textContent = textOrDash(currentDeal.location);
+  document.getElementById("deal-funding-stage").textContent = textOrDash(currentDeal.fundingStage);
+  document.getElementById("deal-revenue").textContent = textOrDash(currentDeal.revenue);
+  const keywordsEl = document.getElementById("deal-keywords");
+  if (keywordsEl) {
+    keywordsEl.innerHTML = buildDealKeywordsHtml(normalizeDealKeywords(currentDeal));
+  }
   document.getElementById("deal-cash-comm").textContent = textOrDash(currentDeal.CashCommission);
   document.getElementById("deal-equity-comm").textContent = textOrDash(currentDeal.EquityCommission);
   document.getElementById("deal-retainer").textContent = textOrDash(currentDeal.Retainer);
@@ -1348,6 +1534,11 @@ function renderDealHeader() {
   const stageLabel = STAGE_LABELS[stage] || "Prospect";
   document.getElementById("deal-stage-label").textContent = stageLabel;
   document.getElementById("deal-stage-dot").className = `stage-dot ${stageClass(stage)}`;
+  const lifecycleBadge = document.getElementById("deal-lifecycle-badge");
+  if (lifecycleBadge) {
+    lifecycleBadge.textContent = lifecycleLabel;
+    lifecycleBadge.className = `deal-lifecycle-badge is-${lifecycleStatus}`;
+  }
   renderStageTracker(stage);
 
   document.getElementById("deal-summary").textContent =
@@ -1445,6 +1636,7 @@ function renderDealHeader() {
   renderDealContactsSummary();
   refreshDealTaskOwnerSuggestions();
   refreshStageButton();
+  refreshDealLifecycleControls();
 }
 
 function renderStageTracker(stage) {
@@ -1474,6 +1666,11 @@ function populateDealForm() {
   document.getElementById("deal-input-junior").value = getJuniorOwner(currentDeal);
   document.getElementById("deal-input-sub-owners").value = normalizeDealSubOwners(currentDeal).join("\n");
   document.getElementById("deal-input-stage").value = normalizeValue(currentDeal.stage) || "prospect";
+  document.getElementById("deal-input-lifecycle-status").value = getCurrentDealLifecycleStatus();
+  document.getElementById("deal-input-sector").value = normalizeDealSectors(currentDeal).join("\n");
+  document.getElementById("deal-input-location").value = currentDeal.location || "";
+  document.getElementById("deal-input-funding-stage").value = currentDeal.fundingStage || "";
+  document.getElementById("deal-input-revenue").value = currentDeal.revenue || "";
   document.getElementById("deal-input-target").value = currentDeal.targetAmount ?? "";
   document.getElementById("deal-input-raised").value = currentDeal.raisedAmount ?? "";
   document.getElementById("deal-input-currency").value = currentDeal.currency || "USD";
@@ -1482,6 +1679,7 @@ function populateDealForm() {
   document.getElementById("deal-input-cash").value = currentDeal.CashCommission || "";
   document.getElementById("deal-input-equity").value = currentDeal.EquityCommission || "";
   document.getElementById("deal-input-retainer").value = currentDeal.Retainer || "";
+  document.getElementById("deal-input-keywords").value = normalizeDealKeywords(currentDeal).join("\n");
   document.getElementById("deal-input-summary").value = currentDeal.summary || "";
   normalizeDealLegalLinks(currentDeal);
   document.getElementById("deal-input-deck-name").value = currentDeal.deckName || "";
@@ -1755,6 +1953,13 @@ function setupDealForm() {
     currentDeal.subOwners = parseDealSubOwnersInput(document.getElementById("deal-input-sub-owners").value);
     currentDeal.owner = currentDeal.seniorOwner; // legacy compatibility
     currentDeal.stage = document.getElementById("deal-input-stage").value;
+    currentDeal.lifecycleStatus = normalizeDealLifecycleStatus(document.getElementById("deal-input-lifecycle-status").value);
+    currentDeal.dealStatus = currentDeal.lifecycleStatus;
+    currentDeal.sectors = parseDealSectorsInput(document.getElementById("deal-input-sector").value);
+    currentDeal.sector = currentDeal.sectors.join(", ");
+    currentDeal.location = document.getElementById("deal-input-location").value.trim();
+    currentDeal.fundingStage = document.getElementById("deal-input-funding-stage").value.trim();
+    currentDeal.revenue = document.getElementById("deal-input-revenue").value.trim();
     currentDeal.targetAmount = parseNumericAmount(document.getElementById("deal-input-target").value);
     currentDeal.raisedAmount = parseNumericAmount(document.getElementById("deal-input-raised").value);
     currentDeal.currency = document.getElementById("deal-input-currency").value.trim() || "USD";
@@ -1762,6 +1967,7 @@ function setupDealForm() {
     currentDeal.CashCommission = document.getElementById("deal-input-cash").value.trim();
     currentDeal.EquityCommission = document.getElementById("deal-input-equity").value.trim();
     currentDeal.Retainer = document.getElementById("deal-input-retainer").value.trim();
+    currentDeal.keywords = parseDealKeywordsInput(document.getElementById("deal-input-keywords").value);
     currentDeal.summary = document.getElementById("deal-input-summary").value.trim();
     const legalLinks = collectDealLegalLinksFromEditor();
     const invalidLegalLink = legalLinks.find((entry) => !toSafeExternalUrl(entry.url));
@@ -2065,6 +2271,7 @@ async function loadDealPage() {
   setupDealTaskForm();
   setupFormToggles();
   setupGroupButtons();
+  setupDealLifecycleButtons();
   setupStageProgressionButton();
   syncContactStatusTasksFromDashboard();
 }

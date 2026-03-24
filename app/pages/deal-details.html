@@ -29,12 +29,20 @@
             <h1 id="deal-name">Deal</h1>
             <p id="deal-subtitle">Company and round details.</p>
           </div>
-          <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
-            <span class="stage-badge" id="deal-stage-badge">
-              <span class="stage-dot stage-prospect" id="deal-stage-dot"></span>
-              <span id="deal-stage-label">Prospect</span>
-            </span>
-            <button class="btn btn-primary" type="button" id="btn-complete-stage">Complete current stage</button>
+          <div class="deal-header-actions">
+            <div class="deal-status-stack">
+              <span class="stage-badge" id="deal-stage-badge">
+                <span class="stage-dot stage-prospect" id="deal-stage-dot"></span>
+                <span id="deal-stage-label">Prospect</span>
+              </span>
+              <span class="deal-lifecycle-badge is-active" id="deal-lifecycle-badge">Active</span>
+            </div>
+            <div class="deal-close-actions">
+              <button class="btn btn-primary" type="button" id="btn-complete-stage">Complete current stage</button>
+              <button class="btn" type="button" id="btn-mark-deal-finished">Mark finished</button>
+              <button class="btn" type="button" id="btn-mark-deal-closed">Close deal</button>
+              <button class="btn" type="button" id="btn-reopen-deal" hidden>Reopen deal</button>
+            </div>
           </div>
         </div>
 
@@ -82,11 +90,28 @@
             <div class="meta-label">Raised so far</div>
             <div class="meta-value" id="deal-raised">–</div>
           </div>
+          <div class="meta-card">
+            <div class="meta-label">Sectors</div>
+            <div class="meta-value" id="deal-sector">–</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Location</div>
+            <div class="meta-value" id="deal-location">–</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Funding stage</div>
+            <div class="meta-value" id="deal-funding-stage">–</div>
+          </div>
+          <div class="meta-card">
+            <div class="meta-label">Revenues</div>
+            <div class="meta-value" id="deal-revenue">–</div>
+          </div>
         </div>
 
         <div class="body-grid">
           <div class="panel">
             <h2>Deal summary</h2>
+            <div class="deal-keyword-list" id="deal-keywords"></div>
             <p id="deal-summary">
               This deal does not yet have a custom description. Use this space to track the high-level context, goals,
               and key investors targeted for this round.
@@ -161,6 +186,17 @@
                   <option value="contacting investors">Contacting investors</option>
                 </select>
               </label>
+              <label>Deal status
+                <select id="deal-input-lifecycle-status">
+                  <option value="active">Active</option>
+                  <option value="finished">Finished</option>
+                  <option value="closed">Closed - not concluded</option>
+                </select>
+              </label>
+              <label>Sectors<textarea id="deal-input-sector" rows="2" placeholder="Comma or line separated, e.g. Fintech, Payments"></textarea></label>
+              <label>Location<input id="deal-input-location" type="text" placeholder="e.g. London, UK" /></label>
+              <label>Funding stage<input id="deal-input-funding-stage" type="text" placeholder="e.g. Seed, Series A" /></label>
+              <label>Revenues<input id="deal-input-revenue" type="text" placeholder="e.g. Pre-revenue or £1m ARR" /></label>
               <label>Target amount<input id="deal-input-target" type="text" /></label>
               <label>Raised amount<input id="deal-input-raised" type="text" /></label>
               <label>Currency<input id="deal-input-currency" type="text" placeholder="USD" /></label>
@@ -174,6 +210,7 @@
               <label>Equity commission<input id="deal-input-equity" type="text" /></label>
               <label>Retainer<input id="deal-input-retainer" type="text" /></label>
             </div>
+            <label class="deal-form-full">Keywords / thematics<textarea id="deal-input-keywords" rows="2" placeholder="Comma or line separated, e.g. AI, climate, payments"></textarea></label>
             <div class="dashboard-link-help" id="deal-dashboard-link-help">
               Choose an existing dashboard to link this deal, or type a custom dashboard ID.
             </div>

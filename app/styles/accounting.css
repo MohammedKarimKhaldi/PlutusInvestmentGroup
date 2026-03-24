@@ -434,6 +434,34 @@ tr.group-row td {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
 }
 
+.invoice-totals-preview {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.invoice-total-pill {
+  min-width: 140px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.04);
+  padding: 10px 12px;
+}
+
+.invoice-total-pill span {
+  display: block;
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
+.invoice-total-pill strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+  color: var(--text-main);
+}
+
 .invoice-history-head {
   display: flex;
   justify-content: space-between;

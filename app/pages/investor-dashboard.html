@@ -61,12 +61,37 @@
                             configuration...</p>
                     </div>
                     <div class="header-right dashboard-hero-actions">
-                        <button class="btn btn-ghost" id="btn-export-html" type="button" title="Download a standalone snapshot of the current dashboard" style="margin-right:12px;">
-                            📤 Export HTML
-                        </button>
-                        <select id="dashboard-switcher" class="dashboard-select">
-                            <!-- Populated by JS -->
-                        </select>
+                        <div class="dashboard-export" id="dashboard-export">
+                            <button class="btn btn-ghost" id="btn-export-html" type="button" title="Download a standalone snapshot of the current dashboard" aria-haspopup="true" aria-expanded="false">
+                                📤 Export HTML
+                            </button>
+                            <div class="dashboard-export-menu" id="dashboard-export-menu" hidden>
+                                <div class="dashboard-export-title">Export options</div>
+                                <label class="dashboard-export-toggle" for="export-include-investor-details">
+                                    <input id="export-include-investor-details" type="checkbox" checked />
+                                    <span>Include investor names and emails</span>
+                                </label>
+                                <p class="dashboard-export-hint">Turn this off to export an anonymized investor snapshot.</p>
+                                <div class="dashboard-export-actions">
+                                    <button class="btn btn-primary" id="btn-export-html-confirm" type="button">Download HTML</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="dashboard-switcher" id="dashboard-switcher">
+                            <button class="dashboard-switcher-trigger" id="dashboard-switcher-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                                <span class="dashboard-switcher-copy">
+                                    <span class="dashboard-switcher-label">Investor dashboard</span>
+                                    <span class="dashboard-switcher-value" id="dashboard-switcher-value">Investor Dashboard Home</span>
+                                </span>
+                                <span class="dashboard-switcher-meta">
+                                    <span class="dashboard-switcher-warning" id="dashboard-switcher-warning" hidden>0 missing</span>
+                                    <span class="dashboard-switcher-caret" aria-hidden="true"></span>
+                                </span>
+                            </button>
+                            <div class="dashboard-switcher-menu" id="dashboard-switcher-menu" hidden>
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
                         <button class="btn" id="btn-edit-current-dashboard" type="button">
                             Edit selected dashboard
                         </button>
@@ -126,81 +151,87 @@
                     </form>
                 </details>
 
-                <div class="stat-bar dashboard-kpis">
-                    <div class="stat-card">
-                        <div class="stat-label">Pool Size</div>
-                        <div class="stat-value" id="k-pool">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Contacted</div>
-                        <div class="stat-value accent" id="k-contacted">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Replied</div>
-                        <div class="stat-value warning" id="k-replied">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Meetings</div>
-                        <div class="stat-value info" id="k-meetings">0</div>
-                    </div>
-                </div>
+                <section class="card-panel dashboard-home-panel" id="dashboard-home-panel" hidden>
+                    <!-- JS Injected -->
+                </section>
 
-                <div class="chart-grid dashboard-chart-grid">
-                    <div class="card-panel">
-                        <div class="card-title">Investor Composition</div>
-                        <div class="composition-toolbar">
-                            <div class="composition-caption" id="composition-caption">Click a ring segment to filter the investor table.</div>
-                            <button class="btn btn-ghost composition-reset" id="composition-reset" type="button" hidden>Reset chart filter</button>
+                <div id="dashboard-data-view">
+                    <div class="stat-bar dashboard-kpis">
+                        <div class="stat-card">
+                            <div class="stat-label">Pool Size</div>
+                            <div class="stat-value" id="k-pool">0</div>
                         </div>
-                        <div class="composition-wrap">
-                            <div class="composition-chart">
-                                <svg id="composition-sunburst" viewBox="0 0 100 100" aria-label="Investor composition multi-level pie"></svg>
+                        <div class="stat-card">
+                            <div class="stat-label">Contacted</div>
+                            <div class="stat-value accent" id="k-contacted">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Replied</div>
+                            <div class="stat-value warning" id="k-replied">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Meetings</div>
+                            <div class="stat-value info" id="k-meetings">0</div>
+                        </div>
+                    </div>
+
+                    <div class="chart-grid dashboard-chart-grid">
+                        <div class="card-panel">
+                            <div class="card-title">Investor Composition</div>
+                            <div class="composition-toolbar">
+                                <div class="composition-caption" id="composition-caption">Click a ring segment to filter the investor table.</div>
+                                <button class="btn btn-ghost composition-reset" id="composition-reset" type="button" hidden>Reset chart filter</button>
                             </div>
-                            <div class="composition-legend" id="composition-legend"></div>
+                            <div class="composition-wrap">
+                                <div class="composition-chart">
+                                    <svg id="composition-sunburst" viewBox="0 0 100 100" aria-label="Investor composition multi-level pie"></svg>
+                                </div>
+                                <div class="composition-legend" id="composition-legend"></div>
+                            </div>
+                        </div>
+                        <div class="card-panel">
+                            <div class="card-title">Investment Size Distribution</div>
+                            <div id="range-bars"
+                                style="display: flex; flex-direction: column; gap: 15px; margin-top: 10px;">
+                                <!-- JS Injected -->
+                            </div>
                         </div>
                     </div>
-                    <div class="card-panel">
-                        <div class="card-title">Investment Size Distribution</div>
-                        <div id="range-bars"
-                            style="display: flex; flex-direction: column; gap: 15px; margin-top: 10px;">
-                            <!-- JS Injected -->
-                        </div>
+
+                    <div class="tabs dashboard-tabs">
+                        <button class="tab-btn active" id="tab-vc" data-tab-type="vc">VC Funds</button>
+                        <button class="tab-btn" id="tab-fo" data-tab-type="fo">Family Offices & Angels</button>
                     </div>
-                </div>
 
-                <div class="tabs dashboard-tabs">
-                    <button class="tab-btn active" id="tab-vc" data-tab-type="vc">VC Funds</button>
-                    <button class="tab-btn" id="tab-fo" data-tab-type="fo">Family Offices & Angels</button>
-                </div>
+                    <div class="filter-group dashboard-filters">
+                        <span class="filter-label">Quick Filter:</span>
+                        <button class="toggle-btn active" id="f-all" data-filter="all">
+                            <div class="toggle-dot"></div> All Investors
+                        </button>
+                        <button class="toggle-btn" id="f-calls" data-filter="calls">
+                            <div class="toggle-dot"></div> Ongoing
+                        </button>
+                        <button class="toggle-btn" id="f-meetings" data-filter="meetings">
+                            <div class="toggle-dot"></div> Contacted
+                        </button>
+                        <button class="toggle-btn" id="f-forward" data-filter="forward">
+                            <div class="toggle-dot"></div> Replied
+                        </button>
+                    </div>
 
-                <div class="filter-group dashboard-filters">
-                    <span class="filter-label">Quick Filter:</span>
-                    <button class="toggle-btn active" id="f-all" data-filter="all">
-                        <div class="toggle-dot"></div> All Investors
-                    </button>
-                    <button class="toggle-btn" id="f-calls" data-filter="calls">
-                        <div class="toggle-dot"></div> Ongoing
-                    </button>
-                    <button class="toggle-btn" id="f-meetings" data-filter="meetings">
-                        <div class="toggle-dot"></div> Contacted
-                    </button>
-                    <button class="toggle-btn" id="f-forward" data-filter="forward">
-                        <div class="toggle-dot"></div> Replied
-                    </button>
-                </div>
+                    <input type="text" class="search-box" id="search"
+                        placeholder="Quick find by name, email, or size segment...">
 
-                <input type="text" class="search-box" id="search"
-                    placeholder="Quick find by name, email, or size segment...">
-
-                <div class="table-wrap dashboard-table-wrap">
-                    <table id="data-table">
-                        <thead id="table-head">
-                            <!-- JS Injected -->
-                        </thead>
-                        <tbody id="table-body">
-                            <!-- JS Injected -->
-                        </tbody>
-                    </table>
+                    <div class="table-wrap dashboard-table-wrap">
+                        <table id="data-table">
+                            <thead id="table-head">
+                                <!-- JS Injected -->
+                            </thead>
+                            <tbody id="table-body">
+                                <!-- JS Injected -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

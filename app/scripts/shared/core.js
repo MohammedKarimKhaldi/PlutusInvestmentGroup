@@ -1708,9 +1708,17 @@
     if (dealsCache) return;
     const config = getSharedDealsConfig();
     const desktopDeals = readDataJson("deals");
-    dealsCache = Array.isArray(desktopDeals)
-      ? cloneArray(desktopDeals)
-      : (readArrayFromStorage(STORAGE_KEYS.deals) || (config.enabled ? [] : cloneArray(global.DEALS)));
+    if (Array.isArray(desktopDeals)) {
+      dealsCache = cloneArray(desktopDeals);
+      return;
+    }
+
+    if (config.enabled) {
+      dealsCache = [];
+      return;
+    }
+
+    dealsCache = readArrayFromStorage(STORAGE_KEYS.deals) || cloneArray(global.DEALS);
   }
 
   function ensureTasksCacheInitialized() {
@@ -1773,11 +1781,19 @@
     });
   }
 
+  function normalizeDealLifecycleStatus(value) {
+    const normalized = normalizeValue(value);
+    if (normalized === "finished") return "finished";
+    if (normalized === "closed") return "closed";
+    return "active";
+  }
+
   function buildAutoDealReadinessTasks(deals) {
     const createdAt = new Date().toISOString().slice(0, 10);
     return (Array.isArray(deals) ? deals : [])
       .flatMap((deal) => {
         if (!deal || typeof deal !== "object" || !String(deal.id || "").trim()) return [];
+        if (normalizeDealLifecycleStatus(deal.lifecycleStatus || deal.dealStatus) !== "active") return [];
 
         const dealId = String(deal.id || "").trim();
         const owner = String(deal.seniorOwner || deal.owner || "System").trim() || "System";
@@ -1850,7 +1866,9 @@
   function saveDealsData(deals) {
     const config = getSharedDealsConfig();
     dealsCache = cloneArray(deals);
-    writeArrayToStorage(STORAGE_KEYS.deals, dealsCache);
+    if (!config.enabled) {
+      writeArrayToStorage(STORAGE_KEYS.deals, dealsCache);
+    }
     writeDataJson("deals", Array.isArray(dealsCache) ? dealsCache : []);
     publishDealsUpdate("local");
     publishTasksUpdate("deals-local");
@@ -2062,7 +2080,9 @@
 
       if (Array.isArray(payload)) {
         dealsCache = cloneArray(payload);
-        writeArrayToStorage(STORAGE_KEYS.deals, dealsCache);
+        if (!config.enabled) {
+          writeArrayToStorage(STORAGE_KEYS.deals, dealsCache);
+        }
         writeDataJson("deals", dealsCache);
         sharedDealsState.lastSyncAt = new Date().toISOString();
         sharedDealsState.lastError = "";

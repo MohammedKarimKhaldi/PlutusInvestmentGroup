@@ -3,6 +3,7 @@
     let dealsData = [];
     let accountingAccessState = { restricted: false, allowed: true };
     let dealsFilterState = {
+      portfolio: "active",
       keyword: "",
       stage: "all",
       owner: "all",
@@ -15,6 +16,42 @@
       "onboarding": "Onboarding",
       "contacting investors": "Contacting investors"
     };
+    const DEAL_LIFECYCLE_LABELS = {
+      active: "Active",
+      finished: "Finished",
+      closed: "Closed - not concluded",
+    };
+
+    function normalizeDealLifecycleStatus(value) {
+      const normalized = normalizeValue(value);
+      if (normalized === "finished") return "finished";
+      if (normalized === "closed") return "closed";
+      return "active";
+    }
+
+    function getDealLifecycleStatus(deal) {
+      return normalizeDealLifecycleStatus(deal && (deal.lifecycleStatus || deal.dealStatus));
+    }
+
+    function isDealClosedLifecycle(status) {
+      return status === "finished" || status === "closed";
+    }
+
+    function renderLifecycleBadge(status) {
+      const normalized = normalizeDealLifecycleStatus(status);
+      return `<span class="deal-lifecycle-badge is-${normalized}">${DEAL_LIFECYCLE_LABELS[normalized] || "Active"}</span>`;
+    }
+
+    function matchesPortfolioFilter(deal) {
+      const lifecycleStatus = getDealLifecycleStatus(deal);
+      if (dealsFilterState.portfolio === "active") {
+        return !isDealClosedLifecycle(lifecycleStatus);
+      }
+      if (dealsFilterState.portfolio === "closed") {
+        return isDealClosedLifecycle(lifecycleStatus);
+      }
+      return true;
+    }
 
     function loadDealsData() {
       dealsData = AppCore ? AppCore.loadDealsData() : (Array.isArray(DEALS) ? JSON.parse(JSON.stringify(DEALS)) : []);
@@ -35,6 +72,15 @@
     function normalizeValue(value) {
       if (AppCore) return AppCore.normalizeValue(value);
       return String(value || "").trim().toLowerCase();
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
     }
 
     function buildPageUrl(pageId, params) {
@@ -76,6 +122,90 @@
 
     function hasLegalLinked(deal) {
       return normalizeDealLegalLinksForFilters(deal).length > 0;
+    }
+
+    function getDealKeywords(deal) {
+      const source = deal && deal.keywords;
+      const values = Array.isArray(source)
+        ? source
+        : typeof source === "string"
+          ? source.split(/[\n,;]+/)
+          : [];
+      return Array.from(
+        new Set(
+          values
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean)
+        )
+      );
+    }
+
+    function normalizeDealSectors(deal) {
+      const source = deal && (
+        Array.isArray(deal.sectors)
+          ? deal.sectors
+          : typeof deal.sectors === "string"
+            ? deal.sectors.split(/[\n,;]+/)
+            : typeof deal.sector === "string"
+              ? deal.sector.split(/[\n,;]+/)
+              : []
+      );
+      const normalized = Array.from(
+        new Set(
+          (Array.isArray(source) ? source : [])
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean),
+        ),
+      );
+      if (deal && typeof deal === "object") {
+        deal.sectors = normalized;
+        deal.sector = normalized.join(", ");
+      }
+      return normalized;
+    }
+
+    function parseDealSectorsInput(value) {
+      return Array.from(
+        new Set(
+          String(value || "")
+            .split(/[\n,;]+/)
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean)
+        )
+      );
+    }
+
+    function parseDealKeywordsInput(value) {
+      return Array.from(
+        new Set(
+          String(value || "")
+            .split(/[\n,;]+/)
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean)
+        )
+      );
+    }
+
+    function getDealProfileSummaryParts(deal) {
+      const sectorLabel = normalizeDealSectors(deal).join(", ");
+      return [
+        sectorLabel,
+        String(deal && deal.location || "").trim(),
+        String(deal && deal.fundingStage || "").trim(),
+        String(deal && deal.revenue || "").trim(),
+      ].filter(Boolean);
+    }
+
+    function buildDealCompanyCell(deal) {
+      const company = String(deal && deal.company || "").trim() || "–";
+      const meta = getDealProfileSummaryParts(deal);
+      if (!meta.length) return escapeHtml(company);
+      return `
+        <div class="deal-company-stack">
+          <span class="deal-company-name">${escapeHtml(company)}</span>
+          <span class="deal-company-meta">${escapeHtml(meta.join(" · "))}</span>
+        </div>
+      `;
     }
 
     function getSubOwners(deal) {
@@ -126,11 +256,13 @@
 
     function syncDealFilterStateFromUi() {
       const searchInput = document.getElementById("deal-search-input");
+      const portfolioFilter = document.getElementById("deal-portfolio-filter");
       const stageFilter = document.getElementById("deal-stage-filter");
       const ownerFilter = document.getElementById("deal-owner-filter");
       const setupFilter = document.getElementById("deal-setup-filter");
 
       dealsFilterState = {
+        portfolio: String(portfolioFilter && portfolioFilter.value || "active").trim().toLowerCase() || "active",
         keyword: String(searchInput && searchInput.value || "").trim().toLowerCase(),
         stage: String(stageFilter && stageFilter.value || "all").trim().toLowerCase() || "all",
         owner: String(ownerFilter && ownerFilter.value || "all").trim().toLowerCase() || "all",
@@ -140,11 +272,13 @@
 
     function applyDealFilterStateToUi() {
       const searchInput = document.getElementById("deal-search-input");
+      const portfolioFilter = document.getElementById("deal-portfolio-filter");
       const stageFilter = document.getElementById("deal-stage-filter");
       const ownerFilter = document.getElementById("deal-owner-filter");
       const setupFilter = document.getElementById("deal-setup-filter");
 
       if (searchInput) searchInput.value = dealsFilterState.keyword || "";
+      if (portfolioFilter) portfolioFilter.value = dealsFilterState.portfolio || "active";
       if (stageFilter) stageFilter.value = dealsFilterState.stage || "all";
       if (ownerFilter) ownerFilter.value = dealsFilterState.owner || "all";
       if (setupFilter) setupFilter.value = dealsFilterState.setup || "all";
@@ -174,6 +308,7 @@
 
     function matchesDealFilters(deal) {
       if (!deal) return false;
+      if (!matchesPortfolioFilter(deal)) return false;
 
       const keyword = dealsFilterState.keyword;
       if (keyword) {
@@ -181,6 +316,11 @@
           deal.id,
           deal.name,
           deal.company,
+          getDealKeywords(deal).join(" "),
+          normalizeDealSectors(deal).join(" "),
+          deal.location,
+          deal.fundingStage,
+          deal.revenue,
           deal.stage,
           getSeniorOwner(deal),
           getJuniorOwner(deal),
@@ -241,8 +381,13 @@
 
     function renderStageFilterChips(metaRow, counts) {
       if (!metaRow) return;
+      const allLabel = dealsFilterState.portfolio === "closed"
+        ? "Finished / closed"
+        : dealsFilterState.portfolio === "all"
+          ? "All deals"
+          : "Active deals";
       const chips = [
-        { value: "all", label: "All deals", count: counts.total },
+        { value: "all", label: allLabel, count: counts.total },
         { value: "prospect", label: "Prospect", count: counts.prospect },
         { value: "signing", label: "Signing", count: counts.signing },
         { value: "onboarding", label: "Onboarding", count: counts.onboarding },
@@ -259,13 +404,20 @@
     function updateDealFilterSummary(filteredDeals) {
       const summaryEl = document.getElementById("deal-filter-summary");
       if (!summaryEl) return;
+      const portfolioFilter = document.getElementById("deal-portfolio-filter");
       const ownerFilter = document.getElementById("deal-owner-filter");
       const setupFilter = document.getElementById("deal-setup-filter");
 
-      const total = Array.isArray(dealsData) ? dealsData.length : 0;
+      const total = (Array.isArray(dealsData) ? dealsData : []).filter((deal) => matchesPortfolioFilter(deal)).length;
       const shown = Array.isArray(filteredDeals) ? filteredDeals.length : 0;
       const summaryParts = [`Showing ${shown} of ${total} deal${total === 1 ? "" : "s"}`];
 
+      if (dealsFilterState.portfolio !== "active") {
+        const portfolioLabel = portfolioFilter && portfolioFilter.selectedOptions && portfolioFilter.selectedOptions[0]
+          ? portfolioFilter.selectedOptions[0].text
+          : dealsFilterState.portfolio;
+        summaryParts.push(`portfolio: ${portfolioLabel}`);
+      }
       if (dealsFilterState.stage !== "all") {
         summaryParts.push(`stage: ${STAGE_LABELS[dealsFilterState.stage] || dealsFilterState.stage}`);
       }
@@ -290,13 +442,14 @@
 
     function setupDealFilters() {
       const searchInput = document.getElementById("deal-search-input");
+      const portfolioFilter = document.getElementById("deal-portfolio-filter");
       const stageFilter = document.getElementById("deal-stage-filter");
       const ownerFilter = document.getElementById("deal-owner-filter");
       const setupFilter = document.getElementById("deal-setup-filter");
       const resetBtn = document.getElementById("btn-reset-deal-filters");
       const metaRow = document.getElementById("meta-row");
 
-      [searchInput, stageFilter, ownerFilter, setupFilter].forEach((control) => {
+      [searchInput, portfolioFilter, stageFilter, ownerFilter, setupFilter].forEach((control) => {
         if (!control) return;
         const eventName = control.tagName === "INPUT" ? "input" : "change";
         control.addEventListener(eventName, () => {
@@ -308,6 +461,7 @@
       if (resetBtn) {
         resetBtn.addEventListener("click", () => {
           dealsFilterState = {
+            portfolio: "active",
             keyword: "",
             stage: "all",
             owner: "all",
@@ -373,6 +527,11 @@
       const seniorInput = document.getElementById("deal-senior-input");
       const juniorInput = document.getElementById("deal-junior-input");
       const subOwnersInput = document.getElementById("deal-sub-owners-input");
+      const sectorInput = document.getElementById("deal-sector-input");
+      const locationInput = document.getElementById("deal-location-input");
+      const fundingStageInput = document.getElementById("deal-funding-stage-input");
+      const revenueInput = document.getElementById("deal-revenue-input");
+      const keywordsInput = document.getElementById("deal-keywords-input");
       const targetInput = document.getElementById("deal-target-input");
       const raisedInput = document.getElementById("deal-raised-input");
       const currencyInput = document.getElementById("deal-currency-input");
@@ -401,6 +560,7 @@
         const dashboardUrl = String(dashboardUrlInput && dashboardUrlInput.value || "").trim();
         let dashboardId = String(dashboardInput.value || "").trim();
         let createdDealId = "";
+        const sectors = parseDealSectorsInput(sectorInput && sectorInput.value);
         if (!dashboardId && dashboardUrl) {
           dashboardId = toDealId(company || name);
         }
@@ -436,9 +596,16 @@
             name,
             company,
             stage: "prospect",
+            lifecycleStatus: "active",
             seniorOwner,
             juniorOwner,
             subOwners,
+            sectors,
+            sector: sectors.join(", "),
+            location: String(locationInput && locationInput.value || "").trim(),
+            fundingStage: String(fundingStageInput && fundingStageInput.value || "").trim(),
+            revenue: String(revenueInput && revenueInput.value || "").trim(),
+            keywords: parseDealKeywordsInput(keywordsInput && keywordsInput.value),
             owner: seniorOwner,
             targetAmount: parseNumericAmount(targetInput.value),
             raisedAmount: parseNumericAmount(raisedInput.value),
@@ -570,7 +737,8 @@
       applyDealFilterStateToUi();
 
       const filteredDeals = getFilteredDeals();
-      const allCounts = buildDealStageCounts(dealsData);
+      const portfolioDeals = (Array.isArray(dealsData) ? dealsData : []).filter((deal) => matchesPortfolioFilter(deal));
+      const allCounts = buildDealStageCounts(portfolioDeals);
 
       body.innerHTML = "";
 
@@ -584,18 +752,23 @@
       filteredDeals.forEach(deal => {
         const tr = document.createElement("tr");
         const stage = String(deal.stage || "").toLowerCase();
+        const lifecycleStatus = getDealLifecycleStatus(deal);
+        const stageCell = `
+          <div class="deal-stage-cell">
+            <span class="stage-badge">
+              <span class="stage-dot ${stageClass(stage)}"></span>
+              ${STAGE_LABELS[stage] || "Prospect"}
+            </span>
+            ${lifecycleStatus !== "active" ? renderLifecycleBadge(lifecycleStatus) : ""}
+          </div>
+        `;
 
         tr.innerHTML = `
           <td class="name-cell">
             <a class="action-link" href="${buildPageUrl("deal-details", { id: deal.id })}">${deal.name || "–"}</a>
           </td>
-          <td>${deal.company || "–"}</td>
-          <td>
-            <span class="stage-badge">
-              <span class="stage-dot ${stageClass(stage)}"></span>
-              ${STAGE_LABELS[stage] || "Prospect"}
-            </span>
-          </td>
+          <td>${buildDealCompanyCell(deal)}</td>
+          <td>${stageCell}</td>
           <td>${getPeopleInChargeText(deal)}</td>
           <td class="amount">${formatAmountCell(deal.targetAmount, deal.currency)}</td>
           <td class="amount">${formatAmountCell(deal.raisedAmount, deal.currency)}</td>
@@ -614,9 +787,14 @@
 
       renderStageFilterChips(metaRow, allCounts);
       updateDealFilterSummary(filteredDeals);
-      footerMeta.textContent = filteredDeals.length === dealsData.length
-        ? `${allCounts.total} active deal${allCounts.total === 1 ? "" : "s"} in pipeline.`
-        : `${filteredDeals.length} shown of ${allCounts.total} active deal${allCounts.total === 1 ? "" : "s"}.`;
+      const portfolioLabel = dealsFilterState.portfolio === "closed"
+        ? "finished / closed deal"
+        : dealsFilterState.portfolio === "all"
+          ? "deal"
+          : "active deal";
+      footerMeta.textContent = filteredDeals.length === portfolioDeals.length
+        ? `${allCounts.total} ${portfolioLabel}${allCounts.total === 1 ? "" : "s"} shown.`
+        : `${filteredDeals.length} shown of ${allCounts.total} ${portfolioLabel}${allCounts.total === 1 ? "" : "s"}.`;
     }
 
     document.addEventListener("DOMContentLoaded", () => {

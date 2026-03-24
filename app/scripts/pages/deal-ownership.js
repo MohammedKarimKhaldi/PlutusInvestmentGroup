@@ -18,6 +18,11 @@
         link: "all",
         coverage: "all",
         stage: "all",
+        sector: "all",
+        location: "all",
+        fundingStage: "all",
+        revenue: "all",
+        thematic: "all",
     };
     let charts = {};
     const COLOR_PALETTE = ['#818cf8', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#22d3ee', '#fb7185'];
@@ -27,6 +32,17 @@
             return AppCore.normalizeValue(value);
         }
         return String(value || '').trim().toLowerCase();
+    }
+
+    function normalizeDealLifecycleStatus(value) {
+        const normalized = normalizeValue(value);
+        if (normalized === 'finished') return 'finished';
+        if (normalized === 'closed') return 'closed';
+        return 'active';
+    }
+
+    function isActiveDeal(deal) {
+        return normalizeDealLifecycleStatus(deal && (deal.lifecycleStatus || deal.dealStatus)) === 'active';
     }
 
     window.addEventListener('load', () => {
@@ -42,6 +58,7 @@
         const coverageFilter = document.getElementById('ownership-coverage-filter');
         const stageFilter = document.getElementById('ownership-stage-filter');
         const resetBtn = document.getElementById('ownership-reset-filters');
+        const visualFilters = document.getElementById('ownership-visual-filters');
 
         if (searchInput) {
             searchInput.addEventListener('input', () => {
@@ -64,8 +81,24 @@
                     link: "all",
                     coverage: "all",
                     stage: "all",
+                    sector: "all",
+                    location: "all",
+                    fundingStage: "all",
+                    revenue: "all",
+                    thematic: "all",
                 };
                 applyOwnershipFiltersToUi();
+                renderDashboardState();
+            });
+        }
+        if (visualFilters) {
+            visualFilters.addEventListener('click', (event) => {
+                const chip = event.target.closest('[data-ownership-visual-filter]');
+                if (!chip) return;
+                const filterKey = String(chip.getAttribute('data-ownership-visual-filter') || '').trim();
+                const nextValue = String(chip.getAttribute('data-ownership-visual-value') || 'all').trim();
+                if (!filterKey || !(filterKey in ownershipFilters)) return;
+                ownershipFilters[filterKey] = ownershipFilters[filterKey] === nextValue && nextValue !== 'all' ? 'all' : nextValue;
                 renderDashboardState();
             });
         }
@@ -92,6 +125,11 @@
             link: String(document.getElementById('ownership-link-filter') && document.getElementById('ownership-link-filter').value || 'all').trim().toLowerCase() || 'all',
             coverage: String(document.getElementById('ownership-coverage-filter') && document.getElementById('ownership-coverage-filter').value || 'all').trim().toLowerCase() || 'all',
             stage: String(document.getElementById('ownership-stage-filter') && document.getElementById('ownership-stage-filter').value || 'all').trim().toLowerCase() || 'all',
+            sector: ownershipFilters.sector || 'all',
+            location: ownershipFilters.location || 'all',
+            fundingStage: ownershipFilters.fundingStage || 'all',
+            revenue: ownershipFilters.revenue || 'all',
+            thematic: ownershipFilters.thematic || 'all',
         };
     }
 
@@ -117,10 +155,12 @@
     function renderDashboardState() {
         applyOwnershipFiltersToUi();
         if (!ownershipContext) return;
-        renderKPIs(ownershipContext);
-        renderCharts(ownershipContext);
-        renderWatchlist(ownershipContext);
-        renderTable(ownershipFilters.keyword, ownershipContext);
+        renderOwnershipVisualFilters(ownershipContext);
+        const scopedContext = buildScopedOwnershipContext(ownershipContext);
+        renderKPIs(scopedContext);
+        renderCharts(scopedContext);
+        renderWatchlist(scopedContext);
+        renderTable(ownershipFilters.keyword, scopedContext);
     }
 
     async function initializeDashboard() {
@@ -359,6 +399,60 @@
         return Array.from(new Set(values.map((entry) => String(entry || '').trim()).filter(Boolean)));
     }
 
+    function getDealKeywords(deal) {
+        const source = deal && deal.keywords;
+        const values = Array.isArray(source)
+            ? source
+            : typeof source === 'string'
+                ? source.split(/[\n,;]+/)
+                : [];
+        return Array.from(new Set(values.map((entry) => String(entry || '').trim()).filter(Boolean)));
+    }
+
+    function getDealSectors(deal) {
+        const source = deal && (
+            Array.isArray(deal.sectors)
+                ? deal.sectors
+                : typeof deal.sectors === 'string'
+                    ? deal.sectors.split(/[\n,;]+/)
+                    : typeof deal.sector === 'string'
+                        ? deal.sector.split(/[\n,;]+/)
+                        : []
+        );
+        const normalized = Array.from(new Set(
+            (Array.isArray(source) ? source : [])
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean)
+        ));
+        if (deal && typeof deal === 'object') {
+            deal.sectors = normalized;
+            deal.sector = normalized.join(', ');
+        }
+        return normalized;
+    }
+
+    function getDealProfileValue(deal, key) {
+        if (key === 'sector') {
+            return getDealSectors(deal).join(', ');
+        }
+        return String(deal && deal[key] || '').trim();
+    }
+
+    function getDealProfileSummary(deal) {
+        return [
+            getDealProfileValue(deal, 'sector'),
+            getDealProfileValue(deal, 'location'),
+            getDealProfileValue(deal, 'fundingStage'),
+            getDealProfileValue(deal, 'revenue'),
+        ].filter(Boolean);
+    }
+
+    function buildDealProfileLabel(deal) {
+        const profileParts = getDealProfileSummary(deal);
+        if (!profileParts.length) return '';
+        return profileParts.join(' · ');
+    }
+
     function addSubOwnersToSummary(summary) {
         if (!summary || !summary.match || !summary.staff || !summary.roles) return;
         const subOwners = getSubOwners(summary.match);
@@ -393,6 +487,15 @@
             parts.push(`Sub owners: ${subOwners.join(', ')}`);
         }
         return parts.join(' · ');
+    }
+
+    function getDealOwners(deal) {
+        const primaryOwners = [
+            String(deal && (deal.seniorOwner || deal.owner) || '').trim(),
+            String(deal && deal.juniorOwner || '').trim(),
+            ...getSubOwners(deal),
+        ].filter(Boolean);
+        return Array.from(new Set(primaryOwners));
     }
 
     function formatAmountCell(amount, currency) {
@@ -449,7 +552,6 @@
 
     function buildCoverageSignal(entry) {
         const staffCount = entry.staffCount || 0;
-        const stageKey = entry.stageKey;
 
         if (entry.linkStatus === 'unlinked') {
             return {
@@ -473,28 +575,6 @@
             };
         }
 
-        if ((stageKey === 'signing' || stageKey === 'onboarding' || stageKey === 'contacting investors') && staffCount < 2) {
-            return {
-                status: 'thin-stage',
-                bucket: 'risk',
-                label: 'Thin for stage',
-                detail: `Only ${staffCount || 0} team member${staffCount === 1 ? '' : 's'} linked for a ${getStageLabel(stageKey)} deal.`,
-                actionTitle: 'Add another team member',
-                actionDetail: 'Later-stage deals are safer with broader coverage.',
-            };
-        }
-
-        if (staffCount <= 1) {
-            return {
-                status: 'single-threaded',
-                bucket: 'risk',
-                label: 'Single-threaded',
-                detail: 'Only one team member is carrying this deal right now.',
-                actionTitle: 'Reduce key-person risk',
-                actionDetail: 'Add backup coverage or broaden ownership.',
-            };
-        }
-
         return {
             status: 'healthy',
             bucket: 'healthy',
@@ -513,6 +593,9 @@
 
         const enrichedRows = rawData.map((row) => {
             const match = findDealForRow(row, headers);
+            if (match && !isActiveDeal(match)) {
+                return null;
+            }
             const primaryDealLabel = getPrimaryDealLabel(row, headers) || 'Unlabelled staffing line';
             const summaryKey = match && match.id
                 ? `deal:${String(match.id)}`
@@ -550,9 +633,9 @@
                 summaryKey,
                 primaryDealLabel,
             };
-        });
+        }).filter(Boolean);
 
-        dealsSource.forEach((deal) => {
+        dealsSource.filter((deal) => isActiveDeal(deal)).forEach((deal) => {
             const dealId = String(deal && deal.id || '').trim();
             if (!dealId || linkedDealIds.has(dealId)) return;
             const summaryKey = `deal:${dealId}`;
@@ -589,6 +672,12 @@
                     linkStatus,
                     stageKey,
                     stageLabel: getStageLabel(stageKey),
+                    sectors: getDealSectors(summary.match),
+                    sector: getDealProfileValue(summary.match, 'sector'),
+                    location: getDealProfileValue(summary.match, 'location'),
+                    fundingStage: getDealProfileValue(summary.match, 'fundingStage'),
+                    revenue: getDealProfileValue(summary.match, 'revenue'),
+                    keywords: getDealKeywords(summary.match),
                 };
                 const signal = buildCoverageSignal(entry);
                 entry.coverageStatus = signal.status;
@@ -655,10 +744,15 @@
             return `<div class="ownership-stack"><span class="ownership-muted">Create or rename a deal overview record to link this staffing line.</span></div>`;
         }
 
+        const profileLabel = buildDealProfileLabel(match);
+        const keywordLabel = getDealKeywords(match).slice(0, 4).join(', ');
+
         return `
             <div class="ownership-stack">
                 ${getStageBadge(match.stage)}
                 <span class="ownership-muted">${escapeHtml(buildOwnerRosterLabel(match))}</span>
+                ${profileLabel ? `<span class="ownership-muted">${escapeHtml(profileLabel)}</span>` : ''}
+                ${keywordLabel ? `<span class="ownership-muted">Thematics: ${escapeHtml(keywordLabel)}</span>` : ''}
                 <span class="ownership-muted">Target: ${formatAmountCell(match.targetAmount, match.currency)} · Raised: ${formatAmountCell(match.raisedAmount, match.currency)}</span>
             </div>
         `;
@@ -681,8 +775,9 @@
         const container = document.getElementById('staffing-kpis');
         if (!container || !context) return;
 
-        const totalRows = rawData.length;
-        const uniqueStaff = new Set(rawData.map(r => r["Staff"] || r["Name"] || r["Lead"] || "").filter(Boolean)).size;
+        const enrichedRows = Array.isArray(context.enrichedRows) ? context.enrichedRows : [];
+        const totalRows = enrichedRows.length;
+        const uniqueStaff = new Set(enrichedRows.map(({ row }) => getStaffLabel(row)).filter(Boolean)).size;
         const coveredDeals = context.summaryEntries.filter((entry) => entry.linkStatus === 'linked').length;
         const missingStaffingCount = context.summaryEntries.filter((entry) => entry.linkStatus === 'missing-staffing').length;
         const atRiskCount = context.summaryEntries.filter((entry) => entry.linkStatus === 'linked' && entry.coverageBucket === 'risk').length;
@@ -718,17 +813,17 @@
 
     function renderCharts(context = ownershipContext) {
         if (!context) return;
-        renderAllocationChart();
+        renderAllocationChart(context);
         renderDealDistChart(context);
     }
 
-    function renderAllocationChart() {
+    function renderAllocationChart(context = ownershipContext) {
         const ctx = document.getElementById('staffChart').getContext('2d');
         if (charts.staff) charts.staff.destroy();
 
         const staffMap = {};
-        rawData.forEach(r => {
-            const name = r["Staff"] || r["Name"] || r["Lead"] || "Unknown";
+        (Array.isArray(context && context.enrichedRows) ? context.enrichedRows : []).forEach(({ row }) => {
+            const name = getStaffLabel(row) || "Unknown";
             staffMap[name] = (staffMap[name] || 0) + 1;
         });
 
@@ -767,8 +862,6 @@
         const colors = [];
         const buckets = [
             { key: 'healthy', label: 'Covered', color: '#34d399' },
-            { key: 'single-threaded', label: 'Single-threaded', color: '#fbbf24' },
-            { key: 'thin-stage', label: 'Thin for stage', color: '#fb7185' },
             { key: 'missing-staffing', label: 'Needs staffing', color: '#f97316' },
             { key: 'unlinked', label: 'Unlinked', color: '#94a3b8' },
         ];
@@ -813,7 +906,7 @@
         const unlinked = context.summaryEntries.filter((entry) => entry.linkStatus === 'unlinked').slice(0, 4);
 
         const staffLoadMap = new Map();
-        rawData.forEach((row) => {
+        (Array.isArray(context.enrichedRows) ? context.enrichedRows : []).forEach(({ row }) => {
             const staff = getStaffLabel(row);
             if (!staff) return;
             staffLoadMap.set(staff, (staffLoadMap.get(staff) || 0) + 1);
@@ -840,7 +933,7 @@
                 </div>
                 <div class="ownership-watchlist-column">
                     <div class="ownership-watchlist-title">At-risk coverage</div>
-                    ${renderEntries(atRisk, 'No linked deals are flagged as thin or single-threaded.', (entry) => `
+                    ${renderEntries(atRisk, 'No linked deals are currently flagged for coverage risk.', (entry) => `
                         <div class="ownership-watchlist-item">
                             <strong>${escapeHtml(getSummaryDisplayLabel(entry))}</strong>
                             <span>${escapeHtml(entry.coverageLabel)} / ${escapeHtml(entry.actionDetail)}</span>
@@ -869,6 +962,129 @@
         `;
     }
 
+    function matchesProfileFilterValue(actualValue, selectedValue) {
+        if (!selectedValue || selectedValue === 'all') return true;
+        if (Array.isArray(actualValue)) {
+            return actualValue.some((value) => normalizeValue(value) === normalizeValue(selectedValue));
+        }
+        return normalizeValue(actualValue) === normalizeValue(selectedValue);
+    }
+
+    function matchesKeywordFilter(entryKeywords, selectedValue) {
+        if (!selectedValue || selectedValue === 'all') return true;
+        return (Array.isArray(entryKeywords) ? entryKeywords : []).some((entry) => normalizeValue(entry) === normalizeValue(selectedValue));
+    }
+
+    function collectVisualFilterOptions(entries, filterKey, limit = 10) {
+        const counts = new Map();
+
+        const valuesForEntry = (entry) => {
+            if (!entry) return [];
+            if (filterKey === 'thematic') return Array.isArray(entry.keywords) ? entry.keywords : [];
+            if (filterKey === 'sector') return Array.isArray(entry.sectors) ? entry.sectors : [];
+            if (filterKey === 'location') return entry.location ? [entry.location] : [];
+            if (filterKey === 'fundingStage') return entry.fundingStage ? [entry.fundingStage] : [];
+            if (filterKey === 'revenue') return entry.revenue ? [entry.revenue] : [];
+            return [];
+        };
+
+        (Array.isArray(entries) ? entries : []).forEach((entry) => {
+            valuesForEntry(entry).forEach((value) => {
+                const label = String(value || '').trim();
+                const key = normalizeValue(label);
+                if (!key) return;
+                if (!counts.has(key)) {
+                    counts.set(key, { value: label, count: 0 });
+                }
+                counts.get(key).count += 1;
+            });
+        });
+
+        const selectedValue = ownershipFilters[filterKey] || 'all';
+        const options = Array.from(counts.values())
+            .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+        const selectedOption = options.find((option) => normalizeValue(option.value) === normalizeValue(selectedValue));
+        const limited = options.slice(0, limit);
+        if (selectedOption && !limited.some((option) => normalizeValue(option.value) === normalizeValue(selectedOption.value))) {
+            limited.push(selectedOption);
+        }
+        return limited;
+    }
+
+    function buildVisualFilterChips(filterKey, label, options) {
+        const activeValue = ownershipFilters[filterKey] || 'all';
+        const allCount = options.reduce((sum, option) => sum + option.count, 0);
+        const chips = [
+            `
+                <button class="ownership-visual-chip${activeValue === 'all' ? ' is-active' : ''}" type="button" data-ownership-visual-filter="${filterKey}" data-ownership-visual-value="all">
+                    <span>${escapeHtml(label)}</span>
+                    <strong>${allCount}</strong>
+                </button>
+            `,
+            ...options.map((option) => `
+                <button class="ownership-visual-chip${normalizeValue(activeValue) === normalizeValue(option.value) ? ' is-active' : ''}" type="button" data-ownership-visual-filter="${filterKey}" data-ownership-visual-value="${escapeHtml(option.value)}">
+                    <span>${escapeHtml(option.value)}</span>
+                    <strong>${option.count}</strong>
+                </button>
+            `),
+        ];
+
+        return `
+            <div class="ownership-visual-group">
+                <div class="ownership-visual-label">${escapeHtml(label)}</div>
+                <div class="ownership-visual-chip-row">
+                    ${chips.join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderOwnershipVisualFilters(context = ownershipContext) {
+        const container = document.getElementById('ownership-visual-filters');
+        if (!container || !context) return;
+
+        const linkedEntries = (Array.isArray(context.summaryEntries) ? context.summaryEntries : []).filter((entry) => entry && entry.match);
+        const groups = [
+            { key: 'thematic', label: 'Thematics', limit: 12 },
+            { key: 'sector', label: 'Sectors', limit: 10 },
+            { key: 'location', label: 'Location', limit: 10 },
+            { key: 'fundingStage', label: 'Funding stage', limit: 10 },
+            { key: 'revenue', label: 'Revenue', limit: 8 },
+        ].map((group) => ({
+            ...group,
+            options: collectVisualFilterOptions(linkedEntries, group.key, group.limit),
+        })).filter((group) => group.options.length);
+
+        if (!groups.length) {
+            container.innerHTML = `
+                <div class="card-title">Deal profile filters</div>
+                <div class="ownership-watchlist-empty">Add sectors, location, funding stage, revenue, or thematics on deals to unlock visual filters here.</div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="card-title">Deal profile filters</div>
+            <div class="ownership-visual-subtitle">Use the richer deal profile fields to narrow coverage by theme, geography, company maturity, and revenue profile.</div>
+            <div class="ownership-visual-groups">
+                ${groups.map((group) => buildVisualFilterChips(group.key, group.label, group.options)).join('')}
+            </div>
+        `;
+    }
+
+    function buildScopedOwnershipContext(context = ownershipContext) {
+        if (!context) return null;
+        const summaryEntries = (Array.isArray(context.summaryEntries) ? context.summaryEntries : []).filter((entry) => matchesOwnershipEntryScopeFilters(entry));
+        const allowedKeys = new Set(summaryEntries.map((entry) => entry.key));
+        const enrichedRows = (Array.isArray(context.enrichedRows) ? context.enrichedRows : []).filter(({ summaryKey }) => allowedKeys.has(summaryKey));
+        return {
+            ...context,
+            summaryEntries,
+            summaryEntriesByKey: new Map(summaryEntries.map((entry) => [entry.key, entry])),
+            enrichedRows,
+        };
+    }
+
     function matchesOwnershipEntryScopeFilters(entry) {
         if (!entry) return false;
 
@@ -879,6 +1095,21 @@
             return false;
         }
         if (ownershipFilters.stage !== 'all' && entry.stageKey !== ownershipFilters.stage) {
+            return false;
+        }
+        if (!matchesProfileFilterValue(entry.sectors, ownershipFilters.sector)) {
+            return false;
+        }
+        if (!matchesProfileFilterValue(entry.location, ownershipFilters.location)) {
+            return false;
+        }
+        if (!matchesProfileFilterValue(entry.fundingStage, ownershipFilters.fundingStage)) {
+            return false;
+        }
+        if (!matchesProfileFilterValue(entry.revenue, ownershipFilters.revenue)) {
+            return false;
+        }
+        if (!matchesKeywordFilter(entry.keywords, ownershipFilters.thematic)) {
             return false;
         }
 
@@ -904,6 +1135,11 @@
             entry.actionTitle,
             entry.actionDetail,
             entry.stageLabel,
+            ...(entry.sectors || []),
+            entry.location,
+            entry.fundingStage,
+            entry.revenue,
+            ...(entry.keywords || []),
             ...(entry.staffNames || []),
         ].join(' ').toLowerCase();
         return haystack.includes(keyword);
@@ -931,13 +1167,125 @@
         `;
     }
 
+    function buildOwnerGroupContexts(entries) {
+        const groups = new Map();
+
+        const ensureGroup = (key, label, options = {}) => {
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    key,
+                    label,
+                    entries: [],
+                    isSynthetic: Boolean(options.isSynthetic),
+                });
+            }
+            return groups.get(key);
+        };
+
+        (Array.isArray(entries) ? entries : []).forEach((entry) => {
+            if (!entry) return;
+            if (!entry.match) {
+                ensureGroup('__unlinked__', 'Unlinked staffing', { isSynthetic: true }).entries.push(entry);
+                return;
+            }
+
+            const owners = getDealOwners(entry.match);
+            if (!owners.length) {
+                ensureGroup('__no_owner__', 'No deal owner', { isSynthetic: true }).entries.push(entry);
+                return;
+            }
+
+            owners.forEach((owner) => {
+                ensureGroup(`owner:${normalizeValue(owner)}`, owner).entries.push(entry);
+            });
+        });
+
+        return Array.from(groups.values())
+            .map((group) => {
+                const groupEntries = Array.isArray(group.entries) ? group.entries.slice() : [];
+                groupEntries.sort((a, b) => {
+                    const riskOrder = a.coverageBucket === b.coverageBucket ? 0 : a.coverageBucket === 'risk' ? -1 : 1;
+                    if (riskOrder) return riskOrder;
+                    const aAssignments = Number(a.assignments || 0);
+                    const bAssignments = Number(b.assignments || 0);
+                    if (aAssignments !== bAssignments) return bAssignments - aAssignments;
+                    return getSummaryDisplayLabel(a).localeCompare(getSummaryDisplayLabel(b));
+                });
+
+                const attentionCount = groupEntries.filter((entry) => entry.coverageBucket !== 'healthy').length;
+                const dealCount = groupEntries.length;
+                const stages = new Map();
+                groupEntries.forEach((entry) => {
+                    const stageLabel = entry.stageLabel || 'No stage';
+                    stages.set(stageLabel, (stages.get(stageLabel) || 0) + 1);
+                });
+                const stageSummary = Array.from(stages.entries())
+                    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                    .slice(0, 3)
+                    .map(([label, count]) => `${label}${count > 1 ? ` x${count}` : ''}`)
+                    .join(' · ');
+
+                return {
+                    ...group,
+                    entries: groupEntries,
+                    dealCount,
+                    attentionCount,
+                    healthyCount: groupEntries.filter((entry) => entry.coverageBucket === 'healthy').length,
+                    stageSummary,
+                };
+            })
+            .sort((a, b) => {
+                if (a.attentionCount !== b.attentionCount) return b.attentionCount - a.attentionCount;
+                if (a.dealCount !== b.dealCount) return b.dealCount - a.dealCount;
+                return a.label.localeCompare(b.label);
+            });
+    }
+
+    function buildOwnerGroupHeader(group) {
+        const summaryParts = [`${group.dealCount} deal${group.dealCount === 1 ? '' : 's'}`];
+        if (group.attentionCount) {
+            summaryParts.push(`${group.attentionCount} needs attention`);
+        } else {
+            summaryParts.push('All covered');
+        }
+        if (group.stageSummary) {
+            summaryParts.push(group.stageSummary);
+        }
+
+        const ownerTasksLink = group.isSynthetic
+            ? ''
+            : `<a class="action-link" href="${buildPageUrl('owner-tasks', { owner: group.label })}">Owner tasks</a>`;
+
+        return `
+            <div class="ownership-group-summary">
+                <div class="ownership-group-copy">
+                    <div class="ownership-group-title-row">
+                        <span class="ownership-group-title">${escapeHtml(group.label)}</span>
+                        <span class="ownership-badge ${group.attentionCount ? 'ownership-badge-warn' : 'ownership-badge-good'}">
+                            ${group.attentionCount ? `${group.attentionCount} flagged` : 'On track'}
+                        </span>
+                    </div>
+                    <div class="ownership-group-meta">${escapeHtml(summaryParts.join(' · '))}</div>
+                </div>
+                <div class="ownership-group-actions">
+                    ${ownerTasksLink}
+                </div>
+            </div>
+        `;
+    }
+
     function renderOwnershipFilterSummary(shownCount, totalCount) {
         const summaryEl = document.getElementById('ownership-filter-summary');
         if (!summaryEl) return;
         const linkFilter = document.getElementById('ownership-link-filter');
         const coverageFilter = document.getElementById('ownership-coverage-filter');
 
-        const parts = [`Showing ${shownCount} of ${totalCount} ${ownershipFilters.view === 'rows' ? 'staffing rows' : 'coverage rows'}`];
+        const viewLabel = ownershipFilters.view === 'rows'
+            ? 'staffing rows'
+            : ownershipFilters.view === 'owners'
+                ? 'owner groups'
+                : 'coverage rows';
+        const parts = [`Showing ${shownCount} of ${totalCount} ${viewLabel}`];
         if (ownershipFilters.link !== 'all') {
             const linkLabel = linkFilter && linkFilter.selectedOptions && linkFilter.selectedOptions[0]
                 ? linkFilter.selectedOptions[0].text
@@ -951,6 +1299,11 @@
             parts.push(`coverage: ${coverageLabel}`);
         }
         if (ownershipFilters.stage !== 'all') parts.push(`stage: ${getStageLabel(ownershipFilters.stage)}`);
+        if (ownershipFilters.sector !== 'all') parts.push(`sectors: ${ownershipFilters.sector}`);
+        if (ownershipFilters.location !== 'all') parts.push(`location: ${ownershipFilters.location}`);
+        if (ownershipFilters.fundingStage !== 'all') parts.push(`funding stage: ${ownershipFilters.fundingStage}`);
+        if (ownershipFilters.revenue !== 'all') parts.push(`revenue: ${ownershipFilters.revenue}`);
+        if (ownershipFilters.thematic !== 'all') parts.push(`thematic: ${ownershipFilters.thematic}`);
         if (ownershipFilters.keyword) parts.push(`search: "${ownershipFilters.keyword}"`);
         summaryEl.textContent = `${parts.join(' / ')}.`;
     }
@@ -959,6 +1312,44 @@
         const head = document.getElementById('table-head');
         const body = document.getElementById('table-body');
         if (!head || !body || !context) return;
+
+        if (ownershipFilters.view === 'owners') {
+            head.innerHTML = `
+                <tr>
+                    <th>Deal / Staffing Cluster</th>
+                    <th>Pipeline</th>
+                    <th>Staffing Snapshot</th>
+                    <th>Coverage</th>
+                    <th>Next Action</th>
+                    <th>Links</th>
+                </tr>
+            `;
+
+            const scopedGroups = buildOwnerGroupContexts(context.summaryEntries);
+            const filteredEntries = context.summaryEntries.filter((entry) => matchesOwnershipEntryFilters(entry, keyword));
+            const filteredGroups = buildOwnerGroupContexts(filteredEntries);
+
+            body.innerHTML = filteredGroups.length
+                ? filteredGroups.map((group) => `
+                    <tr class="ownership-group-row">
+                        <td colspan="6">${buildOwnerGroupHeader(group)}</td>
+                    </tr>
+                    ${group.entries.map((entry) => `
+                        <tr class="ownership-group-deal-row">
+                            <td class="ownership-rich-cell">${buildLinkedDealCell(entry.match, entry, entry.label)}</td>
+                            <td class="ownership-rich-cell">${buildPipelineCell(entry.match)}</td>
+                            <td class="ownership-rich-cell">${buildStaffingSnapshotCell(entry)}</td>
+                            <td class="ownership-rich-cell">${buildCoverageCell(entry)}</td>
+                            <td class="ownership-rich-cell">${buildNextActionCell(entry)}</td>
+                            <td class="ownership-rich-cell">${buildLinksCell(entry.match)}</td>
+                        </tr>
+                    `).join('')}
+                `).join('')
+                : '<tr><td colspan="6" class="ownership-rich-cell">No owner groups match the current filters.</td></tr>';
+
+            renderOwnershipFilterSummary(filteredGroups.length, scopedGroups.length);
+            return;
+        }
 
         if (ownershipFilters.view === 'rows') {
             const headers = context.headers;

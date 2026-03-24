@@ -45,6 +45,14 @@
               <input id="deal-search-input" type="search" placeholder="Search by deal, company, or owner" />
             </label>
             <label>
+              Portfolio
+              <select id="deal-portfolio-filter">
+                <option value="active">Active deals</option>
+                <option value="closed">Finished / closed deals</option>
+                <option value="all">All deals</option>
+              </select>
+            </label>
+            <label>
               Stage
               <select id="deal-stage-filter">
                 <option value="all">All stages</option>
@@ -138,6 +146,28 @@
               </label>
             </div>
             <div class="toolbar-row">
+              <label>
+                Sectors
+                <textarea id="deal-sector-input" rows="2" placeholder="Comma or line separated, e.g. Fintech, Payments"></textarea>
+              </label>
+              <label>
+                Location
+                <input id="deal-location-input" type="text" placeholder="e.g. London, UK" />
+              </label>
+              <label>
+                Funding stage
+                <input id="deal-funding-stage-input" type="text" placeholder="e.g. Seed, Series A" />
+              </label>
+              <label>
+                Revenues
+                <input id="deal-revenue-input" type="text" placeholder="e.g. Pre-revenue or £1m ARR" />
+              </label>
+              <label style="flex: 1 1 320px;">
+                Keywords / thematics
+                <input id="deal-keywords-input" type="text" placeholder="e.g. AI, climate, payments" />
+              </label>
+            </div>
+            <div class="toolbar-row">
               <label style="flex: 1 1 320px;">
                 Dashboard Excel / SharePoint link
                 <input id="deal-dashboard-url-input" type="text" placeholder="optional - create/update linked dashboard" />
@@ -170,7 +200,7 @@
               <tr>
                 <th>Deal</th>
                 <th>Company</th>
-                <th>Stage</th>
+                <th>Stage / Status</th>
                 <th>People in Charge</th>
                 <th>Target</th>
                 <th>Raised</th>

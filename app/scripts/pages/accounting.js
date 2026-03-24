@@ -325,6 +325,14 @@ function markDirty(dealId, isDirty) {
   else dirtyDealIds.delete(key);
 }
 
+function sanitizeAccountingDraftState() {
+  dealsData.forEach((deal) => {
+    if (!deal || typeof deal !== "object") return;
+    deal.contacts = normalizeDealContacts(deal);
+    syncLegacyPrimaryContactFields(deal);
+  });
+}
+
 function setStatus(message, isError) {
   const line = document.getElementById("accounting-status-line");
   const pill = document.getElementById("accounting-status-text");
@@ -773,9 +781,6 @@ function normalizeDealContacts(deal, options = {}) {
     normalized[0].isPrimary = true;
   }
 
-  if (deal && typeof deal === "object") {
-    deal.contacts = normalized;
-  }
   return normalized;
 }
 
@@ -847,6 +852,12 @@ function normalizeInvoiceDraft(deal) {
   const invoiceDate = String(source.invoiceDate || "").trim() || new Date().toISOString().slice(0, 10);
   const dueDate = String(source.dueDate || "").trim() || invoiceDate;
   const currentMonthLabel = formatMonthYear(invoiceDate);
+  const amountSource = source.amount != null && String(source.amount).trim() !== ""
+    ? source.amount
+    : formatAmountInput(getRetainerMonthly(deal));
+  const vatRateSource = source.vatRate != null && String(source.vatRate).trim() !== ""
+    ? source.vatRate
+    : "";
   return {
     clientName: String(source.clientName || deal.company || deal.name || "").trim(),
     addressLine1: String(source.addressLine1 || "").trim(),
@@ -857,7 +868,8 @@ function normalizeInvoiceDraft(deal) {
     dueDate,
     description: String(source.description || `Retainer Plutus - ${currentMonthLabel}`).trim(),
     currency: normalizeCurrencyCode(source.currency || getDealCurrency(deal), getDealCurrency(deal)),
-    amount: String(source.amount || formatAmountInput(getRetainerMonthly(deal))).trim(),
+    amount: formatAmountInput(amountSource),
+    vatRate: formatRateInput(vatRateSource),
   };
 }
 
@@ -998,7 +1010,8 @@ function renderDealContactsPanel() {
     : '<div class="invoice-item"><div class="contact-subline">No contacts saved for this deal yet.</div></div>';
 }
 
-function updateDealContactField(index, field, nextValue, isChecked) {
+function updateDealContactField(index, field, nextValue, isChecked, options = {}) {
+  const { commit = false } = options;
   const deal = getSelectedDeal();
   if (!deal) return;
   const contacts = normalizeDealContacts(deal, { keepEmpty: true });
@@ -1016,14 +1029,18 @@ function updateDealContactField(index, field, nextValue, isChecked) {
     return;
   }
 
-  deal.contacts = contacts.filter((entry) => entry.name || entry.title || entry.email);
+  deal.contacts = commit
+    ? contacts.filter((entry) => entry.name || entry.title || entry.email)
+    : contacts;
   if (deal.contacts.length && !deal.contacts.some((entry) => entry.isPrimary)) {
     deal.contacts[0].isPrimary = true;
   }
   syncLegacyPrimaryContactFields(deal);
   markDirty(deal.id, true);
-  renderDealContactsPanel();
-  renderTable();
+  if (commit || field === "isPrimary") {
+    renderDealContactsPanel();
+    renderTable();
+  }
   setStatus("Deal contacts updated. Save all changes to sync online.", false);
   setDealContactsStatus("Deal contacts updated for this deal.", false);
 }
@@ -1140,11 +1157,27 @@ function formatAmountInput(value) {
   return parsed.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function formatRateInput(value) {
+  const raw = String(value == null ? "" : value).trim();
+  if (!raw) return "";
+  const parsed = Number(raw.replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(parsed) || parsed < 0) return "";
+  return Number(parsed.toFixed(2)).toString();
+}
+
 function parseAmount(value) {
   const raw = String(value == null ? "" : value).trim();
   if (!raw) return 0;
   const parsed = Number(raw.replace(/[^\d.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseRate(value) {
+  const raw = String(value == null ? "" : value).trim();
+  if (!raw) return 0;
+  const parsed = Number(raw.replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return parsed;
 }
 
 function formatCurrencyAmount(value, currency, withSymbol) {
@@ -1164,6 +1197,38 @@ function formatCurrencyAmount(value, currency, withSymbol) {
   }
 }
 
+function getCurrencyColumnLabel(currency) {
+  const code = normalizeCurrencyCode(currency, DEFAULT_CURRENCY);
+  const symbolMap = {
+    GBP: "£",
+    USD: "$",
+    EUR: "€",
+    JPY: "¥",
+  };
+  return symbolMap[code] || code;
+}
+
+function buildInvoiceFinancials(amount, currency, vatRate) {
+  const code = normalizeCurrencyCode(currency, DEFAULT_CURRENCY);
+  const netAmount = parseAmount(amount);
+  const resolvedVatRate = parseRate(vatRate);
+  const vatAmount = netAmount * (resolvedVatRate / 100);
+  const grossAmount = netAmount + vatAmount;
+  return {
+    currency: code,
+    currencyColumnLabel: getCurrencyColumnLabel(code),
+    hasVat: resolvedVatRate > 0,
+    vatRate: resolvedVatRate,
+    vatRateText: resolvedVatRate > 0 ? `${Number(resolvedVatRate.toFixed(2)).toString()}%` : "",
+    netAmountText: formatCurrencyAmount(netAmount, code, false),
+    netAmountTotalText: formatCurrencyAmount(netAmount, code, true),
+    vatAmountText: formatCurrencyAmount(vatAmount, code, false),
+    vatAmountTotalText: formatCurrencyAmount(vatAmount, code, true),
+    grossAmountText: formatCurrencyAmount(grossAmount, code, false),
+    grossAmountTotalText: formatCurrencyAmount(grossAmount, code, true),
+  };
+}
+
 function getInvoiceDraftFieldMap() {
   return {
     clientName: document.getElementById("invoice-client-name"),
@@ -1176,12 +1241,14 @@ function getInvoiceDraftFieldMap() {
     description: document.getElementById("invoice-description"),
     currency: document.getElementById("invoice-currency"),
     amount: document.getElementById("invoice-amount"),
+    vatRate: document.getElementById("invoice-vat-rate"),
   };
 }
 
 function renderInvoiceBuilder() {
   const panel = document.getElementById("invoice-builder-panel");
   const subtitle = document.getElementById("invoice-builder-subtitle");
+  const totalsPreview = document.getElementById("invoice-totals-preview");
   const fieldMap = getInvoiceDraftFieldMap();
   if (!panel || !subtitle) return;
 
@@ -1197,6 +1264,7 @@ function renderInvoiceBuilder() {
     Object.values(fieldMap).forEach((input) => {
       if (input) input.value = "";
     });
+    if (totalsPreview) totalsPreview.innerHTML = "";
     return;
   }
 
@@ -1210,10 +1278,13 @@ function renderInvoiceBuilder() {
     input.value = draft && draft[key] != null ? String(draft[key]) : "";
     input.classList.toggle("is-dirty", dirtyDealIds.has(normalizeValue(deal.id)));
   });
+  renderInvoiceTotalsPreview(deal);
 }
 
 function buildInvoiceViewModel(deal) {
   const draft = ensureInvoiceDraft(deal) || {};
+  const currency = normalizeCurrencyCode(draft.currency || getDealCurrency(deal), getDealCurrency(deal));
+  const financials = buildInvoiceFinancials(draft.amount, currency, draft.vatRate);
   return {
     issuer: PLUTUS_INVOICE_ISSUER,
     clientName: draft.clientName || deal.company || deal.name || "",
@@ -1224,10 +1295,43 @@ function buildInvoiceViewModel(deal) {
     invoiceDate: formatLongDate(draft.invoiceDate),
     dueDate: formatLongDate(draft.dueDate),
     description: draft.description || `Retainer Plutus - ${formatMonthYear(draft.invoiceDate)}`,
-    currency: normalizeCurrencyCode(draft.currency || getDealCurrency(deal), getDealCurrency(deal)),
-    amountText: formatCurrencyAmount(draft.amount, draft.currency || getDealCurrency(deal), false),
-    amountTotalText: formatCurrencyAmount(draft.amount, draft.currency || getDealCurrency(deal), true),
+    currency,
+    currencyColumnLabel: financials.currencyColumnLabel,
+    hasVat: financials.hasVat,
+    vatRate: financials.vatRate,
+    vatRateText: financials.vatRateText,
+    amountText: financials.netAmountText,
+    amountTotalText: financials.grossAmountTotalText,
+    netAmountText: financials.netAmountText,
+    netAmountTotalText: financials.netAmountTotalText,
+    vatAmountText: financials.vatAmountText,
+    vatAmountTotalText: financials.vatAmountTotalText,
+    grossAmountText: financials.grossAmountText,
+    grossAmountTotalText: financials.grossAmountTotalText,
   };
+}
+
+function renderInvoiceTotalsPreview(deal) {
+  const node = document.getElementById("invoice-totals-preview");
+  if (!node) return;
+  if (!deal) {
+    node.innerHTML = "";
+    return;
+  }
+
+  const model = buildInvoiceViewModel(deal);
+  const pills = [
+    `<div class="invoice-total-pill"><span>Net total</span><strong>${escapeHtml(model.netAmountTotalText)}</strong></div>`,
+  ];
+  if (model.hasVat) {
+    pills.push(
+      `<div class="invoice-total-pill"><span>VAT ${escapeHtml(model.vatRateText)}</span><strong>${escapeHtml(model.vatAmountTotalText)}</strong></div>`,
+    );
+  }
+  pills.push(
+    `<div class="invoice-total-pill"><span>${escapeHtml(model.currency)} total</span><strong>${escapeHtml(model.grossAmountTotalText)}</strong></div>`,
+  );
+  node.innerHTML = pills.join("");
 }
 
 function buildInvoiceFilename(deal, extension) {
@@ -1250,6 +1354,31 @@ function buildInvoiceHtmlDocument(model) {
     .filter(Boolean)
     .map((line) => `<div>${escapeHtml(line)}</div>`)
     .join("");
+  const detailsHeader = model.hasVat
+    ? `<tr>
+        <th>Details</th>
+        <th class="num">Price (${escapeHtml(model.currencyColumnLabel)})</th>
+        <th class="num">VAT</th>
+        <th class="num">Net Subtotal (${escapeHtml(model.currencyColumnLabel)})</th>
+      </tr>`
+    : `<tr>
+        <th>Details</th>
+        <th class="num">Price (${escapeHtml(model.currencyColumnLabel)})</th>
+      </tr>`;
+  const detailsRow = model.hasVat
+    ? `<tr>
+        <td>${escapeHtml(model.description)}</td>
+        <td class="num">${escapeHtml(model.netAmountText)}</td>
+        <td class="num">${escapeHtml(model.vatRateText)}</td>
+        <td class="num">${escapeHtml(model.netAmountText)}</td>
+      </tr>`
+    : `<tr>
+        <td>${escapeHtml(model.description)}</td>
+        <td class="num">${escapeHtml(model.netAmountText)}</td>
+      </tr>`;
+  const vatTotalRow = model.hasVat
+    ? `<tr><td>VAT</td><td>${escapeHtml(model.vatAmountText)}</td></tr>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1265,9 +1394,10 @@ function buildInvoiceHtmlDocument(model) {
     .invoice-title { text-align: right; }
     .invoice-title strong { display: block; font-size: 12pt; margin-bottom: 8px; }
     .details-table, .totals-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    .details-table { table-layout: fixed; }
     .details-table th, .details-table td, .totals-table td { padding: 10px 12px; }
     .details-table th { background: #000; color: #fff; text-align: left; }
-    .details-table th:last-child, .details-table td:last-child, .totals-table td:last-child { text-align: right; }
+    .details-table th.num, .details-table td.num, .totals-table td:last-child { text-align: right; }
     .details-table tbody td { background: #f8f9fa; }
     .totals-table { width: 50%; margin-left: auto; }
     .totals-table .grand td { font-weight: 700; border-top: 1px solid #111827; }
@@ -1297,15 +1427,16 @@ function buildInvoiceHtmlDocument(model) {
   </table>
   <table class="details-table">
     <thead>
-      <tr><th>Details</th><th>Price (${escapeHtml(model.currency)})</th></tr>
+      ${detailsHeader}
     </thead>
     <tbody>
-      <tr><td>${escapeHtml(model.description)}</td><td>${escapeHtml(model.amountText)}</td></tr>
+      ${detailsRow}
     </tbody>
   </table>
   <table class="totals-table">
-    <tr><td>Net Total</td><td>${escapeHtml(model.amountText)}</td></tr>
-    <tr class="grand"><td>${escapeHtml(model.currency)} Total</td><td>${escapeHtml(model.amountTotalText)}</td></tr>
+    <tr><td>Net Total</td><td>${escapeHtml(model.netAmountText)}</td></tr>
+    ${vatTotalRow}
+    <tr class="grand"><td>${escapeHtml(model.currency)} Total</td><td>${escapeHtml(model.grossAmountTotalText)}</td></tr>
   </table>
   <div class="payment">
     <strong>Payment Details</strong>
@@ -1375,6 +1506,149 @@ function getWordTextNodes(xmlDocument) {
       "t",
     ),
   );
+}
+
+const WORD_ML_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+function escapeXml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function buildWordCellXml(config) {
+  const {
+    text = "",
+    width = 2160,
+    align = "left",
+    fill = "",
+    bold = false,
+    color = "",
+    size = "20",
+    topBorder = false,
+  } = config || {};
+
+  const tcPrParts = [`<w:tcW w:w="${width}" w:type="dxa"/>`];
+  if (fill) {
+    tcPrParts.push(`<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>`);
+  }
+  if (topBorder) {
+    tcPrParts.push('<w:tcBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tcBorders>');
+  }
+
+  const runPrParts = [];
+  if (bold) runPrParts.push("<w:b/>");
+  if (color) runPrParts.push(`<w:color w:val="${color}"/>`);
+  if (size) runPrParts.push(`<w:sz w:val="${size}"/>`);
+  const runPrXml = runPrParts.length ? `<w:rPr>${runPrParts.join("")}</w:rPr>` : "";
+  const preserveSpace = /^\s|\s$/.test(text) ? ' xml:space="preserve"' : "";
+
+  return `<w:tc>
+    <w:tcPr>${tcPrParts.join("")}</w:tcPr>
+    <w:p>
+      <w:pPr><w:jc w:val="${align}"/></w:pPr>
+      <w:r>${runPrXml}<w:t${preserveSpace}>${escapeXml(text)}</w:t></w:r>
+    </w:p>
+  </w:tc>`;
+}
+
+function buildWordTableXml(columns, rows, options = {}) {
+  const align = options.align || "";
+  const rowXml = rows.map((row) => {
+    const rowProps = align ? `<w:trPr><w:jc w:val="${align}"/></w:trPr>` : "";
+    return `<w:tr>${rowProps}${row.cells.map((cell) => buildWordCellXml(cell)).join("")}</w:tr>`;
+  }).join("");
+  const tblPrParts = ['<w:tblW w:w="0" w:type="auto"/>'];
+  if (align) {
+    tblPrParts.push(`<w:jc w:val="${align}"/>`);
+  }
+  tblPrParts.push('<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>');
+  return `<w:tbl>
+    <w:tblPr>${tblPrParts.join("")}</w:tblPr>
+    <w:tblGrid>${columns.map((width) => `<w:gridCol w:w="${width}"/>`).join("")}</w:tblGrid>
+    ${rowXml}
+  </w:tbl>`;
+}
+
+function replaceWordTableXml(xmlDocument, existingTable, replacementXml) {
+  if (!xmlDocument || !existingTable || !replacementXml) return;
+  const fragmentDocument = new DOMParser().parseFromString(
+    `<root xmlns:w="${WORD_ML_NS}">${replacementXml}</root>`,
+    "application/xml",
+  );
+  const nextTable = fragmentDocument.documentElement.firstElementChild;
+  if (!nextTable) return;
+  existingTable.parentNode.replaceChild(xmlDocument.importNode(nextTable, true), existingTable);
+}
+
+function buildWordDetailsTableXml(model) {
+  if (model.hasVat) {
+    const columns = [3780, 1620, 1080, 2160];
+    return buildWordTableXml(columns, [
+      {
+        cells: [
+          { text: "Details", width: columns[0], fill: "000000", bold: true, color: "FFFFFF" },
+          { text: `Price (${model.currencyColumnLabel})`, width: columns[1], align: "right", fill: "000000", bold: true, color: "FFFFFF" },
+          { text: "VAT", width: columns[2], align: "center", fill: "000000", bold: true, color: "FFFFFF" },
+          { text: `Net Subtotal (${model.currencyColumnLabel})`, width: columns[3], align: "right", fill: "000000", bold: true, color: "FFFFFF" },
+        ],
+      },
+      {
+        cells: [
+          { text: model.description, width: columns[0], fill: "F8F9FA" },
+          { text: model.netAmountText, width: columns[1], align: "right", fill: "F8F9FA" },
+          { text: model.vatRateText, width: columns[2], align: "center", fill: "F8F9FA" },
+          { text: model.netAmountText, width: columns[3], align: "right", fill: "F8F9FA" },
+        ],
+      },
+    ]);
+  }
+
+  const columns = [6480, 2160];
+  return buildWordTableXml(columns, [
+    {
+      cells: [
+        { text: "Details", width: columns[0], fill: "000000", bold: true, color: "FFFFFF" },
+        { text: `Price (${model.currencyColumnLabel})`, width: columns[1], align: "right", fill: "000000", bold: true, color: "FFFFFF" },
+      ],
+    },
+    {
+      cells: [
+        { text: model.description, width: columns[0], fill: "F8F9FA" },
+        { text: model.netAmountText, width: columns[1], align: "right", fill: "F8F9FA" },
+      ],
+    },
+  ]);
+}
+
+function buildWordTotalsTableXml(model) {
+  const columns = [4320, 4320];
+  const rows = [
+    {
+      cells: [
+        { text: "Net Total", width: columns[0], align: "right", size: "20" },
+        { text: model.netAmountText, width: columns[1], align: "right", size: "20" },
+      ],
+    },
+  ];
+  if (model.hasVat) {
+    rows.push({
+      cells: [
+        { text: "VAT", width: columns[0], align: "right", size: "20" },
+        { text: model.vatAmountText, width: columns[1], align: "right", size: "20" },
+      ],
+    });
+  }
+  rows.push({
+    cells: [
+      { text: `${model.currency} Total`, width: columns[0], align: "right", bold: true, size: "20" },
+      { text: model.grossAmountTotalText, width: columns[1], align: "right", bold: true, size: "20", topBorder: true },
+    ],
+  });
+  return buildWordTableXml(columns, rows, { align: "right" });
 }
 
 function replaceTextNodeValue(textNodes, sampleText, nextText, occurrenceIndex = 0) {
@@ -1453,6 +1727,14 @@ async function generateInvoiceWord() {
     replaceTextNodeValue(textNodes, "3,000.00", model.amountText || "", 1);
     replaceTextNodeValue(textNodes, "£3,000.00", model.amountTotalText || "");
 
+    const tables = Array.from(xmlDocument.getElementsByTagNameNS(WORD_ML_NS, "tbl"));
+    if (tables[1]) {
+      replaceWordTableXml(xmlDocument, tables[1], buildWordDetailsTableXml(model));
+    }
+    if (tables[2]) {
+      replaceWordTableXml(xmlDocument, tables[2], buildWordTotalsTableXml(model));
+    }
+
     const serializedXml = new XMLSerializer().serializeToString(xmlDocument);
     zip.file("word/document.xml", serializedXml);
 
@@ -1520,30 +1802,68 @@ function generateInvoicePdf() {
   doc.setTextColor(17, 24, 39);
 
   y += 18;
+  const tableWidth = right - left;
+  const columns = model.hasVat
+    ? [
+        { label: "Details", width: 250, align: "left" },
+        { label: `Price (${model.currencyColumnLabel})`, width: 90, align: "right" },
+        { label: "VAT", width: 55, align: "center" },
+        { label: `Net Subtotal (${model.currencyColumnLabel})`, width: tableWidth - 250 - 90 - 55, align: "right" },
+      ]
+    : [
+        { label: "Details", width: 340, align: "left" },
+        { label: `Price (${model.currencyColumnLabel})`, width: tableWidth - 340, align: "right" },
+      ];
   const tableTop = y;
   doc.setFillColor(0, 0, 0);
-  doc.rect(left, tableTop, right - left, 24, "F");
+  doc.rect(left, tableTop, tableWidth, 24, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.text("Details", left + 12, tableTop + 16);
-  doc.text(`Price (${model.currency})`, right - 12, tableTop + 16, { align: "right" });
+  let columnX = left;
+  columns.forEach((column) => {
+    if (column.align === "right") {
+      doc.text(column.label, columnX + column.width - 12, tableTop + 16, { align: "right" });
+    } else if (column.align === "center") {
+      doc.text(column.label, columnX + (column.width / 2), tableTop + 16, { align: "center" });
+    } else {
+      doc.text(column.label, columnX + 12, tableTop + 16);
+    }
+    columnX += column.width;
+  });
 
   const rowTop = tableTop + 24;
+  const descriptionLines = doc.splitTextToSize(model.description, Math.max(columns[0].width - 20, 160));
+  const rowHeight = Math.max(28, (descriptionLines.length * 12) + 10);
   doc.setFillColor(248, 249, 250);
-  doc.rect(left, rowTop, right - left, 28, "F");
+  doc.rect(left, rowTop, tableWidth, rowHeight, "F");
   doc.setTextColor(17, 24, 39);
   doc.setFont("helvetica", "normal");
-  doc.text(model.description, left + 12, rowTop + 18, { maxWidth: 330 });
-  doc.text(model.amountText, right - 12, rowTop + 18, { align: "right" });
+  doc.text(descriptionLines, left + 12, rowTop + 18);
 
-  y = rowTop + 60;
+  if (model.hasVat) {
+    const priceX = left + columns[0].width;
+    const vatX = priceX + columns[1].width;
+    const subtotalX = vatX + columns[2].width;
+    doc.text(model.netAmountText, priceX + columns[1].width - 12, rowTop + 18, { align: "right" });
+    doc.text(model.vatRateText, vatX + (columns[2].width / 2), rowTop + 18, { align: "center" });
+    doc.text(model.netAmountText, subtotalX + columns[3].width - 12, rowTop + 18, { align: "right" });
+  } else {
+    doc.text(model.netAmountText, right - 12, rowTop + 18, { align: "right" });
+  }
+
+  y = rowTop + rowHeight + 32;
   doc.text("Net Total", 400, y, { align: "right" });
-  doc.text(model.amountText, right - 12, y, { align: "right" });
+  doc.text(model.netAmountText, right - 12, y, { align: "right" });
+  if (model.hasVat) {
+    y += 22;
+    doc.text("VAT", 400, y, { align: "right" });
+    doc.text(model.vatAmountText, right - 12, y, { align: "right" });
+  }
   y += 22;
   doc.setFont("helvetica", "bold");
   doc.text(`${model.currency} Total`, 400, y, { align: "right" });
   doc.line(430, y - 14, right, y - 14);
-  doc.text(model.amountTotalText, right - 12, y, { align: "right" });
+  doc.text(model.grossAmountTotalText, right - 12, y, { align: "right" });
 
   y += 38;
   doc.setFont("helvetica", "normal");
@@ -2037,6 +2357,7 @@ function setupInvoiceBuilder() {
         "invoice-description": "description",
         "invoice-currency": "currency",
         "invoice-amount": "amount",
+        "invoice-vat-rate": "vatRate",
       };
       const key = mapping[target.id];
       if (!key) return;
@@ -2049,6 +2370,7 @@ function setupInvoiceBuilder() {
       deal.invoiceDraft = draft;
       markDirty(deal.id, true);
       if (target.classList) target.classList.add("is-dirty");
+      renderInvoiceTotalsPreview(deal);
       setStatus("Invoice details updated. Save all changes to persist.", false);
       setInvoiceBuilderStatus("Invoice details updated for this deal.", false);
     });
@@ -2095,7 +2417,7 @@ function setupDealContactsPanel() {
       const index = Number(target.dataset.contactIndex);
       const field = String(target.dataset.contactField || "").trim();
       if (!Number.isFinite(index) || !field || field === "isPrimary") return;
-      updateDealContactField(index, field, target.value, target.checked);
+      updateDealContactField(index, field, target.value, target.checked, { commit: false });
     });
 
     list.addEventListener("change", (event) => {
@@ -2104,7 +2426,7 @@ function setupDealContactsPanel() {
       const index = Number(target.dataset.contactIndex);
       const field = String(target.dataset.contactField || "").trim();
       if (!Number.isFinite(index) || !field) return;
-      updateDealContactField(index, field, target.value, target.checked);
+      updateDealContactField(index, field, target.value, target.checked, { commit: field === "isPrimary" });
     });
 
     list.addEventListener("click", (event) => {
@@ -2190,14 +2512,7 @@ function handleInputChange(event) {
 
   markDirty(dealId, true);
   input.classList.add("is-dirty");
-  const visibleDeals = getVisibleDeals();
-  updateMetaRow(visibleDeals);
-  renderAnalytics(visibleDeals);
-  if (isCommittedChange && ["retainerPaymentDay", "retainerIntervalMonths", "retainerNextPaymentDate"].includes(field)) {
-    renderTable();
-    return;
-  }
-  if (field === "currency") {
+  if (isCommittedChange && ["retainerMonthly", "retainerPaymentDay", "retainerIntervalMonths", "retainerNextPaymentDate", "currency"].includes(field)) {
     renderTable();
     renderInvoiceBuilder();
     setStatus("You have unsaved accounting changes.", false);
@@ -2213,6 +2528,7 @@ async function saveAllChanges() {
   }
   setStatus("Saving accounting changes...", false);
   try {
+    sanitizeAccountingDraftState();
     await saveDealsData();
     dirtyDealIds.clear();
     document.querySelectorAll(".value-input.is-dirty").forEach((entry) => entry.classList.remove("is-dirty"));

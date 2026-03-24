@@ -20,6 +20,7 @@
 
                 let dashboardsConfig = getMergedDashboardsConfig();
                 let currentDashboard = null;
+                let currentDashboardMode = 'home';
                 let dashboardFormMode = 'edit';
 
                 // Proxy fallback chain loaded from external config if available
@@ -48,6 +49,17 @@
 
                 function normalizeDashboardText(value) {
                     return String(value || '').trim().toLowerCase();
+                }
+
+                function normalizeDealLifecycleStatus(value) {
+                    const normalized = normalizeDashboardText(value);
+                    if (normalized === 'finished') return 'finished';
+                    if (normalized === 'closed') return 'closed';
+                    return 'active';
+                }
+
+                function isActiveDeal(deal) {
+                    return normalizeDealLifecycleStatus(deal && (deal.lifecycleStatus || deal.dealStatus)) === 'active';
                 }
 
                 function isHNWIOrAngelRow(row) {
@@ -195,11 +207,18 @@
                     const fileInput = document.getElementById('file-input');
                     const retryBtn = document.getElementById('btn-retry-sync');
                     const dashboardSwitcher = document.getElementById('dashboard-switcher');
+                    const dashboardSwitcherTrigger = document.getElementById('dashboard-switcher-trigger');
+                    const dashboardSwitcherMenu = document.getElementById('dashboard-switcher-menu');
+                    const dashboardHomePanel = document.getElementById('dashboard-home-panel');
                     const searchInput = document.getElementById('search');
                     const compositionResetBtn = document.getElementById('composition-reset');
                     const dashboardForm = document.getElementById('dashboard-form');
                     const editCurrentBtn = document.getElementById('btn-edit-current-dashboard');
                     const resetDashboardFormBtn = document.getElementById('btn-reset-dashboard-form');
+                    const exportBtn = document.getElementById('btn-export-html');
+                    const exportMenu = document.getElementById('dashboard-export-menu');
+                    const exportConfirmBtn = document.getElementById('btn-export-html-confirm');
+                    const exportContainer = document.getElementById('dashboard-export');
 
                     if (openLocalBtn && fileInput) {
                         openLocalBtn.addEventListener('click', () => fileInput.click());
@@ -210,8 +229,60 @@
                     if (retryBtn) {
                         retryBtn.addEventListener('click', retrySync);
                     }
+                    if (dashboardSwitcherTrigger) {
+                        dashboardSwitcherTrigger.addEventListener('click', () => {
+                            const isOpen = dashboardSwitcherMenu && !dashboardSwitcherMenu.hidden;
+                            if (!dashboardSwitcherMenu) return;
+                            dashboardSwitcherMenu.hidden = isOpen;
+                            dashboardSwitcherTrigger.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+                        });
+                    }
+                    if (dashboardSwitcherMenu) {
+                        dashboardSwitcherMenu.addEventListener('click', (event) => {
+                            const dashboardBtn = event.target.closest('[data-dashboard-switcher-dashboard]');
+                            if (dashboardBtn) {
+                                const dashboardId = String(dashboardBtn.getAttribute('data-dashboard-switcher-dashboard') || '').trim();
+                                closeDashboardSwitcher();
+                                if (dashboardId) selectDashboardById(dashboardId);
+                                return;
+                            }
+
+                            const homeBtn = event.target.closest('[data-dashboard-switcher-home]');
+                            if (homeBtn) {
+                                closeDashboardSwitcher();
+                                showDashboardHome();
+                                return;
+                            }
+
+                            const missingBtn = event.target.closest('[data-dashboard-switcher-missing]');
+                            if (missingBtn) {
+                                const dealId = String(missingBtn.getAttribute('data-dashboard-switcher-missing') || '').trim();
+                                closeDashboardSwitcher();
+                                if (dealId) {
+                                    window.location.href = buildPageUrl('deal-details', { id: dealId });
+                                }
+                            }
+                        });
+                    }
                     if (dashboardSwitcher) {
-                        dashboardSwitcher.addEventListener('change', onDashboardChange);
+                        document.addEventListener('click', (event) => {
+                            if (dashboardSwitcher.contains(event.target)) return;
+                            closeDashboardSwitcher();
+                        });
+                        document.addEventListener('keydown', (event) => {
+                            if (event.key === 'Escape') closeDashboardSwitcher();
+                        });
+                    }
+                    if (dashboardHomePanel) {
+                        dashboardHomePanel.addEventListener('click', (event) => {
+                            const openBtn = event.target.closest('[data-dashboard-switcher-dashboard]');
+                            if (openBtn) {
+                                const dashboardId = String(openBtn.getAttribute('data-dashboard-switcher-dashboard') || '').trim();
+                                if (dashboardId) {
+                                    selectDashboardById(dashboardId);
+                                }
+                            }
+                        });
                     }
                     if (searchInput) {
                         searchInput.addEventListener('input', filterData);
@@ -235,9 +306,24 @@
                             openDashboardSettingsPanel();
                         });
                     }
-                    const exportBtn = document.getElementById('btn-export-html');
-                    if (exportBtn) {
-                        exportBtn.addEventListener('click', exportStandaloneHtml);
+                    if (exportBtn && exportMenu) {
+                        exportBtn.addEventListener('click', () => {
+                            const isOpen = !exportMenu.hidden;
+                            exportMenu.hidden = isOpen;
+                            exportBtn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+                        });
+                    }
+                    if (exportConfirmBtn) {
+                        exportConfirmBtn.addEventListener('click', exportStandaloneHtml);
+                    }
+                    if (exportContainer) {
+                        document.addEventListener('click', (event) => {
+                            if (exportContainer.contains(event.target)) return;
+                            closeExportMenu();
+                        });
+                        document.addEventListener('keydown', (event) => {
+                            if (event.key === 'Escape') closeExportMenu();
+                        });
                     }
 
                     document.querySelectorAll('[data-tab-type]').forEach((button) => {
@@ -257,12 +343,23 @@
                     window.addEventListener('appcore:dashboard-config-updated', () => {
                         dashboardsConfig = getMergedDashboardsConfig();
                         syncCurrentDashboardReference();
-                        refreshDashboardSwitcher();
-                        if (currentDashboard) {
+                        renderDashboardSwitcher();
+                        if (currentDashboardMode === 'dashboard' && currentDashboard) {
                             applyDashboardPageChrome(currentDashboard);
                             if (dashboardFormMode !== 'create') {
                                 populateDashboardForm(currentDashboard);
                             }
+                        } else {
+                            applyDashboardPageChrome(null);
+                            renderDashboardHome();
+                        }
+                        updateDashboardActionButtons();
+                    });
+
+                    window.addEventListener('appcore:deals-updated', () => {
+                        renderDashboardSwitcher();
+                        if (currentDashboardMode === 'home') {
+                            renderDashboardHome();
                         }
                     });
                 }
@@ -294,28 +391,18 @@
 
                 function applyDashboardPageChrome(dashboard) {
                     const settings = (dashboardsConfig && dashboardsConfig.settings) || {};
-                    const pageTitle = settings.title || dashboard.name || 'Dashboard';
+                    const pageTitle = settings.title || 'Investor Dashboard';
                     document.title = pageTitle;
 
                     const titleEl = document.getElementById('dashboard-title');
                     const subtitleEl = document.getElementById('dashboard-subtitle');
+                    if (!dashboard) {
+                        if (titleEl) titleEl.textContent = pageTitle;
+                        if (subtitleEl) subtitleEl.textContent = 'Choose a linked dashboard, or review active deals that still need one.';
+                        return;
+                    }
                     if (titleEl) titleEl.textContent = dashboard.name || pageTitle;
                     if (subtitleEl) subtitleEl.textContent = dashboard.description || 'Live Dashboard';
-                }
-
-                function refreshDashboardSwitcher() {
-                    const switcher = document.getElementById('dashboard-switcher');
-                    const dashboards = (dashboardsConfig && dashboardsConfig.dashboards) || [];
-                    if (!switcher) return;
-
-                    switcher.innerHTML = '';
-                    dashboards.forEach(d => {
-                        const opt = document.createElement('option');
-                        opt.value = d.id;
-                        opt.textContent = d.name || d.id;
-                        if (currentDashboard && d.id === currentDashboard.id) opt.selected = true;
-                        switcher.appendChild(opt);
-                    });
                 }
 
                 function syncCurrentDashboardReference() {
@@ -323,7 +410,12 @@
                     const next = dashboardsConfig.dashboards.find(
                         (dashboard) => normalizeDashboardId(dashboard.id) === normalizeDashboardId(currentDashboard.id),
                     );
-                    if (next) currentDashboard = next;
+                    if (next) {
+                        currentDashboard = next;
+                        return;
+                    }
+                    currentDashboard = null;
+                    currentDashboardMode = 'home';
                 }
 
                 function setDashboardFormMode(mode, dashboard) {
@@ -418,51 +510,60 @@
                         const requestedId = params.get('dashboard');
 
                         const dashboards = (dashboardsConfig && dashboardsConfig.dashboards) || [];
-                        const settings = (dashboardsConfig && dashboardsConfig.settings) || {};
 
                         console.log('[Dashboard] Available dashboards:', dashboards.map(d => d.id));
                         console.log('[Dashboard] Requested dashboard ID from URL:', requestedId);
 
-                        currentDashboard =
-                            dashboards.find(d => d.id === requestedId) ||
-                            dashboards.find(d => d.id === settings.defaultDashboard) ||
-                            dashboards[0];
-
-                        console.log('[Dashboard] Selected dashboard:', currentDashboard && currentDashboard.id, currentDashboard);
-
-                        if (!currentDashboard) {
-                            throw new Error('No dashboard configuration found');
-                        }
-                        refreshDashboardSwitcher();
-                        applyDashboardPageChrome(currentDashboard);
-                        populateDashboardForm(currentDashboard);
+                        renderDashboardSwitcher();
+                        updateDashboardActionButtons();
 
                         if (String(params.get('edit') || '').trim() === '1') {
                             openDashboardSettingsPanel();
                         }
 
-                        // Start sync for selected dashboard
-                        console.log('[Dashboard] Starting initial sync for', currentDashboard.id, 'with URL:', currentDashboard.excelUrl);
-                        startSync(0, currentDashboard.excelUrl);
+                        if (!dashboards.length) {
+                            resetDashboardFormForCreate();
+                            showDashboardHome();
+                            return;
+                        }
+
+                        if (requestedId) {
+                            await selectDashboardById(requestedId);
+                            return;
+                        }
+
+                        if (dashboardFormMode !== 'create') {
+                            resetDashboardFormForCreate();
+                        }
+                        showDashboardHome();
                     } catch (err) {
                         console.error(err);
                         showFailure();
                     }
                 }
 
-                function onDashboardChange(event) {
-                    const selectedId = event.target.value;
+                async function selectDashboardById(selectedId) {
                     dashboardsConfig = getMergedDashboardsConfig();
                     if (!dashboardsConfig || !dashboardsConfig.dashboards) return;
 
-                    const next = dashboardsConfig.dashboards.find(d => d.id === selectedId);
-                    if (!next || (currentDashboard && next.id === currentDashboard.id)) return;
+                    const normalizedSelectedId = normalizeDashboardId(selectedId);
+                    const next = dashboardsConfig.dashboards.find((dashboard) => normalizeDashboardId(dashboard.id) === normalizedSelectedId);
+                    if (!next) {
+                        showDashboardHome();
+                        return;
+                    }
+                    if (currentDashboardMode === 'dashboard' && currentDashboard && next.id === currentDashboard.id) {
+                        return;
+                    }
 
                     currentDashboard = next;
+                    currentDashboardMode = 'dashboard';
 
-                    console.log('[Dashboard] Switched dashboard via dropdown to:', currentDashboard.id, currentDashboard);
+                    console.log('[Dashboard] Switched dashboard to:', currentDashboard.id, currentDashboard);
 
                     applyDashboardPageChrome(currentDashboard);
+                    renderDashboardSwitcher();
+                    updateDashboardActionButtons();
                     if (dashboardFormMode !== 'create') {
                         populateDashboardForm(currentDashboard);
                     }
@@ -478,6 +579,7 @@
                     // Restart sync with new Excel URL
                     if (currentDashboard.excelUrl) {
                         console.log('[Dashboard] Restarting sync for', currentDashboard.id, 'with URL:', currentDashboard.excelUrl);
+                        replaceDashboardUrl({ dashboard: currentDashboard.id });
                         startSync(0, currentDashboard.excelUrl);
                     }
                 }
@@ -488,6 +590,299 @@
                     return raw
                         .replace(/[^a-z0-9]+/g, "-")
                         .replace(/^-+|-+$/g, "");
+                }
+
+                function escapeHtml(value) {
+                    return String(value == null ? '' : value)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                }
+
+                function getDealsData() {
+                    if (window.AppCore && typeof window.AppCore.loadDealsData === 'function') {
+                        return window.AppCore.loadDealsData();
+                    }
+                    return Array.isArray(window.DEALS) ? window.DEALS : [];
+                }
+
+                function getActiveDealsData() {
+                    return (Array.isArray(getDealsData()) ? getDealsData() : []).filter((deal) => isActiveDeal(deal));
+                }
+
+                function getDashboardDirectoryModel() {
+                    const dashboards = (dashboardsConfig && Array.isArray(dashboardsConfig.dashboards)) ? dashboardsConfig.dashboards : [];
+                    const settings = (dashboardsConfig && dashboardsConfig.settings) || {};
+                    const activeDeals = getActiveDealsData();
+                    const linkedDashboardIds = new Set();
+                    const linkedDeals = [];
+                    const missingDeals = [];
+
+                    activeDeals.forEach((deal) => {
+                        const dashboardId = normalizeDashboardId(deal && deal.fundraisingDashboardId);
+                        const dashboard = dashboards.find((entry) => normalizeDashboardId(entry && entry.id) === dashboardId) || null;
+                        if (dashboard) {
+                            linkedDashboardIds.add(normalizeDashboardId(dashboard.id));
+                            linkedDeals.push({ deal, dashboard });
+                            return;
+                        }
+                        missingDeals.push({ deal });
+                    });
+
+                    const otherDashboards = dashboards
+                        .filter((dashboard) => !linkedDashboardIds.has(normalizeDashboardId(dashboard && dashboard.id)))
+                        .map((dashboard) => ({ dashboard }));
+
+                    linkedDeals.sort((a, b) => {
+                        const aLabel = String(a.deal && (a.deal.name || a.dashboard && a.dashboard.name || a.dashboard && a.dashboard.id) || '').trim();
+                        const bLabel = String(b.deal && (b.deal.name || b.dashboard && b.dashboard.name || b.dashboard && b.dashboard.id) || '').trim();
+                        return aLabel.localeCompare(bLabel);
+                    });
+                    missingDeals.sort((a, b) => {
+                        const aLabel = String(a.deal && (a.deal.name || a.deal.company || a.deal.id) || '').trim();
+                        const bLabel = String(b.deal && (b.deal.name || b.deal.company || b.deal.id) || '').trim();
+                        return aLabel.localeCompare(bLabel);
+                    });
+                    otherDashboards.sort((a, b) => {
+                        const aLabel = String(a.dashboard && (a.dashboard.name || a.dashboard.id) || '').trim();
+                        const bLabel = String(b.dashboard && (b.dashboard.name || b.dashboard.id) || '').trim();
+                        return aLabel.localeCompare(bLabel);
+                    });
+
+                    return {
+                        defaultDashboardId: normalizeDashboardId(settings.defaultDashboard),
+                        linkedDeals,
+                        missingDeals,
+                        otherDashboards,
+                    };
+                }
+
+                function closeDashboardSwitcher() {
+                    const menu = document.getElementById('dashboard-switcher-menu');
+                    const trigger = document.getElementById('dashboard-switcher-trigger');
+                    if (menu) menu.hidden = true;
+                    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+                }
+
+                function closeExportMenu() {
+                    const menu = document.getElementById('dashboard-export-menu');
+                    const trigger = document.getElementById('btn-export-html');
+                    if (menu) menu.hidden = true;
+                    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+                }
+
+                function updateDashboardActionButtons() {
+                    const exportBtn = document.getElementById('btn-export-html');
+                    const exportConfirmBtn = document.getElementById('btn-export-html-confirm');
+                    const editBtn = document.getElementById('btn-edit-current-dashboard');
+                    const canExport = currentDashboardMode === 'dashboard' && currentDashboard;
+
+                    if (exportBtn) {
+                        exportBtn.disabled = !canExport;
+                        if (!canExport) closeExportMenu();
+                    }
+                    if (exportConfirmBtn) {
+                        exportConfirmBtn.disabled = !canExport;
+                    }
+                    if (editBtn) {
+                        editBtn.disabled = !canExport;
+                        editBtn.textContent = canExport
+                            ? 'Edit selected dashboard'
+                            : 'Select a dashboard to edit';
+                    }
+                }
+
+                function renderDashboardSwitcher() {
+                    const menu = document.getElementById('dashboard-switcher-menu');
+                    const valueEl = document.getElementById('dashboard-switcher-value');
+                    const warningEl = document.getElementById('dashboard-switcher-warning');
+                    const directory = getDashboardDirectoryModel();
+                    if (!menu || !valueEl || !warningEl) return;
+
+                    const missingCount = directory.missingDeals.length;
+                    warningEl.hidden = !missingCount;
+                    warningEl.textContent = missingCount === 1 ? '1 missing link' : `${missingCount} missing links`;
+
+                    if (currentDashboardMode === 'dashboard' && currentDashboard) {
+                        const linkedDeal = directory.linkedDeals.find((entry) => normalizeDashboardId(entry.dashboard && entry.dashboard.id) === normalizeDashboardId(currentDashboard.id));
+                        valueEl.textContent = linkedDeal
+                            ? `${linkedDeal.deal.name || linkedDeal.dashboard.name || linkedDeal.dashboard.id}`
+                            : (currentDashboard.name || currentDashboard.id || 'Dashboard');
+                    } else {
+                        valueEl.textContent = 'Investor Dashboard Home';
+                    }
+
+                    const renderLinkedItem = ({ deal, dashboard }) => {
+                        const isActive = currentDashboardMode === 'dashboard' && currentDashboard && normalizeDashboardId(currentDashboard.id) === normalizeDashboardId(dashboard.id);
+                        const isDefault = directory.defaultDashboardId && normalizeDashboardId(dashboard.id) === directory.defaultDashboardId;
+                        return `
+                            <button class="dashboard-switcher-item${isActive ? ' is-active' : ''}" type="button" data-dashboard-switcher-dashboard="${escapeHtml(dashboard.id || '')}">
+                                <span class="dashboard-switcher-item-copy">
+                                    <span class="dashboard-switcher-item-title">${escapeHtml(deal.name || dashboard.name || dashboard.id)}</span>
+                                    <span class="dashboard-switcher-item-meta">${escapeHtml(deal.company || 'No company')} · ${escapeHtml(dashboard.name || dashboard.id || '')}</span>
+                                </span>
+                                ${isDefault ? '<span class="dashboard-switcher-pill">Default</span>' : ''}
+                            </button>
+                        `;
+                    };
+
+                    const renderMissingItem = ({ deal }) => `
+                        <button class="dashboard-switcher-item is-missing" type="button" data-dashboard-switcher-missing="${escapeHtml(deal.id || '')}">
+                            <span class="dashboard-switcher-item-copy">
+                                <span class="dashboard-switcher-item-title">${escapeHtml(deal.name || deal.company || deal.id || 'Deal')}</span>
+                                <span class="dashboard-switcher-item-meta">${escapeHtml(deal.company || 'No company')} · No linked dashboard</span>
+                            </span>
+                            <span class="dashboard-switcher-pill is-danger">Needs link</span>
+                        </button>
+                    `;
+
+                    const renderOtherItem = ({ dashboard }) => {
+                        const isActive = currentDashboardMode === 'dashboard' && currentDashboard && normalizeDashboardId(currentDashboard.id) === normalizeDashboardId(dashboard.id);
+                        const isDefault = directory.defaultDashboardId && normalizeDashboardId(dashboard.id) === directory.defaultDashboardId;
+                        return `
+                            <button class="dashboard-switcher-item${isActive ? ' is-active' : ''}" type="button" data-dashboard-switcher-dashboard="${escapeHtml(dashboard.id || '')}">
+                                <span class="dashboard-switcher-item-copy">
+                                    <span class="dashboard-switcher-item-title">${escapeHtml(dashboard.name || dashboard.id)}</span>
+                                    <span class="dashboard-switcher-item-meta">Standalone dashboard profile</span>
+                                </span>
+                                ${isDefault ? '<span class="dashboard-switcher-pill">Default</span>' : ''}
+                            </button>
+                        `;
+                    };
+
+                    menu.innerHTML = `
+                        <div class="dashboard-switcher-section">
+                            <div class="dashboard-switcher-section-label">Home</div>
+                            <button class="dashboard-switcher-item${currentDashboardMode === 'home' ? ' is-active' : ''}" type="button" data-dashboard-switcher-home="1">
+                                <span class="dashboard-switcher-item-copy">
+                                    <span class="dashboard-switcher-item-title">Investor Dashboard Home</span>
+                                    <span class="dashboard-switcher-item-meta">Overview, linked dashboards, and missing dashboard links</span>
+                                </span>
+                            </button>
+                        </div>
+                        <div class="dashboard-switcher-section">
+                            <div class="dashboard-switcher-section-label">Linked dashboards</div>
+                            ${directory.linkedDeals.length
+                                ? directory.linkedDeals.map(renderLinkedItem).join('')
+                                : '<div class="dashboard-switcher-empty">No active deals currently have a linked dashboard.</div>'}
+                        </div>
+                        <div class="dashboard-switcher-section is-alert">
+                            <div class="dashboard-switcher-section-label">Needs dashboard link</div>
+                            ${directory.missingDeals.length
+                                ? directory.missingDeals.map(renderMissingItem).join('')
+                                : '<div class="dashboard-switcher-empty">Every active deal is linked to a dashboard.</div>'}
+                        </div>
+                        ${directory.otherDashboards.length ? `
+                            <div class="dashboard-switcher-section">
+                                <div class="dashboard-switcher-section-label">Other dashboards</div>
+                                ${directory.otherDashboards.map(renderOtherItem).join('')}
+                            </div>
+                        ` : ''}
+                    `;
+                }
+
+                function renderDashboardHome() {
+                    const panel = document.getElementById('dashboard-home-panel');
+                    if (!panel) return;
+                    const directory = getDashboardDirectoryModel();
+                    const defaultLinked = directory.linkedDeals.find((entry) => normalizeDashboardId(entry.dashboard && entry.dashboard.id) === directory.defaultDashboardId) || null;
+
+                    const renderLinkedCards = directory.linkedDeals.length
+                        ? directory.linkedDeals.slice(0, 8).map(({ deal, dashboard }) => `
+                            <button class="dashboard-home-item" type="button" data-dashboard-switcher-dashboard="${escapeHtml(dashboard.id || '')}">
+                                <span class="dashboard-home-item-title">${escapeHtml(deal.name || dashboard.name || dashboard.id)}</span>
+                                <span class="dashboard-home-item-meta">${escapeHtml(deal.company || 'No company')} · ${escapeHtml(dashboard.name || dashboard.id || '')}</span>
+                            </button>
+                        `).join('')
+                        : '<div class="dashboard-home-empty">No linked dashboards yet. Create one or attach one from a deal.</div>';
+
+                    const renderMissingCards = directory.missingDeals.length
+                        ? directory.missingDeals.map(({ deal }) => `
+                            <a class="dashboard-home-item is-missing" href="${buildPageUrl('deal-details', { id: deal.id })}">
+                                <span class="dashboard-home-item-title">${escapeHtml(deal.name || deal.company || deal.id || 'Deal')}</span>
+                                <span class="dashboard-home-item-meta">${escapeHtml(deal.company || 'No company')} · Open deal to link a dashboard</span>
+                            </a>
+                        `).join('')
+                        : '<div class="dashboard-home-empty">No missing dashboard links across active deals.</div>';
+
+                    panel.innerHTML = `
+                        <div class="dashboard-home-hero">
+                            <div>
+                                <div class="card-title">Investor Dashboard Home</div>
+                                <p class="dashboard-home-copy">Pick a linked dashboard to load live investor data, or use the red list to catch active deals that still need a fundraising dashboard attached.</p>
+                            </div>
+                            <div class="dashboard-home-actions">
+                                ${defaultLinked ? `<button class="btn btn-primary" type="button" data-dashboard-switcher-dashboard="${escapeHtml(defaultLinked.dashboard.id || '')}">Open default dashboard</button>` : ''}
+                                <button class="btn" id="btn-dashboard-home-create" type="button">Create dashboard</button>
+                            </div>
+                        </div>
+                        <div class="dashboard-home-stats">
+                            <div class="dashboard-home-stat">
+                                <span class="dashboard-home-stat-label">Linked dashboards</span>
+                                <strong>${directory.linkedDeals.length}</strong>
+                            </div>
+                            <div class="dashboard-home-stat${directory.missingDeals.length ? ' is-danger' : ''}">
+                                <span class="dashboard-home-stat-label">Deals missing dashboard</span>
+                                <strong>${directory.missingDeals.length}</strong>
+                            </div>
+                            <div class="dashboard-home-stat">
+                                <span class="dashboard-home-stat-label">Standalone dashboards</span>
+                                <strong>${directory.otherDashboards.length}</strong>
+                            </div>
+                        </div>
+                        <div class="dashboard-home-grid">
+                            <div class="dashboard-home-column">
+                                <div class="dashboard-home-column-title">Ready to open</div>
+                                ${renderLinkedCards}
+                            </div>
+                            <div class="dashboard-home-column is-alert">
+                                <div class="dashboard-home-column-title">Needs dashboard link</div>
+                                ${renderMissingCards}
+                            </div>
+                        </div>
+                    `;
+
+                    const createBtn = document.getElementById('btn-dashboard-home-create');
+                    if (createBtn) {
+                        createBtn.addEventListener('click', () => {
+                            resetDashboardFormForCreate();
+                            openDashboardSettingsPanel();
+                        });
+                    }
+                }
+
+                function replaceDashboardUrl(params) {
+                    const nextHref = buildPageUrl('investor-dashboard', params);
+                    if (window.history && typeof window.history.replaceState === 'function') {
+                        window.history.replaceState({}, '', nextHref);
+                    }
+                }
+
+                function showDashboardHome() {
+                    currentDashboard = null;
+                    currentDashboardMode = 'home';
+                    const homePanel = document.getElementById('dashboard-home-panel');
+                    const dataView = document.getElementById('dashboard-data-view');
+                    if (homePanel) homePanel.hidden = false;
+                    if (dataView) dataView.hidden = true;
+                    document.getElementById('loader').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'block';
+                    applyDashboardPageChrome(null);
+                    renderDashboardHome();
+                    renderDashboardSwitcher();
+                    updateDashboardActionButtons();
+                    replaceDashboardUrl({});
+                }
+
+                function showDashboardDatasetView() {
+                    const homePanel = document.getElementById('dashboard-home-panel');
+                    const dataView = document.getElementById('dashboard-data-view');
+                    if (homePanel) homePanel.hidden = true;
+                    if (dataView) dataView.hidden = false;
+                    document.getElementById('dashboard').style.display = 'block';
+                    updateDashboardActionButtons();
                 }
 
                 function setDashboardFormStatus(message, isError) {
@@ -645,10 +1040,10 @@
                 function retrySync() {
                     document.getElementById('error-panel').style.display = 'none';
                     document.getElementById('loading-spinner').style.display = 'block';
-                    if (currentDashboard && currentDashboard.excelUrl) {
+                    if (currentDashboardMode === 'dashboard' && currentDashboard && currentDashboard.excelUrl) {
                         startSync(0, currentDashboard.excelUrl);
                     } else {
-                        showFailure();
+                        showDashboardHome();
                     }
                 }
 
@@ -812,7 +1207,8 @@
 
                     // 5. Show Dashboard
                     document.getElementById('loader').style.display = 'none';
-                    document.getElementById('dashboard').style.display = 'block';
+                    showDashboardDatasetView();
+                    renderDashboardSwitcher();
                 }
 
                 function getStatusText(item) {
@@ -1229,6 +1625,78 @@
                         .replace(/^-|-$/g, '') || 'snapshot';
                 }
 
+                function getExportOptions() {
+                    const includeInvestorDetailsInput = document.getElementById('export-include-investor-details');
+                    return {
+                        includeInvestorDetails: !includeInvestorDetailsInput || includeInvestorDetailsInput.checked,
+                    };
+                }
+
+                function isSensitiveInvestorField(fieldName) {
+                    const normalized = String(fieldName || '')
+                        .trim()
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, ' ')
+                        .trim();
+                    return [
+                        'investor',
+                        'investor name',
+                        'name',
+                        'email',
+                        'contact email',
+                        'contact name',
+                        'e mail',
+                    ].includes(normalized);
+                }
+
+                function buildSnapshotRawData(options) {
+                    const includeInvestorDetails = !options || options.includeInvestorDetails !== false;
+                    const buildCollection = (rows) => (Array.isArray(rows) ? rows : []).map((row, index) => {
+                        const next = Object.assign({}, row || {});
+                        next.__snapshotInvestorLabel = `Investor ${index + 1}`;
+                        if (!includeInvestorDetails) {
+                            Object.keys(next).forEach((key) => {
+                                if (isSensitiveInvestorField(key)) {
+                                    next[key] = '';
+                                }
+                            });
+                        }
+                        return next;
+                    });
+
+                    return {
+                        vc: buildCollection(rawData && rawData.vc),
+                        fo: buildCollection(rawData && rawData.fo),
+                    };
+                }
+
+                function sanitizeCloneForExport(clone) {
+                    if (!clone) return;
+                    const header = clone.querySelector('header.dashboard-hero');
+                    if (header) header.remove();
+
+                    const nav = clone.querySelector('.sidebar-nav');
+                    if (nav) nav.remove();
+
+                    const layout = clone.querySelector('.layout');
+                    if (layout) layout.style.gridTemplateColumns = '1fr';
+
+                    const addPanel = clone.querySelector('#add-dashboard-panel');
+                    if (addPanel) addPanel.remove();
+
+                    const searchInput = clone.querySelector('#search');
+                    if (searchInput) {
+                        searchInput.value = '';
+                        searchInput.setAttribute('value', '');
+                    }
+
+                    const tableHead = clone.querySelector('#table-head');
+                    if (tableHead) tableHead.innerHTML = '';
+
+                    const tableBody = clone.querySelector('#table-body');
+                    if (tableBody) tableBody.innerHTML = '';
+                }
+
                 async function blobToBase64(blob) {
                     const buffer = await blob.arrayBuffer();
                     const bytes = new Uint8Array(buffer);
@@ -1295,9 +1763,14 @@
 
                 async function exportStandaloneHtml() {
                     try {
+                        if (!(currentDashboardMode === 'dashboard' && currentDashboard)) {
+                            alert('Open a linked investor dashboard first, then export the live snapshot.');
+                            return;
+                        }
+                        closeExportMenu();
+                        const exportOptions = getExportOptions();
                         const dashboardEl = document.getElementById('dashboard');
                         const shellEl = document.querySelector('.shell');
-                        const loaderEl = document.getElementById('loader');
                         if (!dashboardEl || dashboardEl.style.display === 'none') {
                             alert('Dashboard is still loading. Please wait, then try exporting again.');
                             return;
@@ -1309,16 +1782,7 @@
 
                         // Clone the visible shell so we keep the full layout/containers
                         const clone = shellEl.cloneNode(true);
-
-                        // Remove navigation for the exported snapshot
-                        const nav = clone.querySelector('.sidebar-nav');
-                        if (nav) nav.remove();
-                        const layout = clone.querySelector('.layout');
-                        if (layout) layout.style.gridTemplateColumns = '1fr';
-
-                        // Drop the “Add dashboard” controls from the snapshot
-                        const addPanel = clone.querySelector('#add-dashboard-panel');
-                        if (addPanel) addPanel.remove();
+                        sanitizeCloneForExport(clone);
 
                         // Bundle the CSS used on this page so the export is fully standalone
                         const cssPaths = Array.from(
@@ -1335,11 +1799,14 @@
                         );
 
                         const snapshotState = {
-                            rawData,
+                            rawData: buildSnapshotRawData(exportOptions),
                             typeColors,
                             activeType,
                             activeFilters,
-                            searchTerm: (document.getElementById('search')?.value || '').toLowerCase()
+                            searchTerm: exportOptions.includeInvestorDetails
+                                ? (document.getElementById('search')?.value || '').toLowerCase()
+                                : '',
+                            exportOptions,
                         };
 
                         const snapshotHtml = `<!DOCTYPE html>
@@ -1361,6 +1828,8 @@ ${clone.outerHTML}
   let activeType = state.activeType || 'vc';
   let activeFilters = state.activeFilters || { all: true, calls: false, meetings: false, forward: false };
   const searchTerm = state.searchTerm || '';
+  const exportOptions = state.exportOptions || { includeInvestorDetails: true };
+  const includeInvestorDetails = exportOptions.includeInvestorDetails !== false;
 
   const searchInput = document.getElementById('search');
   if (searchInput && searchTerm) searchInput.value = searchTerm;
@@ -1385,9 +1854,11 @@ ${clone.outerHTML}
     const data = activeType === 'vc' ? (rawData.vc || []) : (rawData.fo || []);
 
     data.forEach(item => {
-      const name = item['Investor'] || '';
+      const name = includeInvestorDetails
+        ? (item['Investor'] || item['Investor Name'] || item['Name'] || '')
+        : (item.__snapshotInvestorLabel || '');
       const size = item['Size of Investment'] || item['Investment Size'] || '–';
-      const email = item['Email'] || '–';
+      const email = includeInvestorDetails ? (item['Email'] || '–') : '';
 
       if (keyword && !JSON.stringify(item).toLowerCase().includes(keyword)) return;
       if (!name) return;
@@ -1407,13 +1878,22 @@ ${clone.outerHTML}
       const typeColor = typeColors[iType] || '#94a3b8';
 
       if (activeType === 'vc') {
-        tbody.innerHTML += \`
-          <tr>
-            <td><b>\${name}</b></td>
-            <td><span class="size-tag">\${size}</span></td>
-            <td>\${statusBadge}</td>
-            <td><a href="mailto:\${email}" style="color:var(--accent); text-decoration:none;">\${email}</a></td>
-          </tr>\`;
+        if (includeInvestorDetails) {
+          tbody.innerHTML += \`
+            <tr>
+              <td><b>\${name}</b></td>
+              <td><span class="size-tag">\${size}</span></td>
+              <td>\${statusBadge}</td>
+              <td><a href="mailto:\${email}" style="color:var(--accent); text-decoration:none;">\${email}</a></td>
+            </tr>\`;
+        } else {
+          tbody.innerHTML += \`
+            <tr>
+              <td><b>\${name}</b></td>
+              <td><span class="size-tag">\${size}</span></td>
+              <td>\${statusBadge}</td>
+            </tr>\`;
+        }
       } else {
         tbody.innerHTML += \`
           <tr>
@@ -1435,9 +1915,13 @@ ${clone.outerHTML}
     const header = document.getElementById('table-head');
     if (header) {
       if (type === 'vc') {
-        header.innerHTML = '<tr><th>VC Funds Name</th><th>Investment Size</th><th>Stage</th><th>Contact Email</th></tr>';
+        header.innerHTML = includeInvestorDetails
+          ? '<tr><th>VC Funds Name</th><th>Investment Size</th><th>Stage</th><th>Contact Email</th></tr>'
+          : '<tr><th>Investor</th><th>Investment Size</th><th>Stage</th></tr>';
       } else {
-        header.innerHTML = '<tr><th>Investor Name</th><th>Investor Type</th><th>Investment Size</th><th>Stage</th></tr>';
+        header.innerHTML = includeInvestorDetails
+          ? '<tr><th>Investor Name</th><th>Investor Type</th><th>Investment Size</th><th>Stage</th></tr>'
+          : '<tr><th>Investor</th><th>Investor Type</th><th>Investment Size</th><th>Stage</th></tr>';
       }
     }
     renderTable(searchInput ? searchInput.value.toLowerCase() : '');
@@ -1497,7 +1981,8 @@ ${clone.outerHTML}
 
                         const blob = new Blob([snapshotHtml], { type: 'text/html' });
                         const dashId = (currentDashboard && currentDashboard.id) || 'snapshot';
-                        const fileName = `investor-dashboard-${sanitizeExportFileName(dashId)}.html`;
+                        const exportSuffix = exportOptions.includeInvestorDetails ? '' : '-anonymized';
+                        const fileName = `investor-dashboard-${sanitizeExportFileName(dashId)}${exportSuffix}.html`;
                         await exportBlobForCurrentPlatform(blob, fileName);
                     } catch (err) {
                         if (err && err.name === 'AbortError') {

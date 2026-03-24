@@ -19,6 +19,59 @@
   gap: 12px;
 }
 
+.deal-stage-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.deal-company-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.deal-company-name {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.deal-company-meta {
+  font-size: 11px;
+  color: var(--text-soft);
+  line-height: 1.4;
+}
+
+.deal-lifecycle-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #ffffff;
+  color: var(--text-main);
+}
+
+.deal-lifecycle-badge.is-active {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.1);
+  color: #166534;
+}
+
+.deal-lifecycle-badge.is-finished {
+  border-color: rgba(14, 165, 233, 0.35);
+  background: rgba(14, 165, 233, 0.1);
+  color: #0f4c81;
+}
+
+.deal-lifecycle-badge.is-closed {
+  border-color: rgba(148, 163, 184, 0.45);
+  background: rgba(148, 163, 184, 0.14);
+  color: #475569;
+}
+
 button.chip {
   appearance: none;
   cursor: pointer;
