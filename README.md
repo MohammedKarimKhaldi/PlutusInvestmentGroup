@@ -87,6 +87,7 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
 - An EV certificate builds trust faster, but the common USB-token EV format usually cannot be exported for GitHub Actions.
 - Packaged desktop startup logs are written to Electron's `userData` folder as `desktop-runtime.log`.
 - To force DevTools open in a packaged build for debugging, launch with `PLUTUS_OPEN_DEVTOOLS=1`.
+- Electron Builder build resources now live in `electron-builder-resources/`, which keeps the generated `build/web/` app bundle available for packaging.
 - To publish a new Windows version:
   - Update `package.json` `version`
   - Commit and push to `main`

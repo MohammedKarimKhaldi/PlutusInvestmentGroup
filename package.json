@@ -1,6 +1,6 @@
 {
   "name": "plutus-investment-group-desktop",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "description": "Desktop wrapper for Plutus Investment Group dashboard",
   "main": "electron/main.cjs",
@@ -56,6 +56,9 @@
     "productName": "Plutus Investment Dashboard",
     "compression": "maximum",
     "asar": true,
+    "directories": {
+      "buildResources": "electron-builder-resources"
+    },
     "electronLanguages": [
       "en-US"
     ],

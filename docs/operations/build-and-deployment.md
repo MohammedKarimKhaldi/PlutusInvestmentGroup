@@ -42,6 +42,8 @@ The package build includes:
 - `config/**/*`
 - `electron/**/*`
 
+Electron Builder reserves a separate build resources directory. In this repo that is `electron-builder-resources/`, so the generated `build/web/` bundle is packaged as application content rather than treated as builder metadata.
+
 ## GitHub Actions
 
 - `.github/workflows/windows-release.yml`
