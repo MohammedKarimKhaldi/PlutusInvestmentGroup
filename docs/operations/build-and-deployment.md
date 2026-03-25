@@ -46,7 +46,7 @@ The package build includes:
 
 - `.github/workflows/windows-release.yml`
   - Pull requests to `main` and pushes to `main` build the Windows installer for CI validation.
-  - Version tag pushes such as `v1.0.2` publish the Windows installer and updater metadata to GitHub Releases.
+  - Version tag pushes such as `v1.0.2` require Windows signing secrets and publish a signed installer plus updater metadata to GitHub Releases.
 
 ## Capacitor sync
 
