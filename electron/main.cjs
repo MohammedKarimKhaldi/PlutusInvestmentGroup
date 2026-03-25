@@ -18,6 +18,7 @@ const DEFAULT_DELEGATED_SCOPES = [
   "Sites.ReadWrite.All",
   "User.Read",
 ];
+const DEFAULT_ENTRY_PAGE_SEGMENTS = ["pages", "sharedrive-folders.html"];
 const UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB, multiple of 320 KiB.
 
 let sessionAccessToken = "";
@@ -41,6 +42,64 @@ function getBundledAppCandidates(...segments) {
 
 function getBundledDataCandidates(fileName) {
   return getBundledAppCandidates(webSubdirs.data, fileName);
+}
+
+function getStartupPageCandidates() {
+  return [
+    ...getBundledAppCandidates(...DEFAULT_ENTRY_PAGE_SEGMENTS),
+    ...getBundledAppCandidates("index.html"),
+  ];
+}
+
+function getRuntimeLogPath() {
+  const logDir = app.getPath("userData");
+  fs.mkdirSync(logDir, { recursive: true });
+  return path.join(logDir, "desktop-runtime.log");
+}
+
+function logRuntime(message, details) {
+  const suffix = details ? ` ${JSON.stringify(details)}` : "";
+  const line = `[${new Date().toISOString()}] ${message}${suffix}`;
+  console.log(line);
+
+  try {
+    fs.appendFileSync(getRuntimeLogPath(), `${line}\n`, "utf8");
+  } catch {
+    // Ignore log write failures and preserve app startup flow.
+  }
+}
+
+function shouldOpenDevTools() {
+  if (!app.isPackaged) return true;
+  return String(process.env.PLUTUS_OPEN_DEVTOOLS || "").trim() === "1";
+}
+
+function attachWindowDiagnostics(win) {
+  win.webContents.on("did-finish-load", () => {
+    logRuntime("[Window] Finished loading.", { url: win.webContents.getURL() });
+  });
+
+  win.webContents.on("did-fail-load", (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    logRuntime("[Window] Failed to load.", {
+      errorCode,
+      errorDescription,
+      validatedURL,
+      isMainFrame,
+    });
+  });
+
+  win.webContents.on("render-process-gone", (event, details) => {
+    logRuntime("[Window] Renderer process exited.", details || {});
+  });
+
+  win.webContents.on("console-message", (event, level, message, line, sourceId) => {
+    logRuntime("[Renderer] Console message.", {
+      level,
+      message,
+      line,
+      sourceId,
+    });
+  });
 }
 
 function loadSharedriveConfig() {
@@ -1020,16 +1079,29 @@ function createMainWindow() {
     },
   });
 
-  const startupCandidates = getBundledAppCandidates("index.html");
-  const startupPage = startupCandidates.find((candidate) => fs.existsSync(candidate)) || startupCandidates[0];
-  console.log(`[Main] Loading startup page: ${startupPage}`);
+  attachWindowDiagnostics(win);
+
+  const startupCandidates = getStartupPageCandidates();
+  const startupCandidateStatus = startupCandidates.map((candidate) => ({
+    path: candidate,
+    exists: fs.existsSync(candidate),
+  }));
+  logRuntime("[Main] Startup candidates resolved.", startupCandidateStatus);
+
+  const startupPage =
+    startupCandidates.find((candidate) => fs.existsSync(candidate)) ||
+    startupCandidates[0];
+  logRuntime("[Main] Loading startup page.", { startupPage });
 
   win.loadFile(startupPage).catch((err) => {
-    console.error(`[Main] Failed to load ${startupPage}:`, err.message);
+    logRuntime("[Main] Failed to load startup page.", {
+      startupPage,
+      error: err && err.message ? err.message : String(err),
+    });
   });
 
-  if (!app.isPackaged) {
-    // Keep renderer logs easy to inspect during local development.
+  if (shouldOpenDevTools()) {
+    // Keep renderer logs easy to inspect during local development, or when explicitly requested in packaged builds.
     win.webContents.openDevTools();
   }
 

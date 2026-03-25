@@ -84,6 +84,8 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
 - The release workflow decodes that secret into a temporary certificate file on the runner and passes it to Electron Builder using `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`.
 - A standard code-signing certificate removes the `Unknown publisher` label, but SmartScreen can still warn until the app builds reputation.
 - An EV certificate builds trust faster, but the common USB-token EV format usually cannot be exported for GitHub Actions.
+- Packaged desktop startup logs are written to Electron's `userData` folder as `desktop-runtime.log`.
+- To force DevTools open in a packaged build for debugging, launch with `PLUTUS_OPEN_DEVTOOLS=1`.
 - To publish a new Windows version:
   - Update `package.json` `version`
   - Commit and push to `main`
