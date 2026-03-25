@@ -74,14 +74,15 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
 - GitHub Actions workflow: `.github/workflows/windows-release.yml`
 - CI validation runs for Windows on pull requests to `main`, pushes to `main`, and manual workflow runs.
 - CD release publishing runs when you push a version tag such as `v1.0.2`.
-- Tagged Windows releases are now expected to be code-signed.
-- Required GitHub secrets for signed Windows releases:
+- Tagged Windows releases sign the installer when signing secrets are available, and otherwise fall back to an unsigned release.
+- Optional GitHub secrets for signed Windows releases:
   - `WIN_SIGN_CERT_BASE64`
   - `WIN_SIGN_CERT_PASSWORD`
 - `WIN_SIGN_CERT_BASE64` should contain the base64 text of an exported `.pfx` or `.p12` code-signing certificate.
 - On macOS you can copy the certificate as a single-line base64 string with:
   - `base64 -i your-cert.pfx | tr -d '\n' | pbcopy`
 - The release workflow decodes that secret into a temporary certificate file on the runner and passes it to Electron Builder using `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`.
+- If the secrets are missing, the workflow still publishes the release, but Windows will show `Unknown publisher` and SmartScreen warnings are more likely.
 - A standard code-signing certificate removes the `Unknown publisher` label, but SmartScreen can still warn until the app builds reputation.
 - An EV certificate builds trust faster, but the common USB-token EV format usually cannot be exported for GitHub Actions.
 - Packaged desktop startup logs are written to Electron's `userData` folder as `desktop-runtime.log`.
