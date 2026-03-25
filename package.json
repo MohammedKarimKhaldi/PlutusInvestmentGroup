@@ -1,6 +1,6 @@
 {
   "name": "plutus-investment-group-desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "Desktop wrapper for Plutus Investment Group dashboard",
   "main": "electron/main.cjs",
@@ -94,7 +94,8 @@
       {
         "provider": "github",
         "owner": "MohammedKarimKhaldi",
-        "repo": "PlutusInvestmentGroup"
+        "repo": "PlutusInvestmentGroup",
+        "releaseType": "release"
       }
     ],
     "win": {

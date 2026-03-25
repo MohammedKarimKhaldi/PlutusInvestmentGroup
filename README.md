@@ -80,7 +80,7 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
   - Commit and push to `main`
   - Create and push a matching tag such as `v1.0.1`
   - GitHub Actions runs `.github/workflows/windows-release.yml`
-  - The release job uploads the installer, blockmap, and `latest.yml` updater metadata to the GitHub Release
+  - The release job publishes a GitHub Release and uploads the installer, blockmap, and `latest.yml` updater metadata
 - Installed Windows apps will detect the new release and prompt the user to restart after the update downloads.
 
 ## Mac App Store
