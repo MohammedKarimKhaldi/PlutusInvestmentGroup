@@ -1,6 +1,6 @@
 {
   "name": "plutus-investment-group-desktop",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "description": "Desktop wrapper for Plutus Investment Group dashboard",
   "main": "electron/main.cjs",
@@ -47,6 +47,7 @@
     "dist:mas:dev:x64": "electron-builder --mac mas-dev --x64 --publish never",
     "predist:win": "npm run web:prepare",
     "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "predist:win:publish": "npm run web:prepare",
     "dist:win:publish": "electron-builder --win nsis --x64 --publish always",
     "predist:linux": "npm run web:prepare",
     "dist:linux": "electron-builder --linux AppImage --x64 --publish never"
