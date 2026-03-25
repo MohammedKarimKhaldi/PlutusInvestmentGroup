@@ -42,6 +42,12 @@ The package build includes:
 - `config/**/*`
 - `electron/**/*`
 
+## GitHub Actions
+
+- `.github/workflows/windows-release.yml`
+  - Pull requests to `main` and pushes to `main` build the Windows installer for CI validation.
+  - Version tag pushes such as `v1.0.2` publish the Windows installer and updater metadata to GitHub Releases.
+
 ## Capacitor sync
 
 Commands:
