@@ -1,6 +1,6 @@
 {
   "name": "plutus-investment-group-desktop",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
   "description": "Desktop wrapper for Plutus Investment Group dashboard",
   "main": "electron/main.cjs",
@@ -73,6 +73,7 @@
     ],
     "mac": {
       "category": "public.app-category.finance",
+      "icon": "electron-builder-resources/icon.icns",
       "target": [
         {
           "target": "zip"
@@ -103,6 +104,7 @@
       }
     ],
     "win": {
+      "icon": "electron-builder-resources/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -120,6 +122,7 @@
       "deleteAppDataOnUninstall": false
     },
     "linux": {
+      "icon": "electron-builder-resources/icon.png",
       "target": [
         {
           "target": "AppImage",
