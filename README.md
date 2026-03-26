@@ -71,6 +71,7 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
 
 - Windows builds now use an `NSIS` installer so installed copies can auto-update.
 - Auto-update checks run only in packaged Windows builds published from GitHub Releases.
+- Installed Windows apps check GitHub Releases only on startup.
 - GitHub Actions workflow: `.github/workflows/windows-release.yml`
 - CI validation runs for Windows on pull requests to `main`, pushes to `main`, and manual workflow runs.
 - CD release publishing runs when you push a version tag such as `v1.0.2`.
@@ -86,6 +87,7 @@ Static HTML/CSS/JavaScript dashboard with Electron desktop packaging and Capacit
 - A standard code-signing certificate removes the `Unknown publisher` label, but SmartScreen can still warn until the app builds reputation.
 - An EV certificate builds trust faster, but the common USB-token EV format usually cannot be exported for GitHub Actions.
 - Packaged desktop startup logs are written to Electron's `userData` folder as `desktop-runtime.log`.
+- Windows updater activity is also written to `desktop-runtime.log`, including startup checks, download progress, and restart prompts.
 - To force DevTools open in a packaged build for debugging, launch with `PLUTUS_OPEN_DEVTOOLS=1`.
 - Electron Builder build resources now live in `electron-builder-resources/`, which keeps the generated `build/web/` app bundle available for packaging.
 - To publish a new Windows version:

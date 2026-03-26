@@ -102,6 +102,30 @@ function attachWindowDiagnostics(win) {
   });
 }
 
+function canUseAutoUpdates() {
+  return app.isPackaged && process.platform === "win32" && !isMacAppStoreBuild();
+}
+
+async function triggerAutoUpdateCheck(reason = "manual") {
+  if (!canUseAutoUpdates()) {
+    logRuntime("[Updater] Auto-updates disabled for this build.", { reason });
+    return false;
+  }
+
+  logRuntime("[Updater] Starting update check.", { reason });
+
+  try {
+    await autoUpdater.checkForUpdates();
+    return true;
+  } catch (error) {
+    logRuntime("[Updater] Failed to start update check.", {
+      reason,
+      error: error && error.message ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
 function loadSharedriveConfig() {
   if (sharedriveConfigLoaded) return cachedSharedriveConfig;
   sharedriveConfigLoaded = true;
@@ -1112,40 +1136,50 @@ function setupAutoUpdates(mainWindow) {
   if (updateCheckStarted) return;
   updateCheckStarted = true;
 
-  if (!app.isPackaged || process.platform !== "win32") {
-    console.log("[Updater] Skipping auto-update check outside packaged Windows builds.");
+  if (!canUseAutoUpdates()) {
+    logRuntime("[Updater] Skipping auto-update setup outside packaged Windows builds.");
     return;
   }
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
 
   autoUpdater.on("checking-for-update", () => {
-    console.log("[Updater] Checking for updates.");
+    logRuntime("[Updater] Checking for updates.");
   });
 
   autoUpdater.on("update-available", (info) => {
-    console.log(`[Updater] Update available: ${info && info.version ? info.version : "unknown"}`);
+    logRuntime("[Updater] Update available.", {
+      version: info && info.version ? info.version : "unknown",
+    });
   });
 
   autoUpdater.on("update-not-available", () => {
-    console.log("[Updater] No updates available.");
+    logRuntime("[Updater] No updates available.");
   });
 
   autoUpdater.on("error", (error) => {
-    console.error("[Updater] Update check failed:", error && error.message ? error.message : error);
+    logRuntime("[Updater] Update check failed.", {
+      error: error && error.message ? error.message : String(error),
+    });
   });
 
   autoUpdater.on("download-progress", (progress) => {
     if (!progress) return;
-    console.log(
-      `[Updater] Downloaded ${Math.round(progress.percent || 0)}% (${progress.transferred || 0}/${progress.total || 0})`,
-    );
+    logRuntime("[Updater] Download progress.", {
+      percent: Math.round(progress.percent || 0),
+      transferred: progress.transferred || 0,
+      total: progress.total || 0,
+    });
   });
 
   autoUpdater.on("update-downloaded", async (info) => {
     const detail = info && info.version ? `Version ${info.version} is ready to install.` : "An update is ready to install.";
     const parentWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    logRuntime("[Updater] Update downloaded.", {
+      version: info && info.version ? info.version : "unknown",
+    });
 
     try {
       const result = await dialog.showMessageBox(parentWindow, {
@@ -1162,13 +1196,13 @@ function setupAutoUpdates(mainWindow) {
         autoUpdater.quitAndInstall();
       }
     } catch (error) {
-      console.error("[Updater] Failed to show restart prompt:", error && error.message ? error.message : error);
+      logRuntime("[Updater] Failed to show restart prompt.", {
+        error: error && error.message ? error.message : String(error),
+      });
     }
   });
 
-  autoUpdater.checkForUpdates().catch((error) => {
-    console.error("[Updater] Failed to start update check:", error && error.message ? error.message : error);
-  });
+  void triggerAutoUpdateCheck("startup");
 }
 
 app.whenReady().then(() => {
