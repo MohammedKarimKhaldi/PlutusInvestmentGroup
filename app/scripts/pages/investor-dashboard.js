@@ -32,7 +32,26 @@
                 let activeFilters = { all: true, calls: false, meetings: false, forward: false };
                 let compositionSelection = { groupKey: '', stageLabel: '' };
                 let typeColors = {};
+                let pendingTableRenderFrame = 0;
+                let pendingSearchFilterTimer = 0;
                 const COLOR_PALETTE = ['#818cf8', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#22d3ee', '#fb7185'];
+                const DASHBOARD_SEARCH_FIELDS = [
+                    'Investor',
+                    'Investor Name',
+                    'Name',
+                    'Email',
+                    'Type',
+                    'Description',
+                    'Size of Investment',
+                    'Investment Size',
+                    'Replied',
+                    'Moving Forward',
+                    'Meeting with Company',
+                    'Meeting',
+                    'Call/Meeting',
+                    'Call',
+                    'Contact',
+                ];
                 const COMPOSITION_STAGE_ORDER = [
                     'Target',
                     'Contact Started',
@@ -49,6 +68,39 @@
 
                 function normalizeDashboardText(value) {
                     return String(value || '').trim().toLowerCase();
+                }
+
+                function escapeHtml(value) {
+                    return String(value == null ? '' : value)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                }
+
+                function isDashboardLowPowerDevice() {
+                    const nav = window.navigator || {};
+                    const connection = nav.connection || nav.mozConnection || nav.webkitConnection || null;
+                    const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    const hardwareConcurrency = Number(nav.hardwareConcurrency || 0);
+                    const deviceMemory = Number(nav.deviceMemory || 0);
+                    return Boolean(
+                        prefersReducedMotion ||
+                        (connection && connection.saveData) ||
+                        (hardwareConcurrency && hardwareConcurrency <= 4) ||
+                        (deviceMemory && deviceMemory <= 4)
+                    );
+                }
+
+                function applyDashboardPerformanceMode() {
+                    const body = document.body;
+                    if (!body) return;
+                    if (isDashboardLowPowerDevice()) {
+                        body.setAttribute('data-dashboard-performance', 'lite');
+                        return;
+                    }
+                    body.removeAttribute('data-dashboard-performance');
                 }
 
                 function normalizeDealLifecycleStatus(value) {
@@ -198,6 +250,7 @@
 
                 // --- INITIALIZATION ---
                 window.addEventListener('load', () => {
+                    applyDashboardPerformanceMode();
                     setupUiBindings();
                     initializeDashboard();
                 });
@@ -1111,6 +1164,8 @@
                     // Parse using detected header row
                     rawData.vc = XLSX.utils.sheet_to_json(fSheet, { range: headerRowIndex, defval: "" }).filter(r => r["Investor"]);
                     rawData.fo = XLSX.utils.sheet_to_json(oSheet, { range: headerRowIndex, defval: "" }).filter(r => r["Investor"]);
+                    prepareDashboardRows(rawData.vc);
+                    prepareDashboardRows(rawData.fo);
                     const figures = gSheet ? XLSX.utils.sheet_to_json(gSheet, { defval: "" }) : [];
 
                     const combined = [...rawData.vc, ...rawData.fo];
@@ -1224,6 +1279,27 @@
                     return 'Target';
                 }
 
+                function buildDashboardSearchIndex(item) {
+                    return DASHBOARD_SEARCH_FIELDS
+                        .map((field) => String(item && item[field] || '').trim())
+                        .filter(Boolean)
+                        .join(' ')
+                        .toLowerCase();
+                }
+
+                function prepareDashboardRows(rows) {
+                    (rows || []).forEach((item) => {
+                        if (!item || typeof item !== 'object') return;
+                        item.__dashboardName = String(item["Investor"] || item["Investor Name"] || item["Name"] || '').trim();
+                        item.__dashboardSize = String(item["Size of Investment"] || item["Investment Size"] || '–').trim() || '–';
+                        item.__dashboardEmail = String(item["Email"] || '–').trim() || '–';
+                        item.__dashboardType = String(item["Type"] || 'Unknown').trim() || 'Unknown';
+                        item.__dashboardStatusText = getStatusText(item);
+                        item.__dashboardStatusBadge = getStatusBadge(item);
+                        item.__dashboardSearchIndex = buildDashboardSearchIndex(item);
+                    });
+                }
+
                 function resetCompositionSelectionState() {
                     compositionSelection = { groupKey: '', stageLabel: '' };
                 }
@@ -1273,7 +1349,7 @@
                     resetCompositionSelectionState();
                     if (options.render === false) return;
                     renderCompositionChart();
-                    renderTable(getCurrentSearchKeyword());
+                    scheduleTableRender(getCurrentSearchKeyword());
                     updateCompositionSelectionUi();
                 }
 
@@ -1463,12 +1539,12 @@
 
                     const maxCount = Math.max(...counts, 1);
                     const container = document.getElementById('range-bars');
-                    container.innerHTML = '';
+                    if (!container) return;
 
-                    BUCKETS.forEach((bucket, i) => {
+                    const markup = BUCKETS.map((bucket, i) => {
                         const count = counts[i];
                         const perc = (count / maxCount) * 100;
-                        container.innerHTML += `
+                        return `
                     <div>
                         <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:6px;">
                             <span style="font-weight:500;">${bucket.label}</span>
@@ -1479,7 +1555,9 @@
                         </div>
                     </div>
                 `;
-                    });
+                    }).join('');
+
+                    container.innerHTML = markup;
                 }
 
                 function switchTab(type, btn, options = {}) {
@@ -1498,7 +1576,7 @@
                         header.innerHTML = '<tr><th>Investor Name</th><th>Investor Type</th><th>Investment Size</th><th>Stage</th></tr>';
                     }
                     renderCompositionChart();
-                    renderTable(getCurrentSearchKeyword());
+                    scheduleTableRender(getCurrentSearchKeyword());
                     updateCompositionSelectionUi();
                 }
 
@@ -1523,7 +1601,7 @@
                         else btn.classList.remove('active');
                     });
 
-                    renderTable(getCurrentSearchKeyword());
+                    scheduleTableRender(getCurrentSearchKeyword());
                 }
 
                 function getStatusBadge(item) {
@@ -1539,60 +1617,90 @@
                     return `<span class="stage-pill" style="color:var(--text-dim); opacity:0.5;">Target</span>`;
                 }
 
-                function renderTable(keyword = "") {
-                    const tbody = document.getElementById('table-body');
-                    tbody.innerHTML = '';
-                    const data = activeType === 'vc' ? rawData.vc : rawData.fo;
+                function matchesActiveFilters(item) {
+                    if (activeFilters.all) return true;
+
+                    let match = false;
+                    const isYes = (col) => String(item[col]).toLowerCase() === 'yes';
+                    const isWait = (col) => String(item[col]).toLowerCase() === 'waiting';
+
+                    if (activeFilters.calls && (isYes('Call/Meeting') || isWait('Call/Meeting'))) match = true;
+                    if (activeFilters.meetings && isYes('Meeting with Company')) match = true;
+                    if (activeFilters.forward && isYes('Moving Forward')) match = true;
+                    return match;
+                }
+
+                function scheduleTableRender(keyword = getCurrentSearchKeyword()) {
                     const normalizedKeyword = String(keyword || '').toLowerCase();
-
-                    data.forEach(item => {
-                        const name = item["Investor"] || "";
-                        const size = item["Size of Investment"] || item["Investment Size"] || "–";
-                        const email = item["Email"] || "–";
-                        const note = item["Description"] || "–";
-
-                        // Filter logic
-                        if (normalizedKeyword && !JSON.stringify(item).toLowerCase().includes(normalizedKeyword)) return;
-                        if (!name) return;
-                        if (!matchesCompositionSelection(item)) return;
-
-                        if (!activeFilters.all) {
-                            let match = false;
-                            const isYes = (col) => String(item[col]).toLowerCase() === 'yes';
-                            const isWait = (col) => String(item[col]).toLowerCase() === 'waiting';
-
-                            if (activeFilters.calls && (isYes('Call/Meeting') || isWait('Call/Meeting'))) match = true;
-                            if (activeFilters.meetings && isYes('Meeting with Company')) match = true;
-                            if (activeFilters.forward && isYes('Moving Forward')) match = true;
-                            if (!match) return;
-                        }
-
-                        const statusBadge = getStatusBadge(item);
-                        const iType = item["Type"] || "Unknown";
-                        const typeColor = typeColors[iType] || '#94a3b8';
-
-                        if (activeType === 'vc') {
-                            tbody.innerHTML += `
-                        <tr>
-                            <td><b>${name}</b></td>
-                            <td><span class="size-tag">${size}</span></td>
-                            <td>${statusBadge}</td>
-                            <td><a href="mailto:${email}" style="color:var(--accent); text-decoration:none;">${email}</a></td>
-                        </tr>`;
-                        } else {
-                            tbody.innerHTML += `
-                        <tr>
-                            <td><b>${name}</b></td>
-                            <td><span style="color:${typeColor}; font-weight:600;">${iType}</span></td>
-                            <td><span class="size-tag">${size}</span></td>
-                            <td>${statusBadge}</td>
-                        </tr>`;
-                        }
+                    if (pendingTableRenderFrame) {
+                        window.cancelAnimationFrame(pendingTableRenderFrame);
+                    }
+                    pendingTableRenderFrame = window.requestAnimationFrame(() => {
+                        pendingTableRenderFrame = 0;
+                        renderTable(normalizedKeyword);
                     });
                 }
 
+                function renderTable(keyword = "") {
+                    const tbody = document.getElementById('table-body');
+                    if (!tbody) return;
+                    const data = activeType === 'vc' ? rawData.vc : rawData.fo;
+                    const normalizedKeyword = String(keyword || '').toLowerCase();
+                    const rows = [];
+
+                    data.forEach(item => {
+                        const name = item.__dashboardName || "";
+                        if (!name) return;
+                        if (normalizedKeyword && !(item.__dashboardSearchIndex || '').includes(normalizedKeyword)) return;
+                        if (!matchesCompositionSelection(item)) return;
+                        if (!matchesActiveFilters(item)) return;
+
+                        const size = escapeHtml(item.__dashboardSize || '–');
+                        const email = escapeHtml(item.__dashboardEmail || '–');
+                        const statusBadge = item.__dashboardStatusBadge || getStatusBadge(item);
+
+                        if (activeType === 'vc') {
+                            rows.push(`
+                        <tr>
+                            <td><b>${escapeHtml(name)}</b></td>
+                            <td><span class="size-tag">${size}</span></td>
+                            <td>${statusBadge}</td>
+                            <td><a href="mailto:${email}" style="color:var(--accent); text-decoration:none;">${email}</a></td>
+                        </tr>`);
+                            return;
+                        }
+
+                        const investorType = item.__dashboardType || 'Unknown';
+                        const typeColor = typeColors[investorType] || '#94a3b8';
+                        rows.push(`
+                        <tr>
+                            <td><b>${escapeHtml(name)}</b></td>
+                            <td><span style="color:${typeColor}; font-weight:600;">${escapeHtml(investorType)}</span></td>
+                            <td><span class="size-tag">${size}</span></td>
+                            <td>${statusBadge}</td>
+                        </tr>`);
+                    });
+
+                    if (!rows.length) {
+                        const emptyStateColspan = activeType === 'vc' ? 4 : 4;
+                        tbody.innerHTML = `
+                        <tr class="dashboard-empty-row">
+                            <td colspan="${emptyStateColspan}">No investors match the current filters.</td>
+                        </tr>`;
+                        return;
+                    }
+
+                    tbody.innerHTML = rows.join('');
+                }
+
                 function filterData() {
-                    renderTable(getCurrentSearchKeyword());
+                    if (pendingSearchFilterTimer) {
+                        window.clearTimeout(pendingSearchFilterTimer);
+                    }
+                    pendingSearchFilterTimer = window.setTimeout(() => {
+                        pendingSearchFilterTimer = 0;
+                        scheduleTableRender(getCurrentSearchKeyword());
+                    }, 90);
                 }
 
                 function getCapacitorPlugin(name) {

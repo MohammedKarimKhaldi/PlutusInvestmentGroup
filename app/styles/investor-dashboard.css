@@ -9,42 +9,6 @@
 
 body[data-page-id="investor-dashboard"],
 body[data-page-id="deal-ownership"] {
-    --page-body-bg:
-        radial-gradient(circle at top left, rgba(79, 70, 229, 0.18), transparent 28%),
-        radial-gradient(circle at top right, rgba(16, 185, 129, 0.14), transparent 24%),
-        linear-gradient(180deg, #09111f 0%, #0b1324 46%, #0b1220 100%);
-    --page-loader-bg:
-        radial-gradient(circle at top, rgba(79, 70, 229, 0.16), transparent 32%),
-        linear-gradient(180deg, #09111f 0%, #0a1324 100%);
-    --page-shell-bg: rgba(8, 14, 28, 0.72);
-    --page-shell-border: rgba(148, 163, 184, 0.16);
-    --page-sidebar-bg: rgba(15, 23, 42, 0.78);
-    --page-sidebar-border: rgba(148, 163, 184, 0.14);
-    --page-nav-text: #cbd5e1;
-    --page-nav-hover-bg: rgba(99, 102, 241, 0.16);
-    --page-nav-hover-border: rgba(129, 140, 248, 0.28);
-    --page-nav-hover-text: #eef2ff;
-    --page-nav-active-bg: rgba(79, 70, 229, 0.26);
-    --page-nav-active-border: rgba(129, 140, 248, 0.44);
-    --page-nav-active-text: #ffffff;
-    --page-toggle-bg: rgba(255, 255, 255, 0.06);
-    --page-toggle-border: rgba(148, 163, 184, 0.18);
-    --page-input-bg: rgba(255, 255, 255, 0.05);
-    --page-input-border: rgba(148, 163, 184, 0.18);
-    --page-legend-bg: rgba(255, 255, 255, 0.03);
-    --page-legend-border: rgba(148, 163, 184, 0.12);
-    --page-table-head-bg: rgba(15, 23, 42, 0.96);
-    --page-row-hover-bg: rgba(255, 255, 255, 0.025);
-    --page-segment-stroke: rgba(9, 17, 31, 0.92);
-    --page-segment-active-stroke: rgba(255, 255, 255, 0.92);
-    --page-active-text: #ffffff;
-    --page-eyebrow-color: #c7d2fe;
-    --page-hero-glow: radial-gradient(circle, rgba(16, 185, 129, 0.18), transparent 70%);
-    background: var(--page-body-bg);
-}
-
-body[data-page-id="investor-dashboard"][data-dashboard-theme="light"],
-body[data-page-id="deal-ownership"][data-dashboard-theme="light"] {
     --panel: rgba(255, 255, 255, 0.88);
     --panel-strong: rgba(248, 250, 252, 0.96);
     --panel-soft: rgba(226, 232, 240, 0.72);
@@ -82,6 +46,77 @@ body[data-page-id="deal-ownership"][data-dashboard-theme="light"] {
     --page-active-text: #1e1b4b;
     --page-eyebrow-color: #4338ca;
     --page-hero-glow: radial-gradient(circle, rgba(79, 70, 229, 0.16), transparent 72%);
+    background: var(--page-body-bg);
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-theme="dark"],
+body[data-page-id="deal-ownership"][data-dashboard-theme="dark"] {
+    --bg: #0b1220;
+    --bg-elevated: rgba(15, 23, 42, 0.9);
+    --bg-card: rgba(15, 23, 42, 0.82);
+    --border-subtle: rgba(148, 163, 184, 0.22);
+    --border-strong: rgba(129, 140, 248, 0.42);
+    --text-main: #e5eefb;
+    --text-soft: #94a3b8;
+    --chip-bg: rgba(79, 70, 229, 0.18);
+    --panel: rgba(15, 23, 42, 0.86);
+    --panel-strong: rgba(15, 23, 42, 0.94);
+    --panel-soft: rgba(30, 41, 59, 0.5);
+    --border: rgba(148, 163, 184, 0.16);
+    --text-dim: #94a3b8;
+    --shadow-strong: 0 28px 80px rgba(2, 6, 23, 0.34);
+    --page-body-bg:
+        radial-gradient(circle at top left, rgba(79, 70, 229, 0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(16, 185, 129, 0.14), transparent 24%),
+        linear-gradient(180deg, #09111f 0%, #0b1324 46%, #0b1220 100%);
+    --page-loader-bg:
+        radial-gradient(circle at top, rgba(79, 70, 229, 0.16), transparent 32%),
+        linear-gradient(180deg, #09111f 0%, #0a1324 100%);
+    --page-shell-bg: rgba(8, 14, 28, 0.72);
+    --page-shell-border: rgba(148, 163, 184, 0.16);
+    --page-sidebar-bg: rgba(15, 23, 42, 0.78);
+    --page-sidebar-border: rgba(148, 163, 184, 0.14);
+    --page-nav-text: #cbd5e1;
+    --page-nav-hover-bg: rgba(99, 102, 241, 0.16);
+    --page-nav-hover-border: rgba(129, 140, 248, 0.28);
+    --page-nav-hover-text: #eef2ff;
+    --page-nav-active-bg: rgba(79, 70, 229, 0.26);
+    --page-nav-active-border: rgba(129, 140, 248, 0.44);
+    --page-nav-active-text: #ffffff;
+    --page-toggle-bg: rgba(255, 255, 255, 0.06);
+    --page-toggle-border: rgba(148, 163, 184, 0.18);
+    --page-input-bg: rgba(255, 255, 255, 0.05);
+    --page-input-border: rgba(148, 163, 184, 0.18);
+    --page-legend-bg: rgba(255, 255, 255, 0.03);
+    --page-legend-border: rgba(148, 163, 184, 0.12);
+    --page-table-head-bg: rgba(15, 23, 42, 0.96);
+    --page-row-hover-bg: rgba(255, 255, 255, 0.025);
+    --page-segment-stroke: rgba(9, 17, 31, 0.92);
+    --page-segment-active-stroke: rgba(255, 255, 255, 0.92);
+    --page-active-text: #ffffff;
+    --page-eyebrow-color: #c7d2fe;
+    --page-hero-glow: radial-gradient(circle, rgba(16, 185, 129, 0.18), transparent 70%);
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-theme="dark"] tbody tr:nth-child(even),
+body[data-page-id="deal-ownership"][data-dashboard-theme="dark"] tbody tr:nth-child(even) {
+    background: rgba(15, 23, 42, 0.42);
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-theme="dark"] tbody tr:nth-child(odd),
+body[data-page-id="deal-ownership"][data-dashboard-theme="dark"] tbody tr:nth-child(odd) {
+    background: rgba(8, 14, 28, 0.28);
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-theme="dark"] .stage-badge,
+body[data-page-id="investor-dashboard"][data-dashboard-theme="dark"] .pill,
+body[data-page-id="investor-dashboard"][data-dashboard-theme="dark"] .chip,
+body[data-page-id="deal-ownership"][data-dashboard-theme="dark"] .stage-badge,
+body[data-page-id="deal-ownership"][data-dashboard-theme="dark"] .pill,
+body[data-page-id="deal-ownership"][data-dashboard-theme="dark"] .chip {
+    background: rgba(15, 23, 42, 0.82);
+    border-color: rgba(148, 163, 184, 0.24);
+    color: var(--text-soft);
 }
 
 #loader {
@@ -1044,6 +1079,13 @@ header.dashboard-hero::after {
     background: var(--page-row-hover-bg);
 }
 
+.dashboard-empty-row td {
+    padding: 28px 18px;
+    text-align: center;
+    color: var(--text-dim);
+    font-style: italic;
+}
+
 .size-tag {
     background: rgba(99, 102, 241, 0.14);
     color: #c7d2fe;
@@ -1400,6 +1442,69 @@ header.dashboard-hero::after {
     color: var(--text-dim);
     font-size: 0.82rem;
     line-height: 1.5;
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"],
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] {
+    --shadow-strong: 0 12px 30px rgba(148, 163, 184, 0.14);
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .shell,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] header.dashboard-hero,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .dashboard-export-menu,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .dashboard-switcher-menu,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .dashboard-switcher-trigger,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .shell,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] header.dashboard-hero,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .dashboard-export-menu,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .dashboard-switcher-menu,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .dashboard-switcher-trigger {
+    backdrop-filter: none;
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] header.dashboard-hero,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] header.dashboard-hero {
+    position: static;
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .composition-chart svg,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .composition-chart svg,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .composition-segment,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .composition-segment {
+    filter: none;
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .composition-segment,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .composition-segment,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .composition-interactive,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .composition-interactive,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .dashboard-switcher-trigger,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .dashboard-switcher-trigger,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .dashboard-switcher-item,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .dashboard-switcher-item,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .tab-btn,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .tab-btn,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .toggle-btn,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .toggle-btn,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .search-box,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .search-box {
+    transition: none;
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .dashboard-switcher-trigger:hover,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .dashboard-switcher-item:hover,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .ownership-visual-chip:hover,
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .dashboard-home-item:hover,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .dashboard-switcher-trigger:hover,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .dashboard-switcher-item:hover,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .ownership-visual-chip:hover,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .dashboard-home-item:hover {
+    transform: none;
+}
+
+body[data-page-id="investor-dashboard"][data-dashboard-performance="lite"] .table-wrap thead th,
+body[data-page-id="deal-ownership"][data-dashboard-performance="lite"] .table-wrap thead th {
+    position: static;
 }
 
 .dashboard-home-empty {

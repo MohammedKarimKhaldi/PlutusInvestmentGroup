@@ -36,7 +36,7 @@
     } catch (e) {
       console.warn("Dashboard theme read failed", e);
     }
-    return "dark";
+    return "light";
   }
 
   function writeDashboardTheme(theme) {
