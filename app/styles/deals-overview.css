@@ -19,6 +19,120 @@
   gap: 12px;
 }
 
+.integrity-banner {
+  display: none;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.86));
+  color: var(--text-main);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.16);
+}
+
+.integrity-banner.is-visible {
+  display: grid;
+  gap: 8px;
+}
+
+.integrity-banner.is-warning {
+  border-color: rgba(245, 158, 11, 0.32);
+  background:
+    linear-gradient(135deg, rgba(120, 53, 15, 0.9), rgba(67, 20, 7, 0.88));
+}
+
+.integrity-banner-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.integrity-banner-copy {
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.deal-integrity-cell {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.deal-integrity-pill-row,
+.deal-action-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.deal-action-cluster {
+  gap: 8px;
+  align-items: center;
+}
+
+.deal-integrity-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.deal-integrity-pill.is-good {
+  color: #166534;
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+.deal-integrity-pill.is-warning {
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.26);
+}
+
+.deal-integrity-pill.is-muted {
+  color: var(--text-dim);
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.deal-integrity-summary {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-soft);
+}
+
+.deal-integrity-summary strong {
+  color: var(--text-main);
+}
+
+.deal-integrity-chip {
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.deal-integrity-chip:hover {
+  transform: translateY(-1px);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.deal-integrity-chip.is-active {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.34);
+  color: #92400e;
+}
+
 .deal-stage-cell {
   display: flex;
   flex-wrap: wrap;
@@ -111,5 +225,9 @@ button.chip.is-active strong {
   .deal-filters-row label,
   .deal-filters-row button {
     flex: 1 1 100%;
+  }
+
+  .deal-integrity-cell {
+    min-width: 0;
   }
 }

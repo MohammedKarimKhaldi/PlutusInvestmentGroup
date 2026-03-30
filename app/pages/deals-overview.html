@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="../styles/components.css" />
   <link rel="stylesheet" href="../styles/deals-overview.css" />
   <script src="../scripts/shared/app-config.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
   <script src="../scripts/shared/sharedrive-gate.js"></script>
 </head>
 
@@ -36,6 +37,14 @@
 
         <div class="meta-row" id="meta-row">
           <!-- Filled by JS: counts per stage, totals -->
+        </div>
+
+        <div class="integrity-banner" id="deal-integrity-banner">
+          <!-- Filled by JS: ownership/workflow sync health -->
+        </div>
+
+        <div class="meta-row" id="deal-integrity-row">
+          <!-- Filled by JS: irregularity chips -->
         </div>
 
         <div class="toolbar deal-filters" id="deal-filters-bar">
@@ -69,14 +78,19 @@
               </select>
             </label>
             <label>
-              Setup
+              Connections
               <select id="deal-setup-filter">
                 <option value="all">All deals</option>
                 <option value="missing-dashboard">Missing dashboard</option>
                 <option value="missing-deck">Missing deck</option>
                 <option value="missing-legal">Missing legal</option>
                 <option value="missing-any">Missing any setup item</option>
+                <option value="irregularities">Any irregularity</option>
+                <option value="ownership-attention">Ownership attention</option>
+                <option value="accounting-attention">Accounting attention</option>
+                <option value="legal-attention">Legal attention</option>
                 <option value="ready">Dashboard, deck, and legal ready</option>
+                <option value="fully-linked">Fully connected</option>
               </select>
             </label>
             <button class="btn" id="btn-reset-deal-filters" type="button">Reset filters</button>
@@ -207,6 +221,7 @@
                 <th>Cash %</th>
                 <th>Equity %</th>
                 <th>Retainer</th>
+                <th>Connected systems</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -230,6 +245,7 @@
   <script src="../scripts/shared/layout.js"></script>
   <script src="../scripts/shared/data-loader.js"></script>
   <script src="../scripts/shared/core.js"></script>
+  <script src="../scripts/shared/deal-integrity.js"></script>
   <script src="../scripts/shared/theme.js"></script>
   <script src="../scripts/pages/deals-overview.js"></script>
 </body>

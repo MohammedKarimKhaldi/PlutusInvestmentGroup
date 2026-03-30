@@ -1,7 +1,19 @@
     const AppCore = window.AppCore;
+    const DealIntegrity = window.DealIntegrity || null;
     const DEALS_STORAGE_KEY = (AppCore && AppCore.STORAGE_KEYS && AppCore.STORAGE_KEYS.deals) || "deals_data_v1";
     let dealsData = [];
     let accountingAccessState = { restricted: false, allowed: true };
+    let dealIntegrityCache = new Map();
+    let ownershipSnapshotState = {
+      loading: false,
+      loaded: false,
+      error: "",
+      configured: false,
+      entriesByDealId: new Map(),
+      unlinkedEntries: [],
+      linkedDeals: 0,
+      rows: 0,
+    };
     let dealsFilterState = {
       portfolio: "active",
       keyword: "",
@@ -95,11 +107,35 @@
       return queryString ? `${pageId}.html?${queryString}` : `${pageId}.html`;
     }
 
+    function getRequestedDealReference() {
+      try {
+        const params = new URLSearchParams(window.location.search || "");
+        return String(params.get("deal") || params.get("id") || "").trim();
+      } catch {
+        return "";
+      }
+    }
+
+    function applyRouteDealFilterFromUrl() {
+      const reference = getRequestedDealReference();
+      if (!reference) return;
+      dealsFilterState = {
+        ...dealsFilterState,
+        portfolio: "all",
+        stage: "all",
+        owner: "all",
+        keyword: reference.toLowerCase(),
+      };
+    }
+
     function hasDashboardLinked(deal) {
       return Boolean(String(deal && deal.fundraisingDashboardId || "").trim());
     }
 
     function hasDeckLinked(deal) {
+      if (DealIntegrity && typeof DealIntegrity.hasDeckLinked === "function") {
+        return DealIntegrity.hasDeckLinked(deal);
+      }
       return Boolean(String(deal && deal.deckUrl || "").trim());
     }
 
@@ -122,6 +158,35 @@
 
     function hasLegalLinked(deal) {
       return normalizeDealLegalLinksForFilters(deal).length > 0;
+    }
+
+    function clearDealIntegrityCache() {
+      dealIntegrityCache = new Map();
+    }
+
+    function getOwnershipSnapshotEntry(deal) {
+      if (!deal || !deal.id) return null;
+      return ownershipSnapshotState.entriesByDealId.get(normalizeValue(deal.id)) || null;
+    }
+
+    function getDealIntegrityReport(deal) {
+      const key = normalizeValue(deal && deal.id);
+      if (!key) {
+        return DealIntegrity && typeof DealIntegrity.buildDealIntegrityReport === "function"
+          ? DealIntegrity.buildDealIntegrityReport(deal)
+          : { counts: { total: 0, ownership: 0, accounting: 0, legal: 0, setup: 0 }, topIssues: [], fullyLinked: false };
+      }
+      if (dealIntegrityCache.has(key)) return dealIntegrityCache.get(key);
+
+      const report = DealIntegrity && typeof DealIntegrity.buildDealIntegrityReport === "function"
+        ? DealIntegrity.buildDealIntegrityReport(deal, {
+          ownershipAvailable: ownershipSnapshotState.loaded,
+          ownershipEntry: getOwnershipSnapshotEntry(deal),
+        })
+        : { counts: { total: 0, ownership: 0, accounting: 0, legal: 0, setup: 0 }, topIssues: [], fullyLinked: false };
+
+      dealIntegrityCache.set(key, report);
+      return report;
     }
 
     function getDealKeywords(deal) {
@@ -346,11 +411,17 @@
       const hasDashboard = hasDashboardLinked(deal);
       const hasDeck = hasDeckLinked(deal);
       const hasLegal = hasLegalLinked(deal);
+      const integrityReport = getDealIntegrityReport(deal);
       if (dealsFilterState.setup === "missing-dashboard" && hasDashboard) return false;
       if (dealsFilterState.setup === "missing-deck" && hasDeck) return false;
       if (dealsFilterState.setup === "missing-legal" && hasLegal) return false;
       if (dealsFilterState.setup === "missing-any" && hasDashboard && hasDeck && hasLegal) return false;
       if (dealsFilterState.setup === "ready" && !(hasDashboard && hasDeck && hasLegal)) return false;
+      if (dealsFilterState.setup === "irregularities" && !integrityReport.counts.total) return false;
+      if (dealsFilterState.setup === "ownership-attention" && !integrityReport.counts.ownership) return false;
+      if (dealsFilterState.setup === "accounting-attention" && !integrityReport.counts.accounting) return false;
+      if (dealsFilterState.setup === "legal-attention" && !integrityReport.counts.legal) return false;
+      if (dealsFilterState.setup === "fully-linked" && !integrityReport.fullyLinked) return false;
 
       return true;
     }
@@ -431,7 +502,7 @@
         const setupLabel = setupFilter && setupFilter.selectedOptions && setupFilter.selectedOptions[0]
           ? setupFilter.selectedOptions[0].text
           : dealsFilterState.setup.replace(/-/g, " ");
-        summaryParts.push(`setup: ${setupLabel}`);
+        summaryParts.push(`connections: ${setupLabel}`);
       }
       if (dealsFilterState.keyword) {
         summaryParts.push(`search: "${dealsFilterState.keyword}"`);
@@ -448,6 +519,7 @@
       const setupFilter = document.getElementById("deal-setup-filter");
       const resetBtn = document.getElementById("btn-reset-deal-filters");
       const metaRow = document.getElementById("meta-row");
+      const integrityRow = document.getElementById("deal-integrity-row");
 
       [searchInput, portfolioFilter, stageFilter, ownerFilter, setupFilter].forEach((control) => {
         if (!control) return;
@@ -478,6 +550,17 @@
           if (!chip) return;
           const nextStage = String(chip.getAttribute("data-deal-stage-chip") || "all").trim().toLowerCase() || "all";
           dealsFilterState.stage = dealsFilterState.stage === nextStage && nextStage !== "all" ? "all" : nextStage;
+          applyDealFilterStateToUi();
+          renderDeals();
+        });
+      }
+
+      if (integrityRow) {
+        integrityRow.addEventListener("click", (event) => {
+          const chip = event.target.closest("[data-deal-setup-chip]");
+          if (!chip) return;
+          const nextSetup = String(chip.getAttribute("data-deal-setup-chip") || "all").trim().toLowerCase() || "all";
+          dealsFilterState.setup = dealsFilterState.setup === nextSetup && nextSetup !== "all" ? "all" : nextSetup;
           applyDealFilterStateToUi();
           renderDeals();
         });
@@ -693,6 +776,307 @@
       return config.dashboards.find((dashboard) => normalizeValue(dashboard.id) === dashboardId) || null;
     }
 
+    function getOwnershipDashboardConfig() {
+      const config = getDashboardConfig();
+      if (AppCore && typeof AppCore.getDashboardById === "function") {
+        return AppCore.getDashboardById(config, "deal-ownership");
+      }
+      return Array.isArray(config && config.dashboards)
+        ? config.dashboards.find((entry) => normalizeValue(entry && entry.id) === "deal-ownership") || null
+        : null;
+    }
+
+    function sanitizeWorkbookRows(rows) {
+      if (!Array.isArray(rows)) return [];
+      return rows.map((row) => {
+        const cleaned = {};
+        Object.entries(row || {}).forEach(([key, value]) => {
+          const header = String(key || "").trim();
+          if (!header || /^__EMPTY/i.test(header)) return;
+          cleaned[header] = value;
+        });
+        return cleaned;
+      });
+    }
+
+    function getRowValueByHeaderPattern(row, patterns) {
+      const headers = Object.keys(row || {});
+      const matchHeader = headers.find((header) => patterns.some((pattern) => pattern.test(header)));
+      return matchHeader ? String(row[matchHeader] || "").trim() : "";
+    }
+
+    function getPrimaryDealLabel(row, headers) {
+      const prioritizedHeader = headers.find((header) => /deal/i.test(header))
+        || headers.find((header) => /company/i.test(header))
+        || headers.find((header) => /project/i.test(header));
+      return prioritizedHeader ? String(row[prioritizedHeader] || "").trim() : "";
+    }
+
+    function getStaffLabel(row) {
+      return getRowValueByHeaderPattern(row, [/^staff$/i, /^name$/i, /^lead$/i, /staff/i, /owner/i]) || "Unassigned";
+    }
+
+    function getRoleLabel(row) {
+      return getRowValueByHeaderPattern(row, [/^role$/i, /title/i, /position/i, /function/i, /team/i]);
+    }
+
+    function getTopRoleSummary(summary, limit = 2) {
+      if (!summary || !summary.roles || !summary.roles.size) return "Roles not tagged";
+      return Array.from(summary.roles.entries())
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, limit)
+        .map(([role, count]) => count > 1 ? `${role} x${count}` : role)
+        .join(", ");
+    }
+
+    function findDealForOwnershipRow(row, headers) {
+      const references = headers
+        .filter((header) => /deal|company|project/i.test(header))
+        .map((header) => row[header])
+        .filter(Boolean);
+
+      if (AppCore && typeof AppCore.findDealByReference === "function") {
+        return AppCore.findDealByReference(dealsData, references);
+      }
+      return (Array.isArray(dealsData) ? dealsData : []).find((deal) => references.some((entry) => normalizeValue(entry) === normalizeValue(deal && deal.id)));
+    }
+
+    async function resolveOwnershipWorkbookUrl(url) {
+      const normalized = String(url || "").toLowerCase();
+      const isSharePointLink = normalized.includes("sharepoint.com") || normalized.includes("1drv.ms");
+      if (isSharePointLink && AppCore && typeof AppCore.resolveShareDriveDownloadUrl === "function") {
+        try {
+          const resolved = await AppCore.resolveShareDriveDownloadUrl(url);
+          if (resolved) return resolved;
+        } catch (error) {
+          console.warn("[DealsOverview] Ownership URL resolution failed, using original URL", error);
+        }
+      }
+      return url;
+    }
+
+    function buildDownloadHintUrl(url) {
+      const raw = String(url || "").trim();
+      if (!raw) return raw;
+      if (/([?&])download=1(?:&|$)/i.test(raw)) return raw;
+      return raw.includes("?") ? `${raw}&download=1` : `${raw}?download=1`;
+    }
+
+    function looksLikeHtmlBuffer(buffer) {
+      try {
+        const bytes = new Uint8Array(buffer || new ArrayBuffer(0));
+        const sample = bytes.slice(0, 512);
+        const text = new TextDecoder("utf-8").decode(sample).trim().toLowerCase();
+        return text.startsWith("<!doctype html") || text.startsWith("<html") || text.includes("<head") || text.includes("<body");
+      } catch {
+        return false;
+      }
+    }
+
+    async function downloadWorkbookBuffer(url) {
+      return AppCore && typeof AppCore.downloadBinary === "function"
+        ? AppCore.downloadBinary(url, { cache: "no-store" })
+        : fetch(url).then((response) => {
+          if (!response.ok) throw new Error("Failed to download ownership workbook");
+          return response.arrayBuffer();
+        });
+    }
+
+    async function fetchWorkbook(url) {
+      const attempts = [String(url || "").trim()].filter(Boolean);
+      const hintedUrl = buildDownloadHintUrl(url);
+      if (hintedUrl && hintedUrl !== attempts[0]) attempts.push(hintedUrl);
+
+      let lastError = null;
+      for (let index = 0; index < attempts.length; index += 1) {
+        const attemptUrl = attempts[index];
+        try {
+          const buffer = await downloadWorkbookBuffer(attemptUrl);
+          if (looksLikeHtmlBuffer(buffer)) {
+            throw new Error("Downloaded content is HTML instead of an Excel file.");
+          }
+          return XLSX.read(buffer, { type: "array" });
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      throw lastError || new Error("Failed to download ownership workbook.");
+    }
+
+    function buildOwnershipSnapshot(rows) {
+      const headers = rows.length ? Object.keys(rows[0]) : [];
+      const summaries = new Map();
+
+      rows.forEach((row) => {
+        const match = findDealForOwnershipRow(row, headers);
+        const primaryDealLabel = getPrimaryDealLabel(row, headers) || "Unlabelled staffing line";
+        const summaryKey = match && match.id
+          ? `deal:${String(match.id)}`
+          : `unlinked:${String(primaryDealLabel || "").trim().toLowerCase()}`;
+
+        if (!summaries.has(summaryKey)) {
+          summaries.set(summaryKey, {
+            key: summaryKey,
+            assignments: 0,
+            staff: new Set(),
+            roles: new Map(),
+            label: primaryDealLabel,
+            match,
+          });
+        }
+
+        const summary = summaries.get(summaryKey);
+        summary.assignments += 1;
+        const staffLabel = getStaffLabel(row);
+        const roleLabel = getRoleLabel(row);
+        if (staffLabel) summary.staff.add(staffLabel);
+        if (roleLabel) {
+          summary.roles.set(roleLabel, (summary.roles.get(roleLabel) || 0) + 1);
+        }
+      });
+
+      const entries = Array.from(summaries.values()).map((summary) => {
+        const staffNames = Array.from(summary.staff || []).sort((left, right) => left.localeCompare(right));
+        return {
+          ...summary,
+          staffNames,
+          staffCount: staffNames.length,
+          roleSummary: getTopRoleSummary(summary, 3),
+          linkStatus: summary.match
+            ? (staffNames.length ? "linked" : "missing-staffing")
+            : "unlinked",
+        };
+      });
+
+      return {
+        entriesByDealId: new Map(
+          entries
+            .filter((entry) => entry.match && entry.match.id)
+            .map((entry) => [normalizeValue(entry.match.id), entry])
+        ),
+        unlinkedEntries: entries.filter((entry) => entry.linkStatus === "unlinked"),
+        linkedDeals: entries.filter((entry) => entry.match && entry.linkStatus !== "unlinked").length,
+        rows: rows.length,
+      };
+    }
+
+    function renderOwnershipConnectionBanner() {
+      const banner = document.getElementById("deal-integrity-banner");
+      if (!banner) return;
+
+      if (ownershipSnapshotState.loading) {
+        banner.className = "integrity-banner is-visible";
+        banner.innerHTML = `
+          <div class="integrity-banner-title">Checking ownership coverage</div>
+          <div class="integrity-banner-copy">Pulling the staffing workbook so deal overview can flag missing ownership coverage and orphan staffing clusters.</div>
+        `;
+        return;
+      }
+
+      if (ownershipSnapshotState.error) {
+        banner.className = "integrity-banner is-visible is-warning";
+        banner.innerHTML = `
+          <div class="integrity-banner-title">Ownership connection needs attention</div>
+          <div class="integrity-banner-copy">${escapeHtml(ownershipSnapshotState.error)} Deal overview is still showing accounting and legal irregularities, but staffing linkage checks are temporarily limited.</div>
+        `;
+        return;
+      }
+
+      if (!ownershipSnapshotState.configured) {
+        banner.className = "integrity-banner is-visible";
+        banner.innerHTML = `
+          <div class="integrity-banner-title">Ownership dashboard not configured yet</div>
+          <div class="integrity-banner-copy">Add a deal-ownership dashboard config entry to raise staffing irregularities directly from deal overview.</div>
+        `;
+        return;
+      }
+
+      const unlinkedCount = ownershipSnapshotState.unlinkedEntries.length;
+      banner.className = "integrity-banner is-visible";
+      banner.innerHTML = `
+        <div class="integrity-banner-title">Ownership sync is live</div>
+        <div class="integrity-banner-copy">
+          ${ownershipSnapshotState.linkedDeals} deal${ownershipSnapshotState.linkedDeals === 1 ? "" : "s"} matched from ${ownershipSnapshotState.rows} staffing row${ownershipSnapshotState.rows === 1 ? "" : "s"}.
+          ${unlinkedCount ? `${unlinkedCount} staffing cluster${unlinkedCount === 1 ? " is" : "s are"} still unmatched and should be reviewed in Deal Ownership.` : "No orphan staffing clusters are currently detected."}
+        </div>
+      `;
+    }
+
+    async function refreshOwnershipSnapshot() {
+      clearDealIntegrityCache();
+      ownershipSnapshotState = {
+        ...ownershipSnapshotState,
+        loading: true,
+        loaded: false,
+        error: "",
+      };
+      renderOwnershipConnectionBanner();
+
+      const dashboard = getOwnershipDashboardConfig();
+      if (!dashboard || !dashboard.excelUrl) {
+        ownershipSnapshotState = {
+          loading: false,
+          loaded: false,
+          error: "",
+          configured: false,
+          entriesByDealId: new Map(),
+          unlinkedEntries: [],
+          linkedDeals: 0,
+          rows: 0,
+        };
+        renderDeals();
+        return;
+      }
+
+      if (typeof XLSX === "undefined") {
+        ownershipSnapshotState = {
+          loading: false,
+          loaded: false,
+          error: "SheetJS is not available, so the ownership workbook could not be parsed.",
+          configured: true,
+          entriesByDealId: new Map(),
+          unlinkedEntries: [],
+          linkedDeals: 0,
+          rows: 0,
+        };
+        renderDeals();
+        return;
+      }
+
+      try {
+        const downloadUrl = await resolveOwnershipWorkbookUrl(dashboard.excelUrl);
+        const workbook = await fetchWorkbook(downloadUrl);
+        const sheetName = (dashboard.sheets && dashboard.sheets.funds) || workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName] || workbook.Sheets[workbook.SheetNames[0]];
+        if (!sheet) throw new Error("Ownership staffing sheet not found.");
+
+        const rows = sanitizeWorkbookRows(XLSX.utils.sheet_to_json(sheet, { defval: "" }));
+        const snapshot = buildOwnershipSnapshot(rows);
+        ownershipSnapshotState = {
+          loading: false,
+          loaded: true,
+          error: "",
+          configured: true,
+          ...snapshot,
+        };
+      } catch (error) {
+        ownershipSnapshotState = {
+          loading: false,
+          loaded: false,
+          error: error instanceof Error ? error.message : "Failed to load ownership workbook.",
+          configured: true,
+          entriesByDealId: new Map(),
+          unlinkedEntries: [],
+          linkedDeals: 0,
+          rows: 0,
+        };
+      }
+
+      clearDealIntegrityCache();
+      renderDeals();
+    }
+
     async function refreshAccountingAccessState() {
       if (!AppCore || typeof AppCore.getPageAccessStatus !== "function") {
         accountingAccessState = { restricted: false, allowed: true };
@@ -707,12 +1091,50 @@
       return accountingAccessState;
     }
 
+    function renderIntegrityPill(label, state) {
+      const className = state === "good"
+        ? "deal-integrity-pill is-good"
+        : state === "attention"
+          ? "deal-integrity-pill is-warning"
+          : "deal-integrity-pill is-muted";
+      return `<span class="${className}">${escapeHtml(label)}</span>`;
+    }
+
+    function renderDealIntegrityCell(deal) {
+      const report = getDealIntegrityReport(deal);
+      const summary = report.topIssues && report.topIssues.length
+        ? report.topIssues.map((issue) => issue.title).join(" · ")
+        : "Ownership, accounting, legal, and setup are aligned.";
+
+      const ownershipState = ownershipSnapshotState.loaded
+        ? report.statuses.ownership
+        : (report.counts.ownership ? "attention" : "unknown");
+
+      return `
+        <div class="deal-integrity-cell">
+          <div class="deal-integrity-pill-row">
+            ${renderIntegrityPill("Ownership", ownershipState)}
+            ${renderIntegrityPill("Accounting", report.statuses.accounting)}
+            ${renderIntegrityPill("Legal", report.statuses.legal)}
+          </div>
+          <div class="deal-integrity-summary">
+            <strong>${report.counts.total ? `${report.counts.total} irregularit${report.counts.total === 1 ? "y" : "ies"}` : "Fully connected"}</strong>
+            <span> · ${escapeHtml(summary)}</span>
+          </div>
+        </div>
+      `;
+    }
+
     function renderDealActions(deal) {
       const detailHref = buildPageUrl("deal-details", { id: deal.id });
+      const ownershipHref = buildPageUrl("deal-ownership", { deal: deal.id });
       const accountingHref = buildPageUrl("accounting", { id: deal.id });
+      const legalHref = buildPageUrl("legal-management", { id: deal.id });
       const dashboard = getDealDashboard(deal);
       const links = [
-        `<a class="action-link" href="${detailHref}">View deal</a>`,
+        `<a class="action-link" href="${detailHref}">Deal record</a>`,
+        `<a class="action-link" href="${ownershipHref}">Ownership</a>`,
+        `<a class="action-link" href="${legalHref}">Legal</a>`,
       ];
 
       if (!accountingAccessState.restricted || accountingAccessState.allowed) {
@@ -724,7 +1146,46 @@
         links.push(`<a class="action-link" href="${dashboardHref}">Open dashboard</a>`);
       }
 
-      return links.join(' <span style="color: var(--text-dim);">·</span> ');
+      return `<div class="deal-action-cluster">${links.join('<span style="color: var(--text-dim);">·</span>')}</div>`;
+    }
+
+    function renderIntegrityFilterChips(source) {
+      const row = document.getElementById("deal-integrity-row");
+      if (!row) return;
+
+      const deals = Array.isArray(source) ? source : [];
+      const counts = {
+        all: deals.length,
+        irregularities: 0,
+        "ownership-attention": 0,
+        "accounting-attention": 0,
+        "legal-attention": 0,
+        "fully-linked": 0,
+      };
+
+      deals.forEach((deal) => {
+        const report = getDealIntegrityReport(deal);
+        if (report.counts.total) counts.irregularities += 1;
+        if (report.counts.ownership) counts["ownership-attention"] += 1;
+        if (report.counts.accounting) counts["accounting-attention"] += 1;
+        if (report.counts.legal) counts["legal-attention"] += 1;
+        if (report.fullyLinked) counts["fully-linked"] += 1;
+      });
+
+      const chips = [
+        { value: "all", label: "All", count: counts.all },
+        { value: "irregularities", label: "Any irregularity", count: counts.irregularities },
+        { value: "ownership-attention", label: "Ownership", count: counts["ownership-attention"] },
+        { value: "accounting-attention", label: "Accounting", count: counts["accounting-attention"] },
+        { value: "legal-attention", label: "Legal", count: counts["legal-attention"] },
+        { value: "fully-linked", label: "Fully connected", count: counts["fully-linked"] },
+      ];
+
+      row.innerHTML = chips.map((chip) => `
+        <button class="chip deal-integrity-chip${dealsFilterState.setup === chip.value ? " is-active" : ""}" type="button" data-deal-setup-chip="${chip.value}">
+          <strong>${chip.count}</strong> ${chip.label}
+        </button>
+      `).join("");
     }
 
     function renderDeals() {
@@ -733,6 +1194,7 @@
       const footerMeta = document.getElementById("footer-meta");
       loadDealsData();
       if (!Array.isArray(dealsData)) return;
+      clearDealIntegrityCache();
       populateDealOwnerFilter();
       applyDealFilterStateToUi();
 
@@ -775,6 +1237,7 @@
           <td>${formatTextOrUnknown(deal.CashCommission)}</td>
           <td>${formatTextOrUnknown(deal.EquityCommission)}</td>
           <td>${formatTextOrUnknown(deal.Retainer)}</td>
+          <td>${renderDealIntegrityCell(deal)}</td>
           <td>${renderDealActions(deal)}</td>
         `;
 
@@ -782,19 +1245,23 @@
       });
 
       if (!filteredDeals.length) {
-        body.innerHTML = '<tr><td colspan="10" class="amount-unknown">No deals match the current filters.</td></tr>';
+        body.innerHTML = '<tr><td colspan="11" class="amount-unknown">No deals match the current filters.</td></tr>';
       }
 
       renderStageFilterChips(metaRow, allCounts);
+      renderIntegrityFilterChips(portfolioDeals);
+      renderOwnershipConnectionBanner();
       updateDealFilterSummary(filteredDeals);
       const portfolioLabel = dealsFilterState.portfolio === "closed"
         ? "finished / closed deal"
         : dealsFilterState.portfolio === "all"
           ? "deal"
           : "active deal";
-      footerMeta.textContent = filteredDeals.length === portfolioDeals.length
+      const flaggedCount = portfolioDeals.filter((deal) => getDealIntegrityReport(deal).counts.total > 0).length;
+      const footerBase = filteredDeals.length === portfolioDeals.length
         ? `${allCounts.total} ${portfolioLabel}${allCounts.total === 1 ? "" : "s"} shown.`
         : `${filteredDeals.length} shown of ${allCounts.total} ${portfolioLabel}${allCounts.total === 1 ? "" : "s"}.`;
+      footerMeta.textContent = `${footerBase} ${flaggedCount} ${flaggedCount === 1 ? "deal has" : "deals have"} active irregularities.`;
     }
 
     document.addEventListener("DOMContentLoaded", () => {
@@ -804,17 +1271,25 @@
         }
         await refreshAccountingAccessState();
         loadDealsData();
+        applyRouteDealFilterFromUrl();
         setupDealFilters();
         setupAddDealForm();
         renderDeals();
+        refreshOwnershipSnapshot();
       };
       initialize();
       if (AppCore) {
-        window.addEventListener("appcore:deals-updated", renderDeals);
-        window.addEventListener("appcore:dashboard-config-updated", renderDeals);
+        window.addEventListener("appcore:deals-updated", () => {
+          clearDealIntegrityCache();
+          renderDeals();
+        });
+        window.addEventListener("appcore:dashboard-config-updated", () => {
+          refreshOwnershipSnapshot();
+        });
         window.addEventListener("appcore:graph-session-updated", async () => {
           await refreshAccountingAccessState();
           renderDeals();
+          refreshOwnershipSnapshot();
         });
       }
     });

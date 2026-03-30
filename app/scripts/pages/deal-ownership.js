@@ -1,5 +1,6 @@
 (function initDealOwnership() {
     const AppCore = window.AppCore;
+    const DealIntegrity = window.DealIntegrity || null;
     const DASHBOARD_ID = "deal-ownership";
     const STAGE_LABELS = {
         prospect: "Prospect",
@@ -12,6 +13,7 @@
     let dealsSource = [];
     let dealsMap = new Map();
     let ownershipContext = null;
+    let routeDealReference = "";
     let ownershipFilters = {
         keyword: "",
         view: "summary",
@@ -41,11 +43,24 @@
         return 'active';
     }
 
+    function getRequestedDealReference() {
+        try {
+            const params = new URLSearchParams(window.location.search || '');
+            return String(params.get('deal') || params.get('id') || '').trim();
+        } catch {
+            return '';
+        }
+    }
+
     function isActiveDeal(deal) {
         return normalizeDealLifecycleStatus(deal && (deal.lifecycleStatus || deal.dealStatus)) === 'active';
     }
 
     window.addEventListener('load', () => {
+        routeDealReference = getRequestedDealReference();
+        if (routeDealReference) {
+            ownershipFilters.keyword = routeDealReference.toLowerCase();
+        }
         setupUiBindings();
         initializeDashboard();
     });
@@ -344,10 +359,14 @@
             .replace(/'/g, '&#39;');
     }
 
-    function buildLinksCell(match) {
+    function buildLinksCell(entry) {
+        const match = entry && entry.match ? entry.match : entry;
         if (!match || !match.id) return '–';
 
-        const overviewHref = buildPageUrl("deal-details", { id: match.id });
+        const dealsHref = buildPageUrl("deals-overview", { deal: match.id });
+        const detailHref = buildPageUrl("deal-details", { id: match.id });
+        const accountingHref = buildPageUrl("accounting", { id: match.id });
+        const legalHref = buildPageUrl("legal-management", { id: match.id });
         const config = AppCore && typeof AppCore.getDashboardConfig === "function"
             ? AppCore.getDashboardConfig()
             : (window.DASHBOARD_CONFIG || {});
@@ -360,7 +379,10 @@
             dashboard = dashboards.find((entry) => String(entry.id || "").trim().toLowerCase() === dashboardId) || null;
         }
 
-        let html = `<a class="action-link" href="${overviewHref}">Deal overview</a>`;
+        let html = `<a class="action-link" href="${dealsHref}">Overview</a>`;
+        html += ` <span style="color: var(--text-dim);">·</span> <a class="action-link" href="${detailHref}">Deal record</a>`;
+        html += ` <span style="color: var(--text-dim);">·</span> <a class="action-link" href="${accountingHref}">Accounting</a>`;
+        html += ` <span style="color: var(--text-dim);">·</span> <a class="action-link" href="${legalHref}">Legal</a>`;
         if (dashboard && dashboard.id) {
             const dashHref = buildPageUrl("investor-dashboard", { dashboard: dashboard.id });
             html += ` <span style="color: var(--text-dim);">·</span> <a class="action-link" href="${dashHref}">Dashboard</a>`;
@@ -585,6 +607,71 @@
         };
     }
 
+    function buildEntryIrregularityData(entry) {
+        if (!entry) {
+            return {
+                issues: [],
+                report: null,
+                total: 0,
+            };
+        }
+
+        if (!entry.match) {
+            return {
+                issues: [{
+                    scope: 'ownership',
+                    code: 'missing_deal_record',
+                    title: 'Missing deal overview record',
+                    detail: 'Create or rename a deal record so this staffing cluster is linked to the pipeline.',
+                }],
+                report: null,
+                total: 1,
+            };
+        }
+
+        if (!DealIntegrity || typeof DealIntegrity.buildDealIntegrityReport !== 'function') {
+            return {
+                issues: [],
+                report: null,
+                total: 0,
+            };
+        }
+
+        const report = DealIntegrity.buildDealIntegrityReport(entry.match, {
+            ownershipAvailable: true,
+            ownershipEntry: entry,
+        });
+        return {
+            issues: Array.isArray(report.issues) ? report.issues : [],
+            report,
+            total: report && report.counts ? Number(report.counts.total || 0) : 0,
+        };
+    }
+
+    function buildIrregularityCell(entry) {
+        const issues = Array.isArray(entry && entry.systemIssues) ? entry.systemIssues : [];
+        if (!issues.length) {
+            return `
+                <div class="ownership-stack">
+                    <span class="ownership-badge ownership-badge-good">Connected</span>
+                    <span class="ownership-muted">Ownership, accounting, and legal are aligned for this deal.</span>
+                </div>
+            `;
+        }
+
+        const preview = issues
+            .slice(0, 3)
+            .map((issue) => issue.title)
+            .join(' · ');
+
+        return `
+            <div class="ownership-stack">
+                <span class="ownership-badge ownership-badge-warn">${issues.length} irregularit${issues.length === 1 ? 'y' : 'ies'}</span>
+                <span class="ownership-muted">${escapeHtml(preview)}</span>
+            </div>
+        `;
+    }
+
     function buildOwnershipContext() {
         const headers = rawData.length ? Object.keys(rawData[0]) : [];
         const summaries = new Map();
@@ -686,10 +773,15 @@
                 entry.coverageDetail = signal.detail;
                 entry.actionTitle = signal.actionTitle;
                 entry.actionDetail = signal.actionDetail;
+                const irregularityData = buildEntryIrregularityData(entry);
+                entry.integrityReport = irregularityData.report;
+                entry.systemIssues = irregularityData.issues;
+                entry.systemIssueCount = irregularityData.total;
+                entry.requiresAttention = entry.coverageBucket !== 'healthy' || entry.systemIssueCount > 0;
                 return entry;
             })
             .sort((a, b) => {
-                const riskOrder = a.coverageBucket === b.coverageBucket ? 0 : a.coverageBucket === 'risk' ? -1 : 1;
+                const riskOrder = a.requiresAttention === b.requiresAttention ? 0 : a.requiresAttention ? -1 : 1;
                 if (riskOrder) return riskOrder;
                 const aAssignments = Number(a.assignments || 0);
                 const bAssignments = Number(b.assignments || 0);
@@ -780,7 +872,7 @@
         const uniqueStaff = new Set(enrichedRows.map(({ row }) => getStaffLabel(row)).filter(Boolean)).size;
         const coveredDeals = context.summaryEntries.filter((entry) => entry.linkStatus === 'linked').length;
         const missingStaffingCount = context.summaryEntries.filter((entry) => entry.linkStatus === 'missing-staffing').length;
-        const atRiskCount = context.summaryEntries.filter((entry) => entry.linkStatus === 'linked' && entry.coverageBucket === 'risk').length;
+        const systemIrregularityCount = context.summaryEntries.filter((entry) => entry.systemIssueCount > 0).length;
         const unlinkedClusters = context.summaryEntries.filter((entry) => entry.linkStatus === 'unlinked').length;
 
         container.innerHTML = `
@@ -801,8 +893,8 @@
                 <div class="kpi-value" style="color: ${missingStaffingCount ? 'var(--warning)' : 'var(--success)'};">${missingStaffingCount}</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-label">At-Risk Coverage</div>
-                <div class="kpi-value" style="color: ${atRiskCount ? 'var(--warning)' : 'var(--success)'};">${atRiskCount}</div>
+                <div class="kpi-label">System Irregularities</div>
+                <div class="kpi-value" style="color: ${systemIrregularityCount ? 'var(--warning)' : 'var(--success)'};">${systemIrregularityCount}</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-label">Unlinked Clusters</div>
@@ -900,8 +992,8 @@
         if (!container || !context) return;
 
         const needsStaffing = context.summaryEntries.filter((entry) => entry.linkStatus === 'missing-staffing').slice(0, 4);
-        const atRisk = context.summaryEntries
-            .filter((entry) => entry.linkStatus === 'linked' && entry.coverageBucket === 'risk')
+        const crossSystem = context.summaryEntries
+            .filter((entry) => entry.systemIssueCount > 0)
             .slice(0, 4);
         const unlinked = context.summaryEntries.filter((entry) => entry.linkStatus === 'unlinked').slice(0, 4);
 
@@ -932,11 +1024,11 @@
                     `)}
                 </div>
                 <div class="ownership-watchlist-column">
-                    <div class="ownership-watchlist-title">At-risk coverage</div>
-                    ${renderEntries(atRisk, 'No linked deals are currently flagged for coverage risk.', (entry) => `
+                    <div class="ownership-watchlist-title">Cross-system issues</div>
+                    ${renderEntries(crossSystem, 'No linked deals are currently showing accounting or legal irregularities.', (entry) => `
                         <div class="ownership-watchlist-item">
                             <strong>${escapeHtml(getSummaryDisplayLabel(entry))}</strong>
-                            <span>${escapeHtml(entry.coverageLabel)} / ${escapeHtml(entry.actionDetail)}</span>
+                            <span>${escapeHtml((entry.systemIssues || []).slice(0, 2).map((issue) => issue.title).join(' · '))}</span>
                         </div>
                     `)}
                 </div>
@@ -1135,6 +1227,7 @@
             entry.actionTitle,
             entry.actionDetail,
             entry.stageLabel,
+            ...(entry.systemIssues || []).map((issue) => `${issue.scope} ${issue.title} ${issue.detail}`),
             ...(entry.sectors || []),
             entry.location,
             entry.fundingStage,
@@ -1159,6 +1252,15 @@
     }
 
     function buildNextActionCell(entry) {
+        if (entry && entry.systemIssueCount > 0 && Array.isArray(entry.systemIssues) && entry.systemIssues.length) {
+            const issue = entry.systemIssues[0];
+            return `
+                <div class="ownership-stack">
+                    <span class="ownership-primary">${escapeHtml(issue.title)}</span>
+                    <span class="ownership-muted">${escapeHtml(issue.detail)}</span>
+                </div>
+            `;
+        }
         return `
             <div class="ownership-stack">
                 <span class="ownership-primary">${escapeHtml(entry.actionTitle)}</span>
@@ -1204,7 +1306,7 @@
             .map((group) => {
                 const groupEntries = Array.isArray(group.entries) ? group.entries.slice() : [];
                 groupEntries.sort((a, b) => {
-                    const riskOrder = a.coverageBucket === b.coverageBucket ? 0 : a.coverageBucket === 'risk' ? -1 : 1;
+                    const riskOrder = a.requiresAttention === b.requiresAttention ? 0 : a.requiresAttention ? -1 : 1;
                     if (riskOrder) return riskOrder;
                     const aAssignments = Number(a.assignments || 0);
                     const bAssignments = Number(b.assignments || 0);
@@ -1212,7 +1314,7 @@
                     return getSummaryDisplayLabel(a).localeCompare(getSummaryDisplayLabel(b));
                 });
 
-                const attentionCount = groupEntries.filter((entry) => entry.coverageBucket !== 'healthy').length;
+                const attentionCount = groupEntries.filter((entry) => entry.requiresAttention).length;
                 const dealCount = groupEntries.length;
                 const stages = new Map();
                 groupEntries.forEach((entry) => {
@@ -1230,7 +1332,7 @@
                     entries: groupEntries,
                     dealCount,
                     attentionCount,
-                    healthyCount: groupEntries.filter((entry) => entry.coverageBucket === 'healthy').length,
+                    healthyCount: groupEntries.filter((entry) => !entry.requiresAttention).length,
                     stageSummary,
                 };
             })
@@ -1320,6 +1422,7 @@
                     <th>Pipeline</th>
                     <th>Staffing Snapshot</th>
                     <th>Coverage</th>
+                    <th>Irregularities</th>
                     <th>Next Action</th>
                     <th>Links</th>
                 </tr>
@@ -1332,7 +1435,7 @@
             body.innerHTML = filteredGroups.length
                 ? filteredGroups.map((group) => `
                     <tr class="ownership-group-row">
-                        <td colspan="6">${buildOwnerGroupHeader(group)}</td>
+                        <td colspan="7">${buildOwnerGroupHeader(group)}</td>
                     </tr>
                     ${group.entries.map((entry) => `
                         <tr class="ownership-group-deal-row">
@@ -1340,12 +1443,13 @@
                             <td class="ownership-rich-cell">${buildPipelineCell(entry.match)}</td>
                             <td class="ownership-rich-cell">${buildStaffingSnapshotCell(entry)}</td>
                             <td class="ownership-rich-cell">${buildCoverageCell(entry)}</td>
+                            <td class="ownership-rich-cell">${buildIrregularityCell(entry)}</td>
                             <td class="ownership-rich-cell">${buildNextActionCell(entry)}</td>
-                            <td class="ownership-rich-cell">${buildLinksCell(entry.match)}</td>
+                            <td class="ownership-rich-cell">${buildLinksCell(entry)}</td>
                         </tr>
                     `).join('')}
                 `).join('')
-                : '<tr><td colspan="6" class="ownership-rich-cell">No owner groups match the current filters.</td></tr>';
+                : '<tr><td colspan="7" class="ownership-rich-cell">No owner groups match the current filters.</td></tr>';
 
             renderOwnershipFilterSummary(filteredGroups.length, scopedGroups.length);
             return;
@@ -1353,7 +1457,7 @@
 
         if (ownershipFilters.view === 'rows') {
             const headers = context.headers;
-            head.innerHTML = `<tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}<th>Linked Deal</th><th>Pipeline</th><th>Staffing Snapshot</th><th>Coverage</th><th>Next Action</th><th>Links</th></tr>`;
+            head.innerHTML = `<tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}<th>Linked Deal</th><th>Pipeline</th><th>Staffing Snapshot</th><th>Coverage</th><th>Irregularities</th><th>Next Action</th><th>Links</th></tr>`;
 
             const filteredRows = context.enrichedRows.filter(({ row, summaryKey, primaryDealLabel }) => {
                 const entry = context.summaryEntriesByKey.get(summaryKey);
@@ -1377,12 +1481,13 @@
                             <td class="ownership-rich-cell">${buildPipelineCell(match)}</td>
                             <td class="ownership-rich-cell">${buildStaffingSnapshotCell(summary)}</td>
                             <td class="ownership-rich-cell">${buildCoverageCell(entry)}</td>
+                            <td class="ownership-rich-cell">${buildIrregularityCell(entry)}</td>
                             <td class="ownership-rich-cell">${buildNextActionCell(entry)}</td>
-                            <td class="ownership-rich-cell">${buildLinksCell(match)}</td>
+                            <td class="ownership-rich-cell">${buildLinksCell(entry)}</td>
                         </tr>
                     `;
                 }).join('')
-                : `<tr><td colspan="${context.headers.length + 6}" class="ownership-rich-cell">No staffing rows match the current filters.</td></tr>`;
+                : `<tr><td colspan="${context.headers.length + 7}" class="ownership-rich-cell">No staffing rows match the current filters.</td></tr>`;
 
             renderOwnershipFilterSummary(filteredRows.length, context.enrichedRows.length);
             return;
@@ -1394,6 +1499,7 @@
                 <th>Pipeline</th>
                 <th>Staffing Snapshot</th>
                 <th>Coverage</th>
+                <th>Irregularities</th>
                 <th>Next Action</th>
                 <th>Links</th>
             </tr>
@@ -1407,11 +1513,12 @@
                     <td class="ownership-rich-cell">${buildPipelineCell(entry.match)}</td>
                     <td class="ownership-rich-cell">${buildStaffingSnapshotCell(entry)}</td>
                     <td class="ownership-rich-cell">${buildCoverageCell(entry)}</td>
+                    <td class="ownership-rich-cell">${buildIrregularityCell(entry)}</td>
                     <td class="ownership-rich-cell">${buildNextActionCell(entry)}</td>
-                    <td class="ownership-rich-cell">${buildLinksCell(entry.match)}</td>
+                    <td class="ownership-rich-cell">${buildLinksCell(entry)}</td>
                 </tr>
             `).join('')
-            : '<tr><td colspan="6" class="ownership-rich-cell">No coverage rows match the current filters.</td></tr>';
+            : '<tr><td colspan="7" class="ownership-rich-cell">No coverage rows match the current filters.</td></tr>';
 
         renderOwnershipFilterSummary(filteredEntries.length, context.summaryEntries.length);
     }
