@@ -17,6 +17,7 @@ const DEFAULT_DELEGATED_SCOPES = [
   "Files.ReadWrite.All",
   "Sites.ReadWrite.All",
   "User.Read",
+  "Mail.Read",
 ];
 const DEFAULT_ENTRY_PAGE_SEGMENTS = ["pages", "sharedrive-folders.html"];
 const UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB, multiple of 320 KiB.
@@ -265,6 +266,29 @@ function writeJsonStore(key, value) {
   const payload = JSON.stringify(value && typeof value === "object" ? value : {}, null, 2);
   fs.writeFileSync(filePath, payload, "utf8");
   return true;
+}
+
+function decodeJwtPayload(token) {
+  const encoded = String(token || "").split(".")[1] || "";
+  if (!encoded) return null;
+
+  try {
+    const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function tokenHasScope(token, requiredScope) {
+  const claims = decodeJwtPayload(token);
+  const scopes = String(claims && claims.scp || "")
+    .split(/\s+/)
+    .map((entry) => String(entry || "").trim().toLowerCase())
+    .filter(Boolean);
+  return scopes.includes(String(requiredScope || "").trim().toLowerCase());
 }
 
 function toBase64Url(value) {
@@ -581,6 +605,87 @@ function normalizeDriveItem(item) {
         ? item.parentReference.path
         : "",
     downloadUrl: item && item["@microsoft.graph.downloadUrl"] ? item["@microsoft.graph.downloadUrl"] : "",
+  };
+}
+
+function normalizeGraphEmailAddress(entry) {
+  const emailAddress = entry && entry.emailAddress && typeof entry.emailAddress === "object"
+    ? entry.emailAddress
+    : {};
+  return {
+    name: String(emailAddress.name || "").trim(),
+    address: String(emailAddress.address || "").trim(),
+  };
+}
+
+function normalizeOutlookRecipients(recipients) {
+  return (Array.isArray(recipients) ? recipients : [])
+    .map((entry) => normalizeGraphEmailAddress(entry))
+    .filter((entry) => entry.address);
+}
+
+function normalizeOutlookMessage(message) {
+  return {
+    id: String(message && message.id || "").trim(),
+    subject: String(message && message.subject || "").trim(),
+    bodyPreview: String(message && message.bodyPreview || "").trim(),
+    receivedDateTime: String(message && message.receivedDateTime || "").trim(),
+    webLink: String(message && message.webLink || "").trim(),
+    isRead: Boolean(message && message.isRead),
+    from: normalizeGraphEmailAddress(message && message.from),
+    toRecipients: normalizeOutlookRecipients(message && message.toRecipients),
+    ccRecipients: normalizeOutlookRecipients(message && message.ccRecipients),
+  };
+}
+
+async function listOutlookMessages({ accessToken, top, search }) {
+  let token = await resolveGraphAccessToken(accessToken);
+  if (!tokenHasScope(token, "Mail.Read") && !String(accessToken || "").trim() && sessionRefreshToken) {
+    try {
+      token = await refreshAccessToken(sessionRefreshToken);
+    } catch {
+      // Ignore refresh failure and surface the clearer message below.
+    }
+  }
+  if (!tokenHasScope(token, "Mail.Read")) {
+    throw new Error("Microsoft sign-in is missing Mail.Read. Click 'Sign in with Microsoft' again and approve Outlook inbox access.");
+  }
+  const requestedTop = Number(top || 50);
+  const safeTop = Number.isFinite(requestedTop)
+    ? Math.min(Math.max(Math.floor(requestedTop), 1), 100)
+    : 50;
+  const searchTerm = String(search || "").trim();
+  const params = new URLSearchParams({
+    $top: String(safeTop),
+    $select: [
+      "id",
+      "subject",
+      "bodyPreview",
+      "receivedDateTime",
+      "webLink",
+      "isRead",
+      "from",
+      "toRecipients",
+      "ccRecipients",
+    ].join(","),
+  });
+  if (searchTerm) {
+    params.set("$search", `"${searchTerm.replace(/"/g, '\\"')}"`);
+  } else {
+    params.set("$orderby", "receivedDateTime DESC");
+  }
+  const url = `https://graph.microsoft.com/v1.0/me/messages?${params.toString()}`;
+  const payload = await fetchJson(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      ...(searchTerm ? { ConsistencyLevel: "eventual" } : {}),
+    },
+  });
+  const values = Array.isArray(payload && payload.value) ? payload.value : [];
+  return {
+    items: values.map((message) => normalizeOutlookMessage(message)),
+    fetchedAt: new Date().toISOString(),
   };
 }
 
@@ -1346,6 +1451,20 @@ app.whenReady().then(() => {
       return {
         ok: false,
         error: error instanceof Error ? error.message : "Failed to read graph session.",
+      };
+    }
+  });
+
+  ipcMain.handle("plutus:graph:outlook:list-messages", async (_event, payload) => {
+    try {
+      return {
+        ok: true,
+        data: await listOutlookMessages(payload || {}),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to load Outlook messages.",
       };
     }
   });

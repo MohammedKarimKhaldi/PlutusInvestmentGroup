@@ -65,7 +65,16 @@
           </div>
           <div class="toolbar-row">
             <button class="btn" id="btn-toggle-no-retainer" type="button">Hide 0 / no retainer</button>
-            <button class="btn" id="btn-toggle-group-payments" type="button">Group by incoming payments</button>
+            <label class="search-label">
+              Group by
+              <select id="accounting-group-mode">
+                <option value="none">Standard order</option>
+                <option value="incoming_payments">Next incoming payment</option>
+                <option value="invoice_status">Latest invoice status</option>
+                <option value="invoice_sent_month">Invoice sent month</option>
+                <option value="invoice_paid_month">Invoice received / paid month</option>
+              </select>
+            </label>
             <span class="hint" id="accounting-view-hint">Showing all companies in standard order.</span>
           </div>
         </div>
@@ -161,10 +170,12 @@
         <div class="invoice-history" id="invoice-history-panel" hidden>
           <div class="invoice-history-head">
             <div>
-              <h2>Historical Invoices (PDF)</h2>
-              <p class="hint" id="invoice-history-subtitle">Attach, track, view, and remove invoice PDFs for this deal. Save changes to sync them online.</p>
+              <h2>Invoices & Send Queue</h2>
+              <p class="hint" id="invoice-history-subtitle">Track prepared, sent, and paid invoices for this deal, and link PDFs when available.</p>
             </div>
             <div class="btn-row">
+              <button class="btn" type="button" id="btn-add-sent-invoice">Add sent / waiting</button>
+              <button class="btn" type="button" id="btn-add-paid-invoice">Add received / paid</button>
               <button class="btn" type="button" id="btn-load-invoice-pdf">Load invoice PDF</button>
             </div>
           </div>

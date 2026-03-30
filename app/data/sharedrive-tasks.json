@@ -10,7 +10,7 @@
     "writerLabel": "",
     "azureClientId": "cdf89120-ec36-4243-9c1e-fb282c894c4c",
     "azureTenantId": "aa9a23e4-5bf4-4ecd-a0ed-97ed9cda7487",
-    "graphScopes": "offline_access Files.ReadWrite.All Sites.ReadWrite.All User.Read"
+    "graphScopes": "offline_access Files.ReadWrite.All Sites.ReadWrite.All User.Read Mail.Read"
   },
   "deals": {
     "enabled": false,

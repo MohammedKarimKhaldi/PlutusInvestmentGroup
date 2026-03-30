@@ -61,6 +61,9 @@
                             configuration...</p>
                     </div>
                     <div class="header-right dashboard-hero-actions">
+                        <button class="btn btn-ghost" id="btn-refresh-dashboard" type="button" title="Refresh dashboard data from the source workbook">
+                            Refresh data
+                        </button>
                         <div class="dashboard-export" id="dashboard-export">
                             <button class="btn btn-ghost" id="btn-export-html" type="button" title="Download a standalone snapshot of the current dashboard" aria-haspopup="true" aria-expanded="false">
                                 📤 Export HTML
@@ -71,8 +74,9 @@
                                     <input id="export-include-investor-details" type="checkbox" checked />
                                     <span>Include investor names and emails</span>
                                 </label>
-                                <p class="dashboard-export-hint">Turn this off to export an anonymized investor snapshot.</p>
+                                <p class="dashboard-export-hint">Use the main download for full or anonymized export. Use the extra button below to keep names but remove all emails.</p>
                                 <div class="dashboard-export-actions">
+                                    <button class="btn" id="btn-export-html-names-only" type="button">Names, no emails</button>
                                     <button class="btn btn-primary" id="btn-export-html-confirm" type="button">Download HTML</button>
                                 </div>
                             </div>
@@ -170,7 +174,7 @@
                             <div class="stat-value warning" id="k-replied">0</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-label">Meetings</div>
+                            <div class="stat-label" id="k-meetings-label">Meetings</div>
                             <div class="stat-value info" id="k-meetings">0</div>
                         </div>
                     </div>

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Outlook Investors</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/outlook-investor-sync.css" />
+  <script src="../scripts/shared/app-config.js"></script>
+</head>
+
+<body data-page-id="outlook-investor-sync">
+  <div class="shell">
+    <div class="layout">
+      <aside class="sidebar-nav" data-sidebar-nav></aside>
+
+      <div class="main-column">
+        <div class="header">
+          <div class="title-block">
+            <h1>Outlook Investors</h1>
+            <p>Connect Outlook, review recent emails, and attach selected recipients to a deal with a tracked contact status.</p>
+          </div>
+          <div class="header-actions">
+            <div class="pill"><span class="dot"></span><span>Outlook + deals</span></div>
+            <button class="btn btn-primary" type="button" id="sign-in-btn">Sign in with Microsoft</button>
+            <button class="btn" type="button" id="reload-messages-btn">Run last search</button>
+          </div>
+        </div>
+
+        <div class="panel connection-panel">
+          <div class="panel-heading-row">
+            <div>
+              <h2>Connection</h2>
+              <p id="connection-summary">Checking Microsoft session…</p>
+            </div>
+            <span id="connection-status" class="status-text">Idle</span>
+          </div>
+          <div class="connection-grid">
+            <div class="connection-card">
+              <div class="connection-label">Connected user</div>
+              <div class="connection-value" id="connected-user-name">No user connected</div>
+              <div class="connection-meta" id="connected-user-email">Sign in from this page or Workspace connection.</div>
+            </div>
+            <div class="connection-card">
+              <div class="connection-label">Selected deal</div>
+              <div class="connection-value" id="selected-deal-label">No deal selected</div>
+              <div class="connection-meta" id="selected-deal-meta">Choose a deal below to store investor contacts.</div>
+            </div>
+          </div>
+          <div id="device-code-box" class="device-code-box" hidden>
+            <div class="device-code-title">Device code sign-in</div>
+            <div class="device-code-message" id="device-code-message">Follow the prompt to finish signing in.</div>
+            <div class="device-code-row">
+              <div class="device-code-label">Code</div>
+              <div class="device-code-value" id="device-code-value">—</div>
+            </div>
+            <div class="device-code-row">
+              <div class="device-code-label">Verify</div>
+              <a class="device-code-link" id="device-code-link" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener noreferrer">
+                https://microsoft.com/devicelogin
+              </a>
+            </div>
+            <div class="device-code-status" id="device-code-status">Waiting for authorization…</div>
+          </div>
+        </div>
+
+        <div class="meta-row" id="deal-investor-metrics"></div>
+
+        <div class="content-grid">
+          <div class="panel">
+            <div class="panel-heading-row">
+              <div>
+                <h2>Recent Emails</h2>
+                <p>Choose an Outlook email to import recipients from the To and Cc lists.</p>
+              </div>
+              <span id="messages-status" class="status-text">Idle</span>
+            </div>
+            <div class="toolbar-row message-toolbar">
+              <label class="wide">
+                Search Outlook before loading emails
+                <input id="message-search" type="search" placeholder="Type a sender, subject, or keyword" />
+              </label>
+              <button class="btn btn-primary" type="button" id="search-messages-btn">Search Outlook</button>
+              <div class="message-results-summary" id="message-results-summary">No emails loaded</div>
+            </div>
+            <div class="message-picker-row">
+              <label class="wide">
+                Source email
+                <select id="message-select">
+                  <option value="">Filter or load emails first</option>
+                </select>
+              </label>
+            </div>
+            <div class="message-selection-copy" id="message-selection-copy">
+              Search Outlook first, then choose the email you want to use for contacts.
+            </div>
+            <div id="message-empty" class="empty-state" hidden>Search Outlook to load matching emails.</div>
+            <div id="message-list" class="message-list"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-heading-row">
+              <div>
+                <h2>Recipients To Add</h2>
+                <p>Select Outlook recipients, or add an email manually when it was not on the message.</p>
+              </div>
+              <span id="recipient-count" class="status-text">0 selected</span>
+            </div>
+            <div class="selected-message-card" id="selected-message-card">
+              <div class="selected-message-title" id="selected-message-title">No email selected</div>
+              <div class="selected-message-meta" id="selected-message-meta">Pick an email on the left to review its recipients.</div>
+            </div>
+            <div id="recipient-empty" class="empty-state">Select an email to see recipients.</div>
+            <div id="recipient-list" class="recipient-list"></div>
+
+            <form id="manual-recipient-form" class="manual-recipient-form">
+              <label>
+                Name
+                <input id="manual-recipient-name" type="text" placeholder="Optional contact name" />
+              </label>
+              <label>
+                Email
+                <input id="manual-recipient-email" type="email" placeholder="investor@example.com" required />
+              </label>
+              <button class="btn" type="submit">Add email</button>
+            </form>
+
+            <div id="manual-recipient-list" class="manual-recipient-list"></div>
+          </div>
+        </div>
+
+        <div class="content-grid assignment-grid">
+          <div class="panel">
+            <div class="panel-heading-row">
+              <div>
+                <h2>Assign To Deal</h2>
+                <p>Save the selected recipients onto a deal as tracked investors.</p>
+              </div>
+            </div>
+            <div class="deal-form-grid">
+              <label>
+                Deal
+                <select id="deal-select"></select>
+              </label>
+              <label>
+                Contact status
+                <select id="contact-status-select">
+                  <option value="not-contacted">Not contacted</option>
+                  <option value="queued">Queued</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="follow-up">Follow up</option>
+                  <option value="replied">Replied</option>
+                  <option value="invested">Invested</option>
+                  <option value="passed">Passed</option>
+                </select>
+              </label>
+            </div>
+            <label class="deal-form-full">
+              Notes
+              <textarea id="assignment-notes" rows="3" placeholder="Optional context to save alongside these investors"></textarea>
+            </label>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" id="save-selection-btn">Add selected investors to deal</button>
+              <span id="assignment-status" class="form-status"></span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-heading-row">
+              <div>
+                <h2>Tracked Investors</h2>
+                <p>Review and update the investor contact statuses already stored on the selected deal.</p>
+              </div>
+              <a class="btn" href="#" id="open-deal-btn">Open deal</a>
+            </div>
+            <div id="deal-investors-empty" class="empty-state">Select a deal to review saved investors.</div>
+            <div id="deal-investors-list" class="deal-investors-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../scripts/shared/layout.js"></script>
+  <script src="../scripts/shared/data-loader.js"></script>
+  <script src="../scripts/shared/core.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/outlook-investor-sync.js"></script>
+</body>
+
+</html>

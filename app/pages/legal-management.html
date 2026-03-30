@@ -41,6 +41,14 @@
               Search
               <input id="legal-search" type="search" placeholder="Find by deal or company..." />
             </label>
+            <label>
+              Retainer
+              <select id="legal-retainer-filter">
+                <option value="all">All deals</option>
+                <option value="with-retainer">With retainer</option>
+                <option value="no-retainer">0 / no retainer</option>
+              </select>
+            </label>
             <button class="btn" id="btn-toggle-missing-legal" type="button">Show only missing legal</button>
             <span class="hint" id="legal-status-line">No unsaved changes.</span>
           </div>
@@ -52,6 +60,7 @@
               <tr>
                 <th>Deal</th>
                 <th>Company</th>
+                <th>Retainer</th>
                 <th>Links</th>
                 <th>Status</th>
                 <th>Actions</th>

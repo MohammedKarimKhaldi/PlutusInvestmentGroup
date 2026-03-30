@@ -7,10 +7,11 @@ let currentSearch = "";
 let selectedDealReference = "";
 let singleDealMode = false;
 let hideNoRetainerCompanies = false;
-let groupByIncomingPayments = false;
+let accountingGroupingMode = "none";
 const DEFAULT_CURRENCY = "GBP";
 const COMMON_CURRENCIES = ["GBP", "USD", "EUR", "AED", "CHF"];
 const PAYMENT_INTERVAL_OPTIONS = [1, 2, 3, 6, 12];
+const AUTO_PREPARE_LEAD_MONTHS = 1;
 const INVOICE_SHAREDRIVE_URL_STORAGE_KEY = "invoice_sharedrive_url_v1";
 const invoicePickerState = {
   shareUrl: "",
@@ -33,10 +34,17 @@ const INVOICE_TEMPLATE_FILE = "invoice-template.docx";
 const INVOICE_STATUS_OPTIONS = [
   { value: "draft", label: "Draft" },
   { value: "prepared", label: "Prepared" },
-  { value: "sent", label: "Sent" },
+  { value: "sent", label: "Sent / Waiting" },
   { value: "part_paid", label: "Part paid" },
-  { value: "paid", label: "Paid" },
+  { value: "paid", label: "Received / Paid" },
   { value: "cancelled", label: "Cancelled" },
+];
+const ACCOUNTING_GROUPING_OPTIONS = [
+  { value: "none", label: "Standard order" },
+  { value: "incoming_payments", label: "Next incoming payment" },
+  { value: "invoice_status", label: "Latest invoice status" },
+  { value: "invoice_sent_month", label: "Invoice sent month" },
+  { value: "invoice_paid_month", label: "Invoice received / paid month" },
 ];
 
 function normalizeValue(value) {
@@ -187,10 +195,43 @@ function buildCurrencyOptionsHtml(selectedCurrency) {
 }
 
 function getRetainerMonthly(deal) {
+  if (AppCore && typeof AppCore.getDealRetainerRawValue === "function") {
+    return AppCore.getDealRetainerRawValue(deal);
+  }
   if (!deal || typeof deal !== "object") return "";
   if (deal.retainerMonthly != null && String(deal.retainerMonthly).trim()) return String(deal.retainerMonthly).trim();
   if (deal.Retainer != null && String(deal.Retainer).trim()) return String(deal.Retainer).trim();
   return "";
+}
+
+function getDealRetainerState(deal) {
+  if (AppCore && typeof AppCore.getDealRetainerState === "function") {
+    return AppCore.getDealRetainerState(deal);
+  }
+  const rawValue = getRetainerMonthly(deal);
+  const amount = parseAmount(rawValue);
+  const hasRetainer = amount > 0;
+  return {
+    rawValue,
+    amount: hasRetainer ? amount : 0,
+    hasRetainer,
+    bucket: hasRetainer ? "with-retainer" : "no-retainer",
+    label: hasRetainer ? "With retainer" : "0 / no retainer",
+  };
+}
+
+function sortDealsByRetainerState(deals, fallbackComparator) {
+  if (AppCore && typeof AppCore.sortDealsByRetainerState === "function") {
+    return AppCore.sortDealsByRetainerState(deals, fallbackComparator);
+  }
+  return (Array.isArray(deals) ? deals.slice() : []).sort((left, right) => {
+    const leftState = getDealRetainerState(left);
+    const rightState = getDealRetainerState(right);
+    if (leftState.hasRetainer !== rightState.hasRetainer) {
+      return leftState.hasRetainer ? -1 : 1;
+    }
+    return typeof fallbackComparator === "function" ? fallbackComparator(left, right) : 0;
+  });
 }
 
 function normalizePaymentIntervalMonths(value) {
@@ -225,6 +266,9 @@ function getRetainerNextPaymentDate(deal) {
 }
 
 function hasPositiveRetainer(deal) {
+  if (AppCore && typeof AppCore.hasPositiveRetainer === "function") {
+    return AppCore.hasPositiveRetainer(deal);
+  }
   return parseAmount(getRetainerMonthly(deal)) > 0;
 }
 
@@ -330,6 +374,8 @@ function sanitizeAccountingDraftState() {
     if (!deal || typeof deal !== "object") return;
     deal.contacts = normalizeDealContacts(deal);
     syncLegacyPrimaryContactFields(deal);
+    deal.invoiceDraft = normalizeInvoiceDraft(deal);
+    deal.invoices = normalizeDealInvoices(deal);
   });
 }
 
@@ -371,15 +417,17 @@ function updateMetaRow(filteredDeals) {
     return;
   }
 
-  const withRetainer = allDeals.filter((deal) => getRetainerMonthly(deal)).length;
-  const withSchedule = allDeals.filter((deal) => Boolean(getNextScheduledPaymentDateObject(deal))).length;
+  const withRetainer = allDeals.filter((deal) => hasPositiveRetainer(deal)).length;
+  const noRetainer = Math.max(allDeals.length - withRetainer, 0);
+  const withSchedule = allDeals.filter((deal) => hasPositiveRetainer(deal) && Boolean(getNextScheduledPaymentDateObject(deal))).length;
   const invoiceStats = getInvoiceSummaryStats(allDeals);
 
   row.innerHTML = [
     `<div class="chip"><strong>${allDeals.length}</strong> deals shown</div>`,
     `<div class="chip"><strong>${withRetainer}</strong> with retainer</div>`,
+    `<div class="chip"><strong>${noRetainer}</strong> 0 / no retainer</div>`,
     `<div class="chip"><strong>${withSchedule}</strong> with schedule</div>`,
-    `<div class="chip"><strong>${invoiceStats.totalInvoices}</strong> invoices linked</div>`,
+    `<div class="chip"><strong>${invoiceStats.totalInvoices}</strong> invoice records</div>`,
     `<div class="chip"><strong>${invoiceStats.outstanding}</strong> awaiting payment</div>`,
     `<div class="chip"><strong>${invoiceStats.overdue}</strong> overdue</div>`,
     `<div class="chip"><strong>${invoiceStats.paid}</strong> paid</div>`,
@@ -389,7 +437,7 @@ function updateMetaRow(filteredDeals) {
 
 function updateViewControls() {
   const noRetainerBtn = document.getElementById("btn-toggle-no-retainer");
-  const groupBtn = document.getElementById("btn-toggle-group-payments");
+  const groupSelect = document.getElementById("accounting-group-mode");
   const hintEl = document.getElementById("accounting-view-hint");
 
   if (noRetainerBtn) {
@@ -397,15 +445,24 @@ function updateViewControls() {
     noRetainerBtn.classList.toggle("is-active", hideNoRetainerCompanies);
   }
 
-  if (groupBtn) {
-    groupBtn.textContent = groupByIncomingPayments ? "Ungroup incoming payments" : "Group by incoming payments";
-    groupBtn.classList.toggle("is-active", groupByIncomingPayments);
+  if (groupSelect) {
+    groupSelect.value = normalizeAccountingGroupingMode(accountingGroupingMode);
   }
 
   if (hintEl) {
     const parts = [];
-    parts.push(hideNoRetainerCompanies ? "Zero/no-retainer companies hidden." : "Showing all companies.");
-    parts.push(groupByIncomingPayments ? "Grouped by next incoming payment date." : "Standard company order.");
+    parts.push(hideNoRetainerCompanies ? "0 / no retainer companies hidden." : "Retainer deals shown first, then 0 / no retainer deals.");
+    if (accountingGroupingMode === "incoming_payments") {
+      parts.push("Grouped by next incoming payment date.");
+    } else if (accountingGroupingMode === "invoice_status") {
+      parts.push("Grouped by the latest invoice status on each deal.");
+    } else if (accountingGroupingMode === "invoice_sent_month") {
+      parts.push("Grouped by the month invoices were sent.");
+    } else if (accountingGroupingMode === "invoice_paid_month") {
+      parts.push("Grouped by the month invoices were received / paid.");
+    } else {
+      parts.push("Standard company order.");
+    }
     hintEl.textContent = parts.join(" ");
   }
 }
@@ -682,8 +739,10 @@ function getVisibleDeals() {
     ? filtered.filter((deal) => hasPositiveRetainer(deal))
     : filtered;
 
-  retainersFiltered.sort((a, b) => normalizeValue(a.company || a.name).localeCompare(normalizeValue(b.company || b.name)));
-  return retainersFiltered;
+  return sortDealsByRetainerState(
+    retainersFiltered,
+    (a, b) => normalizeValue(a.company || a.name).localeCompare(normalizeValue(b.company || b.name)),
+  );
 }
 
 function findDealByReference(reference) {
@@ -804,9 +863,54 @@ function normalizeDateInput(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
 }
 
+function formatDateForStorage(value) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return "";
+  const year = String(value.getFullYear()).padStart(4, "0");
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function buildMonthKey(year, monthIndex) {
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) return "";
+  return `${String(year).padStart(4, "0")}-${String(monthIndex + 1).padStart(2, "0")}`;
+}
+
+function getMonthKeyFromDateValue(value) {
+  const raw = normalizeDateInput(value);
+  if (!raw) return "";
+  return raw.slice(0, 7);
+}
+
+function buildMonthLabelFromKey(monthKey) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || "").trim());
+  if (!match) return "";
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) return "";
+  return new Date(year, monthIndex, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
 function normalizeInvoiceStatus(value) {
   const raw = String(value || "").trim().toLowerCase();
   return INVOICE_STATUS_OPTIONS.some((option) => option.value === raw) ? raw : "draft";
+}
+
+function normalizeAccountingGroupingMode(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return ACCOUNTING_GROUPING_OPTIONS.some((option) => option.value === raw) ? raw : "none";
+}
+
+function hasInvoiceRecordPayload(entry) {
+  if (!entry || typeof entry !== "object") return false;
+  if (String(entry.url || "").trim()) return true;
+  return Boolean(
+    String(entry.invoiceNumber || "").trim() ||
+    normalizeDateInput(entry.invoiceDate) ||
+    normalizeDateInput(entry.dueDate) ||
+    String(entry.description || "").trim() ||
+    entry.readyToSend,
+  );
 }
 
 function normalizeDealInvoices(deal) {
@@ -825,24 +929,57 @@ function normalizeDealInvoices(deal) {
           sentDate: "",
           dueDate: "",
           paidDate: "",
+          invoiceNumber: "",
+          invoiceDate: "",
+          description: "",
+          clientName: "",
+          addressLine1: "",
+          addressLine2: "",
+          country: "",
+          currency: getDealCurrency(deal),
+          amount: "",
+          vatRate: "",
+          autoGenerated: false,
+          readyToSend: false,
+          billingMonthKey: "",
+          generatedAt: "",
         };
       }
 
       if (!entry || typeof entry !== "object") return null;
       const url = String(entry.url || entry.webUrl || "").trim();
       const name = String(entry.name || entry.fileName || "").trim() || (url.split("/").pop() || "Invoice.pdf");
+      const status = normalizeInvoiceStatus(entry.status);
       return {
         name,
         url,
         parentPath: String(entry.parentPath || "").trim(),
         addedAt: String(entry.addedAt || "").trim(),
-        status: normalizeInvoiceStatus(entry.status),
+        status,
         sentDate: normalizeDateInput(entry.sentDate || entry.invoiceDate || entry.sentAt),
         dueDate: normalizeDateInput(entry.dueDate),
         paidDate: normalizeDateInput(entry.paidDate || entry.payDate || entry.paidAt),
+        invoiceNumber: String(entry.invoiceNumber || "").trim(),
+        invoiceDate: normalizeDateInput(entry.invoiceDate),
+        description: String(entry.description || "").trim(),
+        clientName: String(entry.clientName || entry.client || "").trim(),
+        addressLine1: String(entry.addressLine1 || "").trim(),
+        addressLine2: String(entry.addressLine2 || "").trim(),
+        country: String(entry.country || "").trim(),
+        currency: normalizeCurrencyCode(entry.currency || getDealCurrency(deal), getDealCurrency(deal)),
+        amount: formatAmountInput(entry.amount),
+        vatRate: formatRateInput(entry.vatRate),
+        autoGenerated: Boolean(entry.autoGenerated),
+        readyToSend: Boolean(entry.readyToSend || status === "prepared"),
+        billingMonthKey: String(entry.billingMonthKey || "").trim(),
+        generatedAt: String(entry.generatedAt || entry.addedAt || "").trim(),
       };
     })
-    .filter((entry) => entry && entry.url && (isPdfReference(entry.url) || isPdfReference(entry.name)));
+    .filter((entry) => {
+      if (!entry) return false;
+      if (entry.url) return isPdfReference(entry.url) || isPdfReference(entry.name);
+      return hasInvoiceRecordPayload(entry);
+    });
 
   return normalized;
 }
@@ -885,6 +1022,297 @@ function ensureDealInvoices(deal) {
   const normalized = normalizeDealInvoices(deal);
   deal.invoices = normalized;
   return normalized;
+}
+
+function getInvoiceMonthKey(invoice) {
+  if (!invoice || typeof invoice !== "object") return "";
+  const explicit = String(invoice.billingMonthKey || "").trim();
+  if (/^\d{4}-\d{2}$/.test(explicit)) return explicit;
+  return (
+    getMonthKeyFromDateValue(invoice.invoiceDate) ||
+    getMonthKeyFromDateValue(invoice.dueDate) ||
+    getMonthKeyFromDateValue(invoice.sentDate) ||
+    getMonthKeyFromDateValue(invoice.paidDate) ||
+    ""
+  );
+}
+
+function buildInvoiceRecordName(invoice) {
+  const number = String(invoice && invoice.invoiceNumber || "").trim();
+  const description = String(invoice && invoice.description || "").trim();
+  const monthLabel = buildMonthLabelFromKey(getInvoiceMonthKey(invoice));
+  if (number && monthLabel) return `Invoice ${number} · ${monthLabel}`;
+  if (number) return `Invoice ${number}`;
+  if (description) return description;
+  if (monthLabel) return `Invoice · ${monthLabel}`;
+  return String(invoice && invoice.name || "").trim() || "Invoice";
+}
+
+function buildInvoiceDraftFromRecord(deal, invoice) {
+  if (!deal || !invoice || typeof invoice !== "object") return null;
+  const invoiceDate = normalizeDateInput(invoice.invoiceDate) || formatDateForStorage(new Date());
+  const dueDate = normalizeDateInput(invoice.dueDate) || invoiceDate;
+  const monthLabel = buildMonthLabelFromKey(getInvoiceMonthKey(invoice)) || formatMonthYear(invoiceDate);
+  return {
+    clientName: String(invoice.clientName || deal.company || deal.name || "").trim(),
+    addressLine1: String(invoice.addressLine1 || "").trim(),
+    addressLine2: String(invoice.addressLine2 || "").trim(),
+    country: String(invoice.country || "").trim(),
+    invoiceNumber: String(invoice.invoiceNumber || buildDefaultInvoiceNumber(invoiceDate)).trim(),
+    invoiceDate,
+    dueDate,
+    description: String(invoice.description || `Retainer Plutus - ${monthLabel}`).trim(),
+    currency: normalizeCurrencyCode(invoice.currency || getDealCurrency(deal), getDealCurrency(deal)),
+    amount: formatAmountInput(
+      invoice.amount != null && String(invoice.amount).trim() !== ""
+        ? invoice.amount
+        : getRetainerMonthly(deal),
+    ),
+    vatRate: formatRateInput(invoice.vatRate),
+  };
+}
+
+function buildManualInvoiceRecord(deal, preset) {
+  if (!deal || typeof deal !== "object") return null;
+  const draft = ensureInvoiceDraft(deal) || {};
+  const today = formatDateForStorage(new Date());
+  const invoiceDate = normalizeDateInput(draft.invoiceDate) || today;
+  const dueDate = normalizeDateInput(draft.dueDate) || invoiceDate;
+  const billingMonthKey = getMonthKeyFromDateValue(invoiceDate || dueDate);
+  const isPaidPreset = preset === "paid";
+  const record = {
+    name: "",
+    url: "",
+    parentPath: "",
+    addedAt: new Date().toISOString(),
+    status: isPaidPreset ? "paid" : "sent",
+    sentDate: invoiceDate || today,
+    dueDate,
+    paidDate: isPaidPreset ? today : "",
+    invoiceNumber: String(draft.invoiceNumber || buildDefaultInvoiceNumber(invoiceDate)).trim(),
+    invoiceDate,
+    description: String(draft.description || `Retainer Plutus - ${formatMonthYear(invoiceDate)}`).trim(),
+    clientName: String(draft.clientName || deal.company || deal.name || "").trim(),
+    addressLine1: String(draft.addressLine1 || "").trim(),
+    addressLine2: String(draft.addressLine2 || "").trim(),
+    country: String(draft.country || "").trim(),
+    currency: normalizeCurrencyCode(draft.currency || getDealCurrency(deal), getDealCurrency(deal)),
+    amount: formatAmountInput(
+      draft.amount != null && String(draft.amount).trim() !== ""
+        ? draft.amount
+        : getRetainerMonthly(deal),
+    ),
+    vatRate: formatRateInput(draft.vatRate),
+    autoGenerated: false,
+    readyToSend: false,
+    billingMonthKey,
+    generatedAt: new Date().toISOString(),
+  };
+  record.name = buildInvoiceRecordName(record);
+  return record;
+}
+
+function syncInvoiceDraftFromRecord(deal, invoice) {
+  const draft = buildInvoiceDraftFromRecord(deal, invoice);
+  if (!draft) return null;
+  deal.invoiceDraft = draft;
+  return draft;
+}
+
+function getAutoInvoiceContext(anchorDate = new Date()) {
+  const target = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + AUTO_PREPARE_LEAD_MONTHS, 1);
+  return {
+    year: target.getFullYear(),
+    monthIndex: target.getMonth(),
+    monthKey: buildMonthKey(target.getFullYear(), target.getMonth()),
+    monthLabel: target.toLocaleDateString("en-GB", { month: "long", year: "numeric" }),
+    invoiceDate: formatDateForStorage(target),
+  };
+}
+
+function getScheduledPaymentDateForMonth(deal, targetYear, targetMonthIndex) {
+  const intervalMonths = getPaymentIntervalMonths(deal);
+  const explicitNextDate = getRetainerNextPaymentDate(deal);
+
+  if (explicitNextDate) {
+    const explicitDate = new Date(explicitNextDate);
+    if (!Number.isNaN(explicitDate.getTime())) {
+      let currentDate = new Date(explicitDate.getFullYear(), explicitDate.getMonth(), explicitDate.getDate());
+      while (
+        currentDate.getFullYear() < targetYear ||
+        (currentDate.getFullYear() === targetYear && currentDate.getMonth() < targetMonthIndex)
+      ) {
+        const advanced = addMonths(currentDate, intervalMonths);
+        if (!advanced) return null;
+        currentDate = advanced;
+      }
+      return currentDate.getFullYear() === targetYear && currentDate.getMonth() === targetMonthIndex
+        ? currentDate
+        : null;
+    }
+  }
+
+  if (intervalMonths !== 1) return null;
+
+  const paymentDay = Number(getPaymentDay(deal));
+  if (!Number.isFinite(paymentDay) || paymentDay < 1 || paymentDay > 31) return null;
+  const monthDays = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+  return new Date(targetYear, targetMonthIndex, Math.min(paymentDay, monthDays));
+}
+
+function buildPreparedInvoiceRecord(deal, context, scheduledDate) {
+  const draft = ensureInvoiceDraft(deal) || {};
+  const draftMonthKey = getMonthKeyFromDateValue(draft.invoiceDate);
+  const invoiceDate = context.invoiceDate;
+  const dueDate = formatDateForStorage(scheduledDate);
+  const generatedAt = new Date().toISOString();
+  const record = {
+    name: "",
+    url: "",
+    parentPath: "",
+    addedAt: generatedAt,
+    status: "prepared",
+    sentDate: "",
+    dueDate,
+    paidDate: "",
+    invoiceNumber: String(
+      draftMonthKey === context.monthKey && draft.invoiceNumber
+        ? draft.invoiceNumber
+        : buildDefaultInvoiceNumber(invoiceDate),
+    ).trim(),
+    invoiceDate,
+    description: String(
+      draftMonthKey === context.monthKey && draft.description
+        ? draft.description
+        : `Retainer Plutus - ${context.monthLabel}`,
+    ).trim(),
+    clientName: String(draft.clientName || deal.company || deal.name || "").trim(),
+    addressLine1: String(draft.addressLine1 || "").trim(),
+    addressLine2: String(draft.addressLine2 || "").trim(),
+    country: String(draft.country || "").trim(),
+    currency: normalizeCurrencyCode(draft.currency || getDealCurrency(deal), getDealCurrency(deal)),
+    amount: formatAmountInput(
+      draft.amount != null && String(draft.amount).trim() !== ""
+        ? draft.amount
+        : getRetainerMonthly(deal),
+    ),
+    vatRate: formatRateInput(draft.vatRate),
+    autoGenerated: true,
+    readyToSend: true,
+    billingMonthKey: context.monthKey,
+    generatedAt,
+  };
+  record.name = buildInvoiceRecordName(record);
+  return record;
+}
+
+function findInvoiceRecordIndexForMonth(invoices, context, dueDate) {
+  const normalizedDueDate = normalizeDateInput(dueDate);
+  return (Array.isArray(invoices) ? invoices : []).findIndex((invoice) => {
+    if (!invoice || typeof invoice !== "object") return false;
+    if (normalizeInvoiceStatus(invoice.status) === "cancelled") return false;
+    const monthKey = getInvoiceMonthKey(invoice);
+    if (monthKey && monthKey === context.monthKey) return true;
+    return Boolean(normalizedDueDate && normalizeDateInput(invoice.dueDate) === normalizedDueDate);
+  });
+}
+
+function syncPreparedInvoiceRecordFromDraft(deal) {
+  if (!deal || typeof deal !== "object") return false;
+  const draft = ensureInvoiceDraft(deal);
+  if (!draft) return false;
+
+  const draftMonthKey = getMonthKeyFromDateValue(draft.invoiceDate || draft.dueDate);
+  if (!draftMonthKey) return false;
+
+  const invoices = ensureDealInvoices(deal);
+  const index = invoices.findIndex((invoice) => {
+    if (!invoice || typeof invoice !== "object") return false;
+    if (invoice.url) return false;
+    if (!invoice.readyToSend && normalizeInvoiceStatus(invoice.status) !== "prepared") return false;
+    return getInvoiceMonthKey(invoice) === draftMonthKey;
+  });
+  if (index < 0) return false;
+
+  const existing = invoices[index];
+  const updated = Object.assign({}, existing, {
+    clientName: String(draft.clientName || existing.clientName || deal.company || deal.name || "").trim(),
+    addressLine1: String(draft.addressLine1 || existing.addressLine1 || "").trim(),
+    addressLine2: String(draft.addressLine2 || existing.addressLine2 || "").trim(),
+    country: String(draft.country || existing.country || "").trim(),
+    invoiceNumber: String(draft.invoiceNumber || existing.invoiceNumber || "").trim(),
+    invoiceDate: normalizeDateInput(draft.invoiceDate) || normalizeDateInput(existing.invoiceDate),
+    dueDate: normalizeDateInput(draft.dueDate) || normalizeDateInput(existing.dueDate),
+    description: String(
+      draft.description ||
+      existing.description ||
+      `Retainer Plutus - ${buildMonthLabelFromKey(draftMonthKey) || formatMonthYear(draft.invoiceDate)}`,
+    ).trim(),
+    currency: normalizeCurrencyCode(draft.currency || existing.currency || getDealCurrency(deal), getDealCurrency(deal)),
+    amount: formatAmountInput(
+      draft.amount != null && String(draft.amount).trim() !== ""
+        ? draft.amount
+        : (existing.amount || getRetainerMonthly(deal)),
+    ),
+    vatRate: formatRateInput(draft.vatRate != null ? draft.vatRate : existing.vatRate),
+    readyToSend: true,
+    autoGenerated: existing.autoGenerated !== false,
+    billingMonthKey: draftMonthKey,
+  });
+  updated.name = updated.url ? updated.name : buildInvoiceRecordName(updated);
+  invoices[index] = updated;
+  deal.invoices = invoices;
+  return true;
+}
+
+function prepareUpcomingInvoicesForNextMonth() {
+  const context = getAutoInvoiceContext();
+  const preparedDealLabels = [];
+
+  dealsData.forEach((deal) => {
+    if (!deal || typeof deal !== "object") return;
+    if (!hasPositiveRetainer(deal)) return;
+
+    const scheduledDate = getScheduledPaymentDateForMonth(deal, context.year, context.monthIndex);
+    if (!scheduledDate) return;
+
+    const dueDate = formatDateForStorage(scheduledDate);
+    const invoices = ensureDealInvoices(deal);
+    const existingIndex = findInvoiceRecordIndexForMonth(invoices, context, dueDate);
+    if (existingIndex >= 0) return;
+
+    const record = buildPreparedInvoiceRecord(deal, context, scheduledDate);
+    invoices.unshift(record);
+    deal.invoices = invoices;
+    syncInvoiceDraftFromRecord(deal, record);
+    markDirty(deal.id, true);
+    preparedDealLabels.push(String(deal.company || deal.name || deal.id || "Deal").trim());
+  });
+
+  return {
+    context,
+    count: preparedDealLabels.length,
+    preparedDealLabels,
+  };
+}
+
+async function autoPrepareUpcomingInvoices() {
+  const result = prepareUpcomingInvoicesForNextMonth();
+  if (!result.count) {
+    return Object.assign({ saved: false, error: "" }, result);
+  }
+
+  try {
+    sanitizeAccountingDraftState();
+    await saveDealsData();
+    dirtyDealIds.clear();
+    return Object.assign({ saved: true, error: "" }, result);
+  } catch (error) {
+    return Object.assign({
+      saved: false,
+      error: error instanceof Error ? error.message : "Failed to save auto-prepared invoices.",
+    }, result);
+  }
 }
 
 function getDashboardConfig() {
@@ -1073,8 +1501,8 @@ function getLatestInvoiceRecord(deal) {
   return invoices
     .slice()
     .sort((a, b) => {
-      const aDate = Date.parse(a.paidDate || a.dueDate || a.sentDate || a.addedAt || "");
-      const bDate = Date.parse(b.paidDate || b.dueDate || b.sentDate || b.addedAt || "");
+      const aDate = Date.parse(a.paidDate || a.dueDate || a.sentDate || a.invoiceDate || a.generatedAt || a.addedAt || "");
+      const bDate = Date.parse(b.paidDate || b.dueDate || b.sentDate || b.invoiceDate || b.generatedAt || b.addedAt || "");
       return (Number.isFinite(bDate) ? bDate : 0) - (Number.isFinite(aDate) ? aDate : 0);
     })[0] || invoices[0] || null;
 }
@@ -1912,30 +2340,37 @@ function renderInvoiceHistory() {
 
   loadBtn.disabled = false;
   const invoices = ensureDealInvoices(deal);
-  subtitle.textContent = `${invoices.length} invoice${invoices.length === 1 ? "" : "s"} linked to this deal.`;
+  subtitle.textContent = `${invoices.length} invoice record${invoices.length === 1 ? "" : "s"} tracked for this deal.`;
 
   if (!invoices.length) {
-    list.innerHTML = '<div class="invoice-item"><div class="invoice-copy">No historical invoices linked yet.</div></div>';
+    list.innerHTML = '<div class="invoice-item"><div class="invoice-copy">No invoices prepared or linked yet.</div></div>';
     return;
   }
 
   list.innerHTML = invoices
     .map((invoice, index) => {
-      const label = invoice.name || "Invoice PDF";
+      const label = invoice.name || buildInvoiceRecordName(invoice);
       const status = normalizeInvoiceStatus(invoice.status);
       const displayStatus = getInvoiceDisplayStatus(invoice);
+      const invoiceMonthLabel = buildMonthLabelFromKey(getInvoiceMonthKey(invoice));
       const detailParts = [
         `Added ${formatAddedAt(invoice.addedAt)}`,
         `Status ${displayStatus === "overdue" ? "Overdue" : formatStatusLabel(status)}`,
       ];
+      if (invoice.invoiceNumber) detailParts.push(`No. ${invoice.invoiceNumber}`);
+      if (invoice.invoiceDate) detailParts.push(`Invoice ${formatShortDate(invoice.invoiceDate)}`);
       if (invoice.sentDate) detailParts.push(`Sent ${formatShortDate(invoice.sentDate)}`);
       if (invoice.dueDate) detailParts.push(`Due ${formatShortDate(invoice.dueDate)}`);
       if (invoice.paidDate) detailParts.push(`Paid ${formatShortDate(invoice.paidDate)}`);
+      if (invoice.readyToSend && !invoice.sentDate) detailParts.push("Ready to send");
+      if (!invoice.url && invoiceMonthLabel) detailParts.push(`Billing ${invoiceMonthLabel}`);
+      if (!invoice.url) detailParts.push("PDF pending");
       if (invoice.parentPath) detailParts.push(invoice.parentPath);
       const meta = detailParts.join(" · ");
       const statusOptions = INVOICE_STATUS_OPTIONS
         .map((option) => `<option value="${option.value}"${option.value === status ? " selected" : ""}>${escapeHtml(option.label)}</option>`)
         .join("");
+      const openLabel = invoice.url ? "Open PDF" : "Review draft";
       return `
         <div class="invoice-item">
           <div class="invoice-copy">
@@ -1966,7 +2401,7 @@ function renderInvoiceHistory() {
             </div>
           </div>
           <div class="btn-row">
-            <button class="btn" type="button" data-invoice-open-index="${index}">Open</button>
+            <button class="btn" type="button" data-invoice-open-index="${index}">${escapeHtml(openLabel)}</button>
             <button class="btn danger" type="button" data-invoice-delete-index="${index}">Delete</button>
           </div>
         </div>
@@ -2015,6 +2450,36 @@ function updateInvoiceTrackingField(index, field, nextValue) {
   renderInvoiceHistory();
   setStatus("Invoice tracking updated. Save all changes to sync online.", false);
   setInvoiceHistoryStatus("Invoice tracking updated for this deal.", false);
+}
+
+function addManualInvoiceRecord(preset) {
+  const deal = getSelectedDeal();
+  if (!deal) {
+    setInvoiceHistoryStatus("No deal loaded for invoice tracking.", true);
+    return;
+  }
+
+  const invoices = ensureDealInvoices(deal);
+  const record = buildManualInvoiceRecord(deal, preset);
+  if (!record) {
+    setInvoiceHistoryStatus("Could not prepare an invoice record for this deal.", true);
+    return;
+  }
+
+  invoices.unshift(record);
+  deal.invoices = invoices;
+  syncInvoiceDraftFromRecord(deal, record);
+  markDirty(deal.id, true);
+  renderTable();
+  renderInvoiceBuilder();
+  renderInvoiceHistory();
+  setStatus("Invoice record added. Save all changes to persist.", false);
+  setInvoiceHistoryStatus(
+    preset === "paid"
+      ? "Added a received / paid invoice record for this deal."
+      : "Added a sent / waiting invoice record for this deal.",
+    false,
+  );
 }
 
 function setInvoicePickerStatus(message) {
@@ -2165,16 +2630,57 @@ function addInvoiceToDealFromPicker(item) {
     return;
   }
 
-  invoices.unshift({
-    name: String(item.name || "Invoice.pdf").trim(),
+  const draftMonthKey = getMonthKeyFromDateValue(draft.invoiceDate || draft.dueDate);
+  const matchingPreparedIndex = invoices.findIndex((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    if (entry.url) return false;
+    const entryMonthKey = getInvoiceMonthKey(entry);
+    return Boolean(
+      draftMonthKey &&
+      entryMonthKey === draftMonthKey &&
+      (!draft.invoiceNumber || !entry.invoiceNumber || normalizeValue(entry.invoiceNumber) === normalizeValue(draft.invoiceNumber)),
+    );
+  });
+
+  const linkedInvoice = {
+    name: String(item.name || buildInvoiceRecordName(draft) || "Invoice.pdf").trim(),
     url,
     parentPath: String(item.parentPath || "").trim(),
     addedAt: new Date().toISOString(),
-    status: "draft",
-    sentDate: normalizeDateInput(draft.invoiceDate),
+    status: "prepared",
+    sentDate: "",
     dueDate: normalizeDateInput(draft.dueDate),
     paidDate: "",
-  });
+    invoiceNumber: String(draft.invoiceNumber || "").trim(),
+    invoiceDate: normalizeDateInput(draft.invoiceDate),
+    description: String(draft.description || "").trim(),
+    clientName: String(draft.clientName || deal.company || deal.name || "").trim(),
+    addressLine1: String(draft.addressLine1 || "").trim(),
+    addressLine2: String(draft.addressLine2 || "").trim(),
+    country: String(draft.country || "").trim(),
+    currency: normalizeCurrencyCode(draft.currency || getDealCurrency(deal), getDealCurrency(deal)),
+    amount: formatAmountInput(
+      draft.amount != null && String(draft.amount).trim() !== ""
+        ? draft.amount
+        : getRetainerMonthly(deal),
+    ),
+    vatRate: formatRateInput(draft.vatRate),
+    autoGenerated: false,
+    readyToSend: true,
+    billingMonthKey: draftMonthKey,
+    generatedAt: new Date().toISOString(),
+  };
+
+  if (matchingPreparedIndex >= 0) {
+    const existing = invoices[matchingPreparedIndex];
+    invoices[matchingPreparedIndex] = Object.assign({}, existing, linkedInvoice, {
+      status: normalizeInvoiceStatus(existing.status) === "draft" ? "prepared" : normalizeInvoiceStatus(existing.status),
+      sentDate: normalizeDateInput(existing.sentDate),
+      paidDate: normalizeDateInput(existing.paidDate),
+    });
+  } else {
+    invoices.unshift(linkedInvoice);
+  }
 
   deal.invoices = invoices;
   markDirty(deal.id, true);
@@ -2185,6 +2691,8 @@ function addInvoiceToDealFromPicker(item) {
 }
 
 function setupInvoiceHistory() {
+  const addSentBtn = document.getElementById("btn-add-sent-invoice");
+  const addPaidBtn = document.getElementById("btn-add-paid-invoice");
   const loadBtn = document.getElementById("btn-load-invoice-pdf");
   const list = document.getElementById("invoice-history-list");
   const modal = document.getElementById("invoice-picker-modal");
@@ -2193,6 +2701,20 @@ function setupInvoiceHistory() {
   const shareUrlInput = document.getElementById("invoice-share-url-input");
   const backBtn = document.getElementById("btn-invoice-go-back");
   const pickerList = document.getElementById("invoice-picker-list");
+
+  if (addSentBtn) {
+    addSentBtn.addEventListener("click", () => {
+      if (!singleDealMode) return;
+      addManualInvoiceRecord("sent");
+    });
+  }
+
+  if (addPaidBtn) {
+    addPaidBtn.addEventListener("click", () => {
+      if (!singleDealMode) return;
+      addManualInvoiceRecord("paid");
+    });
+  }
 
   if (loadBtn) {
     loadBtn.addEventListener("click", () => {
@@ -2216,10 +2738,21 @@ function setupInvoiceHistory() {
       if (openButton) {
         const index = Number(openButton.getAttribute("data-invoice-open-index"));
         const deal = getSelectedDeal();
+        if (!deal || !Number.isFinite(index) || index < 0) return;
         const invoices = ensureDealInvoices(deal);
         const selected = invoices[index];
         if (selected && selected.url) {
           window.open(selected.url, "_blank", "noopener,noreferrer");
+        } else if (selected) {
+          syncInvoiceDraftFromRecord(deal, selected);
+          renderInvoiceBuilder();
+          setStatus("Prepared invoice loaded into the invoice builder.", false);
+          setInvoiceBuilderStatus("Prepared invoice loaded. Generate Word or PDF when ready.", false);
+          setInvoiceHistoryStatus("Prepared invoice loaded into the invoice builder.", false);
+          const builderPanel = document.getElementById("invoice-builder-panel");
+          if (builderPanel && typeof builderPanel.scrollIntoView === "function") {
+            builderPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
         }
         return;
       }
@@ -2368,9 +2901,11 @@ function setupInvoiceBuilder() {
         draft.description = `Retainer Plutus - ${formatMonthYear(draft.invoiceDate)}`;
       }
       deal.invoiceDraft = draft;
+      syncPreparedInvoiceRecordFromDraft(deal);
       markDirty(deal.id, true);
       if (target.classList) target.classList.add("is-dirty");
       renderInvoiceTotalsPreview(deal);
+      renderInvoiceHistory();
       setStatus("Invoice details updated. Save all changes to persist.", false);
       setInvoiceBuilderStatus("Invoice details updated for this deal.", false);
     });
@@ -2554,7 +3089,99 @@ function getIncomingPaymentGroupDetails(deal) {
   return {
     key: nextDate.toISOString().slice(0, 10),
     label: `Incoming ${nextDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}`,
-    sortValue: nextDate.getTime(),
+      sortValue: nextDate.getTime(),
+  };
+}
+
+function getLatestInvoiceRecordByField(deal, fieldName) {
+  const invoices = ensureDealInvoices(deal)
+    .filter((invoice) => normalizeDateInput(invoice && invoice[fieldName]))
+    .slice()
+    .sort((left, right) => {
+      const leftDate = Date.parse(normalizeDateInput(left && left[fieldName]) || "");
+      const rightDate = Date.parse(normalizeDateInput(right && right[fieldName]) || "");
+      return (Number.isFinite(rightDate) ? rightDate : 0) - (Number.isFinite(leftDate) ? leftDate : 0);
+    });
+  return invoices[0] || null;
+}
+
+function buildInvoiceMonthGroupDetails(dateValue, prefixLabel, emptyLabel) {
+  const normalizedDate = normalizeDateInput(dateValue);
+  if (!normalizedDate) {
+    return {
+      key: normalizeValue(emptyLabel) || "no-date",
+      label: emptyLabel,
+      sortValue: Number.MAX_SAFE_INTEGER,
+    };
+  }
+
+  const monthKey = getMonthKeyFromDateValue(normalizedDate);
+  const monthLabel = buildMonthLabelFromKey(monthKey) || formatMonthYear(normalizedDate);
+  const monthDate = new Date(`${monthKey}-01T00:00:00`);
+  return {
+    key: monthKey || normalizedDate,
+    label: `${prefixLabel} ${monthLabel}`,
+    sortValue: Number.isNaN(monthDate.getTime()) ? Number.MAX_SAFE_INTEGER : monthDate.getTime(),
+  };
+}
+
+function getInvoiceStatusGroupDetails(deal) {
+  const latestInvoice = getLatestInvoiceRecord(deal);
+  if (!latestInvoice) {
+    return {
+      key: "no-invoice",
+      label: "No invoice records",
+      sortValue: Number.MAX_SAFE_INTEGER,
+    };
+  }
+
+  const displayStatus = getInvoiceDisplayStatus(latestInvoice);
+  const order = ["overdue", "sent", "part_paid", "prepared", "paid", "cancelled", "draft"];
+  const sortIndex = order.indexOf(displayStatus);
+  const label = displayStatus === "overdue" ? "Overdue" : formatStatusLabel(displayStatus);
+  return {
+    key: `status-${displayStatus}`,
+    label: `Latest status · ${label}`,
+    sortValue: sortIndex >= 0 ? sortIndex : order.length,
+  };
+}
+
+function getInvoiceSentMonthGroupDetails(deal) {
+  const latestSentInvoice = getLatestInvoiceRecordByField(deal, "sentDate");
+  return buildInvoiceMonthGroupDetails(
+    latestSentInvoice && latestSentInvoice.sentDate,
+    "Sent",
+    "No sent invoices",
+  );
+}
+
+function getInvoicePaidMonthGroupDetails(deal) {
+  const latestPaidInvoice = getLatestInvoiceRecordByField(deal, "paidDate");
+  return buildInvoiceMonthGroupDetails(
+    latestPaidInvoice && latestPaidInvoice.paidDate,
+    "Received / Paid",
+    "No received / paid invoices",
+  );
+}
+
+function getAccountingGroupDetails(deal) {
+  const mode = normalizeAccountingGroupingMode(accountingGroupingMode);
+  if (mode === "incoming_payments") {
+    return getIncomingPaymentGroupDetails(deal);
+  }
+  if (mode === "invoice_status") {
+    return getInvoiceStatusGroupDetails(deal);
+  }
+  if (mode === "invoice_sent_month") {
+    return getInvoiceSentMonthGroupDetails(deal);
+  }
+  if (mode === "invoice_paid_month") {
+    return getInvoicePaidMonthGroupDetails(deal);
+  }
+  return {
+    key: "standard-order",
+    label: "Standard order",
+    sortValue: 0,
   };
 }
 
@@ -2653,17 +3280,20 @@ function renderAccountingRow(deal) {
 
 function renderGroupedAccountingRows(deals) {
   const sorted = (Array.isArray(deals) ? deals.slice() : []).sort((left, right) => {
-    const leftGroup = getIncomingPaymentGroupDetails(left);
-    const rightGroup = getIncomingPaymentGroupDetails(right);
+    const leftGroup = getAccountingGroupDetails(left);
+    const rightGroup = getAccountingGroupDetails(right);
     if (leftGroup.sortValue !== rightGroup.sortValue) {
       return leftGroup.sortValue - rightGroup.sortValue;
+    }
+    if (leftGroup.label !== rightGroup.label) {
+      return normalizeValue(leftGroup.label).localeCompare(normalizeValue(rightGroup.label));
     }
     return normalizeValue(left.company || left.name).localeCompare(normalizeValue(right.company || right.name));
   });
 
   const groups = [];
   sorted.forEach((deal) => {
-    const details = getIncomingPaymentGroupDetails(deal);
+    const details = getAccountingGroupDetails(deal);
     const existing = groups[groups.length - 1];
     if (!existing || existing.key !== details.key) {
       groups.push({
@@ -2686,6 +3316,44 @@ function renderGroupedAccountingRows(deals) {
       </td>
     </tr>
     ${group.deals.map((deal) => renderAccountingRow(deal)).join("")}
+  `).join("");
+}
+
+function buildRetainerSections(deals) {
+  const withRetainer = [];
+  const noRetainer = [];
+
+  (Array.isArray(deals) ? deals : []).forEach((deal) => {
+    if (hasPositiveRetainer(deal)) withRetainer.push(deal);
+    else noRetainer.push(deal);
+  });
+
+  return [
+    { key: "with-retainer", label: "With retainer", deals: withRetainer },
+    { key: "no-retainer", label: "0 / no retainer", deals: noRetainer },
+  ].filter((section) => section.deals.length);
+}
+
+function renderRetainerSeparatedRows(deals, renderer) {
+  const renderSectionRows = typeof renderer === "function"
+    ? renderer
+    : (source) => (Array.isArray(source) ? source : []).map((deal) => renderAccountingRow(deal)).join("");
+  const sections = buildRetainerSections(deals);
+
+  if (singleDealMode || sections.length <= 1) {
+    return renderSectionRows(Array.isArray(deals) ? deals : []);
+  }
+
+  return sections.map((section) => `
+    <tr class="group-row">
+      <td colspan="14">
+        <div class="group-row-copy">
+          <span>${escapeHtml(section.label)}</span>
+          <span class="group-row-meta">${section.deals.length} compan${section.deals.length === 1 ? "y" : "ies"}</span>
+        </div>
+      </td>
+    </tr>
+    ${renderSectionRows(section.deals)}
   `).join("");
 }
 
@@ -2715,9 +3383,9 @@ function renderTable() {
     return;
   }
 
-  body.innerHTML = groupByIncomingPayments
-    ? renderGroupedAccountingRows(visibleDeals)
-    : visibleDeals.map((deal) => renderAccountingRow(deal)).join("");
+  body.innerHTML = normalizeAccountingGroupingMode(accountingGroupingMode) !== "none"
+    ? renderRetainerSeparatedRows(visibleDeals, renderGroupedAccountingRows)
+    : renderRetainerSeparatedRows(visibleDeals, (source) => source.map((deal) => renderAccountingRow(deal)).join(""));
   renderInvoiceBuilder();
   renderDealContactsPanel();
   renderInvoiceHistory();
@@ -2730,9 +3398,21 @@ async function initializeAccountingPage() {
   selectedDealReference = getSelectedDealReference();
   singleDealMode = Boolean(selectedDealReference);
   loadDealsData();
+  const autoPrepared = await autoPrepareUpcomingInvoices();
   updatePageHeaderForMode();
   renderTable();
-  setStatus(singleDealMode ? "Loaded single-deal accounting from deals data." : "No unsaved changes.", false);
+  if (autoPrepared.count) {
+    if (autoPrepared.saved) {
+      setStatus(`Prepared ${autoPrepared.count} invoice${autoPrepared.count === 1 ? "" : "s"} for ${autoPrepared.context.monthLabel}. Ready to send.`, false);
+    } else {
+      setStatus(
+        `${autoPrepared.count} invoice${autoPrepared.count === 1 ? "" : "s"} were prepared for ${autoPrepared.context.monthLabel}, but saving failed: ${autoPrepared.error}`,
+        true,
+      );
+    }
+  } else {
+    setStatus(singleDealMode ? "Loaded single-deal accounting from deals data." : "No unsaved changes.", false);
+  }
 
   const searchInput = document.getElementById("accounting-search");
   if (searchInput) {
@@ -2751,10 +3431,11 @@ async function initializeAccountingPage() {
     });
   }
 
-  const toggleGroupPaymentsBtn = document.getElementById("btn-toggle-group-payments");
-  if (toggleGroupPaymentsBtn) {
-    toggleGroupPaymentsBtn.addEventListener("click", () => {
-      groupByIncomingPayments = !groupByIncomingPayments;
+  const groupingSelect = document.getElementById("accounting-group-mode");
+  if (groupingSelect) {
+    groupingSelect.value = normalizeAccountingGroupingMode(accountingGroupingMode);
+    groupingSelect.addEventListener("change", (event) => {
+      accountingGroupingMode = normalizeAccountingGroupingMode(event.target && event.target.value);
       renderTable();
     });
   }

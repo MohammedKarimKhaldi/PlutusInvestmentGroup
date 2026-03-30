@@ -5,6 +5,7 @@ const LEGAL_SHAREDRIVE_URL_STORAGE_KEY = "sharedrive_url_v2";
 let dealsData = [];
 let currentSearch = "";
 let showOnlyMissingLegal = false;
+let retainerFilter = "all";
 let selectedDealReference = "";
 let selectedDealId = "";
 const dirtyDealIds = new Set();
@@ -18,6 +19,46 @@ const legalPickerState = {
 function normalizeValue(value) {
   if (AppCore) return AppCore.normalizeValue(value);
   return String(value || "").trim().toLowerCase();
+}
+
+function getDealRetainerState(deal) {
+  if (AppCore && typeof AppCore.getDealRetainerState === "function") {
+    return AppCore.getDealRetainerState(deal);
+  }
+  const rawValue = String(deal && (deal.retainerMonthly != null ? deal.retainerMonthly : deal && deal.Retainer) || "").trim();
+  const cleaned = rawValue.replace(/,/g, "").replace(/[^0-9.-]/g, "");
+  const amount = Number(cleaned);
+  const hasRetainer = Number.isFinite(amount) && amount > 0;
+  return {
+    rawValue,
+    amount: hasRetainer ? amount : 0,
+    hasRetainer,
+    bucket: hasRetainer ? "with-retainer" : "no-retainer",
+    label: hasRetainer ? "With retainer" : "0 / no retainer",
+  };
+}
+
+function matchesDealRetainerFilter(deal, filterValue) {
+  if (AppCore && typeof AppCore.matchesDealRetainerFilter === "function") {
+    return AppCore.matchesDealRetainerFilter(deal, filterValue);
+  }
+  const normalizedFilter = normalizeValue(filterValue);
+  if (!normalizedFilter || normalizedFilter === "all") return true;
+  return getDealRetainerState(deal).bucket === normalizedFilter;
+}
+
+function sortDealsByRetainerState(deals, fallbackComparator) {
+  if (AppCore && typeof AppCore.sortDealsByRetainerState === "function") {
+    return AppCore.sortDealsByRetainerState(deals, fallbackComparator);
+  }
+  return (Array.isArray(deals) ? deals.slice() : []).sort((left, right) => {
+    const leftState = getDealRetainerState(left);
+    const rightState = getDealRetainerState(right);
+    if (leftState.hasRetainer !== rightState.hasRetainer) {
+      return leftState.hasRetainer ? -1 : 1;
+    }
+    return typeof fallbackComparator === "function" ? fallbackComparator(left, right) : 0;
+  });
 }
 
 function buildPageUrl(pageId, params) {
@@ -231,11 +272,14 @@ function getVisibleDeals() {
     ].map((value) => normalizeValue(value)).join(" ");
     if (query && !haystack.includes(query)) return false;
     if (showOnlyMissingLegal && getLegalLinkStats(deal).total > 0) return false;
+    if (!matchesDealRetainerFilter(deal, retainerFilter)) return false;
     return true;
   });
 
-  filtered.sort((left, right) => normalizeValue(left.company || left.name).localeCompare(normalizeValue(right.company || right.name)));
-  return filtered;
+  return sortDealsByRetainerState(
+    filtered,
+    (left, right) => normalizeValue(left.company || left.name).localeCompare(normalizeValue(right.company || right.name)),
+  );
 }
 
 function getSelectedDeal() {
@@ -275,9 +319,13 @@ function renderMetaRow(deals) {
   const withLegalLinks = allDeals.filter((deal) => getLegalLinkStats(deal).total > 0).length;
   const missingLegalLinks = allDeals.filter((deal) => getLegalLinkStats(deal).total === 0).length;
   const totalLegalLinks = allDeals.reduce((sum, deal) => sum + getLegalLinkStats(deal).total, 0);
+  const withRetainer = allDeals.filter((deal) => getDealRetainerState(deal).hasRetainer).length;
+  const noRetainer = Math.max(allDeals.length - withRetainer, 0);
 
   row.innerHTML = [
     `<div class="chip"><strong>${allDeals.length}</strong> deals shown</div>`,
+    `<div class="chip"><strong>${withRetainer}</strong> with retainer</div>`,
+    `<div class="chip"><strong>${noRetainer}</strong> 0 / no retainer</div>`,
     `<div class="chip"><strong>${withLegalLinks}</strong> with legal links</div>`,
     `<div class="chip"><strong>${missingLegalLinks}</strong> missing legal</div>`,
     `<div class="chip"><strong>${totalLegalLinks}</strong> legal links total</div>`,
@@ -310,19 +358,21 @@ function renderDealsTable() {
   }
 
   if (!visibleDeals.length) {
-    body.innerHTML = '<tr><td colspan="5">No deals match this filter.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6">No deals match this filter.</td></tr>';
     renderEditorPanel();
     return;
   }
 
   body.innerHTML = visibleDeals.map((deal) => {
     const stats = getLegalLinkStats(deal);
+    const retainerState = getDealRetainerState(deal);
     const isSelected = selectedDeal && normalizeValue(selectedDeal.id) === normalizeValue(deal.id);
     const openDealHref = buildPageUrl("deal-details", { id: deal.id });
     return `
       <tr class="legal-row${isSelected ? " is-selected" : ""}" data-select-deal-id="${escapeHtml(String(deal.id || ""))}">
         <td><strong>${escapeHtml(String(deal.name || "Untitled deal"))}</strong></td>
         <td>${escapeHtml(String(deal.company || "—"))}</td>
+        <td>${retainerState.hasRetainer ? escapeHtml(retainerState.rawValue || "—") : `<span class="chip">${escapeHtml(retainerState.label)}</span>`}</td>
         <td><span class="legal-count"><strong>${stats.total}</strong> linked</span></td>
         <td>${buildLegalStatusBadge(stats)}</td>
         <td><a class="action-link" href="${openDealHref}">Open deal</a></td>
@@ -348,18 +398,20 @@ function renderDealsTableBodyOnly() {
   }
 
   if (!visibleDeals.length) {
-    body.innerHTML = '<tr><td colspan="5">No deals match this filter.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6">No deals match this filter.</td></tr>';
     return;
   }
 
   body.innerHTML = visibleDeals.map((deal) => {
     const stats = getLegalLinkStats(deal);
+    const retainerState = getDealRetainerState(deal);
     const isSelected = selectedDeal && normalizeValue(selectedDeal.id) === normalizeValue(deal.id);
     const openDealHref = buildPageUrl("deal-details", { id: deal.id });
     return `
       <tr class="legal-row${isSelected ? " is-selected" : ""}" data-select-deal-id="${escapeHtml(String(deal.id || ""))}">
         <td><strong>${escapeHtml(String(deal.name || "Untitled deal"))}</strong></td>
         <td>${escapeHtml(String(deal.company || "—"))}</td>
+        <td>${retainerState.hasRetainer ? escapeHtml(retainerState.rawValue || "—") : `<span class="chip">${escapeHtml(retainerState.label)}</span>`}</td>
         <td><span class="legal-count"><strong>${stats.total}</strong> linked</span></td>
         <td>${buildLegalStatusBadge(stats)}</td>
         <td><a class="action-link" href="${openDealHref}">Open deal</a></td>
@@ -659,6 +711,7 @@ function setupInteractions() {
   const browseBtn = document.getElementById("btn-browse-legal-docs");
   const saveBtn = document.getElementById("save-legal-btn");
   const searchInput = document.getElementById("legal-search");
+  const retainerFilterEl = document.getElementById("legal-retainer-filter");
   const toggleMissingBtn = document.getElementById("btn-toggle-missing-legal");
   const pickerModal = document.getElementById("legal-picker-modal");
   const pickerCloseBtn = document.getElementById("btn-close-legal-picker");
@@ -735,6 +788,14 @@ function setupInteractions() {
   if (searchInput) {
     searchInput.addEventListener("input", (event) => {
       currentSearch = String(event.target && event.target.value || "");
+      renderDealsTable();
+    });
+  }
+
+  if (retainerFilterEl) {
+    retainerFilterEl.value = retainerFilter;
+    retainerFilterEl.addEventListener("change", (event) => {
+      retainerFilter = String(event.target && event.target.value || "all").trim().toLowerCase() || "all";
       renderDealsTable();
     });
   }

@@ -26,7 +26,7 @@
     writerLabel: "",
     azureClientId: "",
     azureTenantId: "common",
-    graphScopes: "offline_access Files.ReadWrite.All Sites.ReadWrite.All User.Read",
+    graphScopes: "offline_access Files.ReadWrite.All Sites.ReadWrite.All User.Read Mail.Read",
   };
   const GRAPH_BROWSER_SESSION_KEY = STORAGE_KEYS.graphSession;
   const GRAPH_UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
@@ -75,6 +75,61 @@
 
   function normalizeValue(value) {
     return String(value || "").trim().toLowerCase();
+  }
+
+  function parseDealAmount(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    const raw = String(value == null ? "" : value).trim();
+    if (!raw) return 0;
+    const cleaned = raw.replace(/,/g, "").replace(/[^0-9.-]/g, "");
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function getDealRetainerRawValue(deal) {
+    if (!deal || typeof deal !== "object") return "";
+    if (deal.retainerMonthly != null && String(deal.retainerMonthly).trim()) return String(deal.retainerMonthly).trim();
+    if (deal.Retainer != null && String(deal.Retainer).trim()) return String(deal.Retainer).trim();
+    return "";
+  }
+
+  function getDealRetainerState(deal) {
+    const rawValue = getDealRetainerRawValue(deal);
+    const amount = parseDealAmount(rawValue);
+    const hasRetainer = amount > 0;
+    return {
+      rawValue,
+      amount,
+      hasRetainer,
+      bucket: hasRetainer ? "with-retainer" : "no-retainer",
+      label: hasRetainer ? "With retainer" : "0 / no retainer",
+    };
+  }
+
+  function hasPositiveRetainer(deal) {
+    return getDealRetainerState(deal).hasRetainer;
+  }
+
+  function matchesDealRetainerFilter(deal, filterValue) {
+    const normalizedFilter = normalizeValue(filterValue);
+    if (!normalizedFilter || normalizedFilter === "all") return true;
+    const bucket = getDealRetainerState(deal).bucket;
+    return normalizedFilter === bucket;
+  }
+
+  function compareDealsByRetainerState(left, right) {
+    const leftState = getDealRetainerState(left);
+    const rightState = getDealRetainerState(right);
+    if (leftState.hasRetainer === rightState.hasRetainer) return 0;
+    return leftState.hasRetainer ? -1 : 1;
+  }
+
+  function sortDealsByRetainerState(deals, fallbackComparator) {
+    return (Array.isArray(deals) ? deals.slice() : []).sort((left, right) => {
+      const retainerOrder = compareDealsByRetainerState(left, right);
+      if (retainerOrder) return retainerOrder;
+      return typeof fallbackComparator === "function" ? fallbackComparator(left, right) : 0;
+    });
   }
 
   function getPageUrl(pageId, params) {
@@ -486,6 +541,13 @@
     );
   }
 
+  function hasOutlookBridge() {
+    return Boolean(
+      global.PlutusDesktop &&
+      typeof global.PlutusDesktop.listOutlookMessages === "function",
+    );
+  }
+
   function hasShareDriveListBridge() {
     return Boolean(
       global.PlutusDesktop &&
@@ -794,6 +856,30 @@
     throw new Error("Not signed in to Microsoft Graph.");
   }
 
+  async function resolveRendererGraphAccessToken() {
+    const config = getSharedTasksConfig();
+    if (config.accessToken) return config.accessToken;
+
+    const desktopSession = await readDesktopGraphSession();
+    if (
+      desktopSession &&
+      desktopSession.accessToken &&
+      desktopSession.expiresAt &&
+      Date.now() < Number(desktopSession.expiresAt) - 60000
+    ) {
+      return desktopSession.accessToken;
+    }
+
+    try {
+      return await resolveBrowserAccessToken();
+    } catch (error) {
+      if (desktopSession && desktopSession.accessToken) {
+        return desktopSession.accessToken;
+      }
+      throw error;
+    }
+  }
+
   async function graphFetchJson(url, token, options) {
     const requestOptions = {
       ...(options || {}),
@@ -835,6 +921,107 @@
       throw new Error(message);
     }
     return payload;
+  }
+
+  function normalizeGraphEmailAddress(entry) {
+    const emailAddress = entry && entry.emailAddress && typeof entry.emailAddress === "object"
+      ? entry.emailAddress
+      : {};
+    return {
+      name: String(emailAddress.name || "").trim(),
+      address: String(emailAddress.address || "").trim(),
+    };
+  }
+
+  function normalizeOutlookRecipients(recipients) {
+    return (Array.isArray(recipients) ? recipients : [])
+      .map((entry) => normalizeGraphEmailAddress(entry))
+      .filter((entry) => entry.address);
+  }
+
+  function normalizeOutlookMessage(message) {
+    return {
+      id: String(message && message.id || "").trim(),
+      subject: String(message && message.subject || "").trim(),
+      bodyPreview: String(message && message.bodyPreview || "").trim(),
+      receivedDateTime: String(message && message.receivedDateTime || "").trim(),
+      webLink: String(message && message.webLink || "").trim(),
+      isRead: Boolean(message && message.isRead),
+      from: normalizeGraphEmailAddress(message && message.from),
+      toRecipients: normalizeOutlookRecipients(message && message.toRecipients),
+      ccRecipients: normalizeOutlookRecipients(message && message.ccRecipients),
+    };
+  }
+
+  function tokenHasScope(token, requiredScope) {
+    const claims = decodeJwtPayload(token);
+    const scopes = String(claims && claims.scp || "")
+      .split(/\s+/)
+      .map((entry) => normalizeValue(entry))
+      .filter(Boolean);
+    return scopes.includes(normalizeValue(requiredScope));
+  }
+
+  async function listOutlookMessagesBrowser(payload) {
+    const config = payload && typeof payload === "object" ? payload : {};
+    let token = await resolveRendererGraphAccessToken();
+    if (!tokenHasScope(token, "Mail.Read")) {
+      const session = readBrowserGraphSession();
+      if (session && session.refreshToken) {
+        try {
+          token = await refreshBrowserAccessToken(session.refreshToken);
+        } catch {
+          // Ignore refresh failure and surface the clearer message below.
+        }
+      }
+    }
+    if (!tokenHasScope(token, "Mail.Read")) {
+      throw new Error("Microsoft sign-in is missing Mail.Read. Click 'Sign in with Microsoft' again and approve Outlook inbox access.");
+    }
+    const requestedTop = Number(config.top || 50);
+    const safeTop = Number.isFinite(requestedTop)
+      ? Math.min(Math.max(Math.floor(requestedTop), 1), 100)
+      : 50;
+    const searchTerm = String(config.search || "").trim();
+    const params = new URLSearchParams({
+      $top: String(safeTop),
+      $select: [
+        "id",
+        "subject",
+        "bodyPreview",
+        "receivedDateTime",
+        "webLink",
+        "isRead",
+        "from",
+        "toRecipients",
+        "ccRecipients",
+      ].join(","),
+    });
+    if (searchTerm) {
+      params.set("$search", `"${searchTerm.replace(/"/g, '\\"')}"`);
+    } else {
+      params.set("$orderby", "receivedDateTime DESC");
+    }
+    const url = `https://graph.microsoft.com/v1.0/me/messages?${params.toString()}`;
+    const response = await graphFetchJson(url, token, {
+      headers: searchTerm ? { ConsistencyLevel: "eventual" } : {},
+    });
+    return {
+      items: (Array.isArray(response && response.value) ? response.value : [])
+        .map((message) => normalizeOutlookMessage(message)),
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  async function listOutlookMessages(payload) {
+    if (hasOutlookBridge()) {
+      const result = await global.PlutusDesktop.listOutlookMessages(payload || {});
+      if (!result || !result.ok) {
+        throw new Error((result && result.error) || "Failed to load Outlook messages.");
+      }
+      return result.data || { items: [], fetchedAt: "" };
+    }
+    return listOutlookMessagesBrowser(payload);
   }
 
   function toBase64Url(value) {
@@ -1713,12 +1900,19 @@
       return;
     }
 
-    if (config.enabled) {
-      dealsCache = [];
+    const storedDeals = readArrayFromStorage(STORAGE_KEYS.deals);
+    if (Array.isArray(storedDeals) && storedDeals.length) {
+      dealsCache = cloneArray(storedDeals);
       return;
     }
 
-    dealsCache = readArrayFromStorage(STORAGE_KEYS.deals) || cloneArray(global.DEALS);
+    const bundledDeals = Array.isArray(global.DEALS) ? cloneArray(global.DEALS) : [];
+    if (bundledDeals.length || !config.enabled) {
+      dealsCache = bundledDeals;
+      return;
+    }
+
+    dealsCache = [];
   }
 
   function ensureTasksCacheInitialized() {
@@ -1860,7 +2054,11 @@
       ensureSharedDealsSync();
     }
     publishSharedDealsStatus(sharedDealsState.started ? "ready" : "idle");
-    return cloneArray(dealsCache);
+    return sortDealsByRetainerState(cloneArray(dealsCache), (left, right) => {
+      const leftLabel = normalizeValue(left && (left.company || left.name || left.id));
+      const rightLabel = normalizeValue(right && (right.company || right.name || right.id));
+      return leftLabel.localeCompare(rightLabel);
+    });
   }
 
   function saveDealsData(deals) {
@@ -2518,7 +2716,7 @@
     emailEl.textContent = info.email || "No mapped email available";
     statusEl.textContent = info.connected
       ? `Signed in${info.source ? ` via ${info.source}` : ""}`
-      : "Sign in from Sharedrive folders";
+      : "Sign in from Workspace connection";
     card.classList.toggle("is-connected", Boolean(info.connected));
   }
 
@@ -2545,6 +2743,13 @@
     STORAGE_KEYS,
     AUTO_CONTACT_TASK_PREFIX,
     normalizeValue,
+    parseDealAmount,
+    getDealRetainerRawValue,
+    getDealRetainerState,
+    hasPositiveRetainer,
+    matchesDealRetainerFilter,
+    compareDealsByRetainerState,
+    sortDealsByRetainerState,
     getPageUrl,
     loadDealsData,
     saveDealsData,
@@ -2590,6 +2795,7 @@
     downloadBinary,
     uploadShareDriveFile,
     inspectSharedJsonSource,
+    listOutlookMessages,
     getCurrentConnectedPerson,
     getPageAccessStatus,
     refreshConnectedPersonUi: renderSidebarUserCard,

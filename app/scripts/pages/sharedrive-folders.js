@@ -19,6 +19,11 @@
   let deviceCodeState = null;
   let deviceCodeTimer = null;
   let emptyDefaultText = "No folders found at this location.";
+  const connectionUiState = {
+    status: "Idle",
+    person: null,
+    meta: null,
+  };
 
   function hasDesktopBridge() {
     return Boolean(
@@ -58,9 +63,32 @@
     });
   }
 
+  function getDebugPanel() {
+    return document.getElementById("connection-debug-panel");
+  }
+
+  function setDebugPanelOpen(isOpen) {
+    const panel = getDebugPanel();
+    if (panel) panel.open = Boolean(isOpen);
+  }
+
+  function getConfiguredShareUrl() {
+    const urlInput = document.getElementById("share-url");
+    const currentValue = String(urlInput && urlInput.value ? urlInput.value : "").trim();
+    if (currentValue) return currentValue;
+    if (treeState && treeState.shareUrl) return String(treeState.shareUrl).trim();
+    try {
+      return String(localStorage.getItem(STORAGE_KEY_URL) || DEFAULT_SHARE_URL || "").trim();
+    } catch {
+      return String(DEFAULT_SHARE_URL || "").trim();
+    }
+  }
+
   function setStatus(text) {
     const status = document.getElementById("folders-status");
     if (status) status.textContent = text;
+    connectionUiState.status = text || "Idle";
+    renderConnectionSummary();
   }
 
   function setError(message) {
@@ -113,7 +141,7 @@
     if (messageEl) {
       messageEl.textContent = payload && payload.message ? payload.message : "Follow the prompt to finish signing in.";
     }
-    if (statusEl) statusEl.textContent = "Waiting for authorization…";
+    if (statusEl) statusEl.textContent = "Waiting for authorization...";
   }
 
   function setAuthDebug(message, isError) {
@@ -127,11 +155,14 @@
     box.hidden = false;
     box.textContent = message;
     box.style.color = isError ? "#fecdd3" : "";
+    if (isError) setDebugPanelOpen(true);
   }
 
   function renderMeta(data) {
     const metaRow = document.getElementById("sharedrive-meta-row");
     if (!metaRow) return;
+    connectionUiState.meta = data || null;
+    renderConnectionSummary();
 
     const rootName = data && data.root && data.root.name ? data.root.name : "-";
     const totalFolders = data && typeof data.totalFolders === "number" ? data.totalFolders : 0;
@@ -140,16 +171,180 @@
 
     metaRow.innerHTML = "";
     [
-      { label: "Root", value: rootName },
-      { label: "Folders", value: totalFolders },
-      { label: "Files", value: totalFiles },
-      { label: "Fetched", value: fetchedAt },
+      { label: "Workspace root", value: rootName },
+      { label: "Visible folders", value: totalFolders },
+      { label: "Visible files", value: totalFiles },
+      { label: "Last refresh", value: fetchedAt },
     ].forEach((chipData) => {
       const chip = document.createElement("div");
       chip.className = "chip";
       chip.innerHTML = `<strong>${chipData.value}</strong> ${chipData.label}`;
       metaRow.appendChild(chip);
     });
+  }
+
+  function getConnectionTone(text) {
+    const normalized = String(text || "").trim().toLowerCase();
+    if (!normalized || normalized === "idle") return "idle";
+    if (
+      normalized.includes("failed") ||
+      normalized.includes("error") ||
+      normalized.includes("unavailable") ||
+      normalized.includes("required") ||
+      normalized.includes("expired")
+    ) {
+      return "error";
+    }
+    if (
+      normalized.includes("loading") ||
+      normalized.includes("starting") ||
+      normalized.includes("awaiting") ||
+      normalized.includes("sign-in") ||
+      normalized.includes("uploading") ||
+      normalized.includes("reading")
+    ) {
+      return "working";
+    }
+    if (
+      normalized.includes("connected") ||
+      normalized.includes("signed in") ||
+      normalized.includes("complete") ||
+      normalized.includes("valid")
+    ) {
+      return "success";
+    }
+    return "idle";
+  }
+
+  function setConnectionStepState(elementId, nextState) {
+    const step = document.getElementById(elementId);
+    if (!step) return;
+    step.classList.toggle("is-active", nextState === "active");
+    step.classList.toggle("is-complete", nextState === "complete");
+  }
+
+  function renderConnectionExperienceState({ person, meta, tone, configuredShareUrl }) {
+    const body = document.body;
+    const hasAccount = Boolean(person && person.connected);
+    const hasWorkspace = Boolean(meta && meta.root && meta.root.name);
+    if (body) {
+      body.dataset.accountConnected = hasAccount ? "true" : "false";
+      body.dataset.workspaceConnected = hasWorkspace ? "true" : "false";
+      body.dataset.workspaceConfigured = configuredShareUrl ? "true" : "false";
+      body.dataset.connectionTone = tone;
+    }
+
+    setConnectionStepState(
+      "connection-step-account",
+      hasAccount ? "complete" : (tone === "working" ? "active" : "idle"),
+    );
+    setConnectionStepState(
+      "connection-step-workspace",
+      hasWorkspace ? "complete" : (hasAccount ? "active" : "idle"),
+    );
+    setConnectionStepState(
+      "connection-step-tools",
+      hasWorkspace ? "complete" : "idle",
+    );
+  }
+
+  function renderConnectionSummary(personOverride) {
+    if (typeof personOverride !== "undefined") {
+      connectionUiState.person = personOverride;
+    }
+
+    const pillEl = document.getElementById("connection-state-pill");
+    const titleEl = document.getElementById("connection-state-title");
+    const copyEl = document.getElementById("connection-state-copy");
+    const nameEl = document.getElementById("connection-user-name");
+    const emailEl = document.getElementById("connection-user-email");
+    const metaEl = document.getElementById("connection-user-meta");
+    const workspaceNameEl = document.getElementById("connection-workspace-name");
+    const workspaceNoteEl = document.getElementById("connection-workspace-note");
+    if (!pillEl || !titleEl || !copyEl || !nameEl || !emailEl || !metaEl || !workspaceNameEl || !workspaceNoteEl) return;
+
+    const person = connectionUiState.person;
+    const meta = connectionUiState.meta;
+    const status = String(connectionUiState.status || "Idle").trim() || "Idle";
+    const tone = getConnectionTone(status);
+    const configuredShareUrl = getConfiguredShareUrl();
+    renderConnectionExperienceState({
+      person,
+      meta,
+      tone,
+      configuredShareUrl,
+    });
+    pillEl.className = `connection-pill is-${tone}`;
+    pillEl.textContent = status;
+
+    if (person && person.connected) {
+      nameEl.textContent = person.alias || person.displayName || "Connected account";
+      emailEl.textContent = person.email || "Microsoft session active";
+      metaEl.textContent = person.source ? `Signed in via ${person.source}` : "Microsoft session active";
+    } else {
+      nameEl.textContent = "No Microsoft account connected";
+      emailEl.textContent = "Sign in to load the workspace with your session.";
+      metaEl.textContent = "No workspace connected yet.";
+    }
+
+    if (meta && meta.root && meta.root.name) {
+      workspaceNameEl.textContent = meta.root.name;
+      workspaceNoteEl.textContent = meta.fetchedAt
+        ? `Connected workspace last refreshed on ${formatDateTime(meta.fetchedAt)}.`
+        : "Connected workspace is ready.";
+    } else if (configuredShareUrl) {
+      workspaceNameEl.textContent = "Saved workspace link ready";
+      workspaceNoteEl.textContent = "The raw ShareDrive link stays hidden unless you open Advanced and debug.";
+    } else {
+      workspaceNameEl.textContent = "Workspace link needed";
+      workspaceNoteEl.textContent = "Open Advanced and debug if you need to set or change the workspace link.";
+    }
+
+    if (tone === "error") {
+      titleEl.textContent = "Connection needs attention";
+      copyEl.textContent = status;
+      return;
+    }
+
+    if (meta && meta.root && meta.root.name) {
+      titleEl.textContent = `Workspace connected to ${meta.root.name}`;
+      copyEl.textContent = meta.fetchedAt
+        ? `The sharedrive tree is loaded and was last refreshed on ${formatDateTime(meta.fetchedAt)}.`
+        : "The sharedrive tree is loaded and ready to browse.";
+      return;
+    }
+
+    if (tone === "working") {
+      titleEl.textContent = "Connection in progress";
+      copyEl.textContent = "Complete Microsoft sign-in if prompted, then connect the workspace to load folders.";
+      return;
+    }
+
+    if (person && person.connected) {
+      titleEl.textContent = "Microsoft account connected";
+      copyEl.textContent = configuredShareUrl
+        ? "Your session is ready. Load the workspace to browse folders."
+        : "Your session is ready. Open Advanced and debug if you need to add the workspace link.";
+      return;
+    }
+
+    titleEl.textContent = "Ready to connect your workspace";
+    copyEl.textContent = "Sign in with Microsoft first, then load the workspace the app should use.";
+  }
+
+  async function refreshConnectionSummary() {
+    if (!AppCore || typeof AppCore.getCurrentConnectedPerson !== "function") {
+      renderConnectionSummary(null);
+      return null;
+    }
+    try {
+      const person = await AppCore.getCurrentConnectedPerson();
+      renderConnectionSummary(person);
+      return person;
+    } catch {
+      renderConnectionSummary(null);
+      return null;
+    }
   }
 
   const treeState = {
@@ -385,7 +580,9 @@
     const rememberUrl = Boolean(rememberUrlInput && rememberUrlInput.checked);
 
     if (!shareUrl) {
+      setStatus("Share URL required");
       setError("Share URL is required.");
+      setDebugPanelOpen(true);
       return;
     }
 
@@ -396,7 +593,7 @@
     }
 
     setError("");
-    setStatus("Loading...");
+    setStatus("Loading workspace...");
 
     if (!hasDesktopBridge() && !(AppCore && typeof AppCore.listShareDriveChildren === "function")) {
       setStatus("Unavailable");
@@ -405,6 +602,7 @@
           ? "Listing items requires the desktop bridge. Sign in to use mobile task sync."
           : "Desktop bridge not available. Open this page in the Electron app (`npm run desktop`).",
       );
+      setDebugPanelOpen(true);
       return;
     }
 
@@ -417,14 +615,16 @@
     if (!result || !result.ok) {
       setStatus("Failed");
       setError((result && result.error) || "Failed to load items.");
+      setDebugPanelOpen(true);
       renderMeta(null);
       if (list) list.innerHTML = "";
       if (empty) empty.hidden = false;
       return;
     }
 
-    setStatus("Connected");
+    setStatus("Workspace connected");
     setError("");
+    setDebugPanelOpen(false);
     try {
       localStorage.setItem(SHAREDRIVE_GATE_KEY, "true");
     } catch {
@@ -468,7 +668,9 @@
     const useDesktop = window.PlutusDesktop && typeof window.PlutusDesktop.requestGraphDeviceCode === "function";
     const useBrowser = hasBrowserAuth();
     if (!useDesktop && !useBrowser) {
+      setStatus("Sign-in unavailable");
       setError("Device code flow is unavailable. Update the Electron app to enable it.");
+      setDebugPanelOpen(true);
       return;
     }
 
@@ -480,7 +682,7 @@
       ? await window.PlutusDesktop.requestGraphDeviceCode()
       : await AppCore.requestGraphDeviceCode();
     if (!result || !result.ok) {
-      setStatus("Idle");
+      setStatus("Failed to start sign-in");
       setError((result && result.error) || "Failed to start device code flow.");
       setAuthDebug(
         `Auth debug: bridge=${useDesktop ? "desktop" : "browser"} result=${JSON.stringify(result || {})}`,
@@ -502,10 +704,7 @@
       message: data.message,
     });
     setStatus("Awaiting sign-in...");
-    setAuthDebug(
-      `Auth debug: bridge=${useDesktop ? "desktop" : "browser"} client_id=${(window.SHAREDRIVE_TASKS && window.SHAREDRIVE_TASKS.azureClientId) || "n/a"} tenant=${(window.SHAREDRIVE_TASKS && window.SHAREDRIVE_TASKS.azureTenantId) || "common"}`,
-      false,
-    );
+    setAuthDebug("");
 
     clearDeviceCodeTimer();
     deviceCodeTimer = setTimeout(pollDeviceCodeFlow, deviceCodeState.interval * 1000);
@@ -532,6 +731,7 @@
     if (!result || !result.ok) {
       setError((result && result.error) || "Failed to poll device code.");
       setStatus("Sign-in failed");
+      setDebugPanelOpen(true);
       setDeviceCodeBox(false);
       deviceCodeState = null;
       return;
@@ -550,6 +750,12 @@
       window.dispatchEvent(new CustomEvent("appcore:graph-session-updated"));
       setDeviceCodeBox(false);
       deviceCodeState = null;
+      await refreshConnectionSummary();
+      if (getConfiguredShareUrl()) {
+        await fetchItems();
+      } else {
+        setDebugPanelOpen(true);
+      }
       return;
     }
 
@@ -568,6 +774,7 @@
 
     setError(payload.error_description || "Sign-in failed.");
     setStatus("Sign-in failed");
+    setDebugPanelOpen(true);
     setDeviceCodeBox(false);
     deviceCodeState = null;
   }
@@ -689,6 +896,12 @@
     const storedUrl = localStorage.getItem(STORAGE_KEY_URL);
     if (urlInput) {
       urlInput.value = storedUrl || DEFAULT_SHARE_URL;
+      urlInput.addEventListener("input", () => {
+        renderConnectionSummary();
+      });
+    }
+    if (!(storedUrl || DEFAULT_SHARE_URL)) {
+      setDebugPanelOpen(true);
     }
 
     if (fetchButton) fetchButton.addEventListener("click", fetchItems);
@@ -721,5 +934,9 @@
     setStatus("Idle");
     setUploadStatus("Idle");
     setDiagnosticsStatus("Idle");
+    refreshConnectionSummary();
+    window.addEventListener("appcore:graph-session-updated", () => {
+      refreshConnectionSummary();
+    });
   });
 })();

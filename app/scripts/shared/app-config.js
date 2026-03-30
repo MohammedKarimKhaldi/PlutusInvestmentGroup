@@ -47,7 +47,12 @@
     },
     "sharedrive-folders": {
       file: "sharedrive-folders.html",
-      label: "Sharedrive folders",
+      label: "Workspace connection",
+      showInNav: true,
+    },
+    "outlook-investor-sync": {
+      file: "outlook-investor-sync.html",
+      label: "Outlook investors",
       showInNav: true,
     },
   };

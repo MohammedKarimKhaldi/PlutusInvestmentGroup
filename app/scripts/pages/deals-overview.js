@@ -19,6 +19,7 @@
       keyword: "",
       stage: "all",
       owner: "all",
+      retainer: "all",
       setup: "all",
     };
 
@@ -158,6 +159,45 @@
 
     function hasLegalLinked(deal) {
       return normalizeDealLegalLinksForFilters(deal).length > 0;
+    }
+
+    function getDealRetainerState(deal) {
+      if (AppCore && typeof AppCore.getDealRetainerState === "function") {
+        return AppCore.getDealRetainerState(deal);
+      }
+      const rawValue = String(deal && (deal.retainerMonthly != null ? deal.retainerMonthly : deal && deal.Retainer) || "").trim();
+      const amount = Number(rawValue.replace(/,/g, "").replace(/[^0-9.-]/g, ""));
+      const hasRetainer = Number.isFinite(amount) && amount > 0;
+      return {
+        rawValue,
+        amount: hasRetainer ? amount : 0,
+        hasRetainer,
+        bucket: hasRetainer ? "with-retainer" : "no-retainer",
+        label: hasRetainer ? "With retainer" : "0 / no retainer",
+      };
+    }
+
+    function matchesDealRetainerFilter(deal, filterValue) {
+      if (AppCore && typeof AppCore.matchesDealRetainerFilter === "function") {
+        return AppCore.matchesDealRetainerFilter(deal, filterValue);
+      }
+      const normalized = normalizeValue(filterValue);
+      if (!normalized || normalized === "all") return true;
+      return getDealRetainerState(deal).bucket === normalized;
+    }
+
+    function sortDealsByRetainerState(source, fallbackComparator) {
+      if (AppCore && typeof AppCore.sortDealsByRetainerState === "function") {
+        return AppCore.sortDealsByRetainerState(source, fallbackComparator);
+      }
+      return (Array.isArray(source) ? source.slice() : []).sort((left, right) => {
+        const leftState = getDealRetainerState(left);
+        const rightState = getDealRetainerState(right);
+        if (leftState.hasRetainer !== rightState.hasRetainer) {
+          return leftState.hasRetainer ? -1 : 1;
+        }
+        return typeof fallbackComparator === "function" ? fallbackComparator(left, right) : 0;
+      });
     }
 
     function clearDealIntegrityCache() {
@@ -324,6 +364,7 @@
       const portfolioFilter = document.getElementById("deal-portfolio-filter");
       const stageFilter = document.getElementById("deal-stage-filter");
       const ownerFilter = document.getElementById("deal-owner-filter");
+      const retainerFilter = document.getElementById("deal-retainer-filter");
       const setupFilter = document.getElementById("deal-setup-filter");
 
       dealsFilterState = {
@@ -331,6 +372,7 @@
         keyword: String(searchInput && searchInput.value || "").trim().toLowerCase(),
         stage: String(stageFilter && stageFilter.value || "all").trim().toLowerCase() || "all",
         owner: String(ownerFilter && ownerFilter.value || "all").trim().toLowerCase() || "all",
+        retainer: String(retainerFilter && retainerFilter.value || "all").trim().toLowerCase() || "all",
         setup: String(setupFilter && setupFilter.value || "all").trim().toLowerCase() || "all",
       };
     }
@@ -340,12 +382,14 @@
       const portfolioFilter = document.getElementById("deal-portfolio-filter");
       const stageFilter = document.getElementById("deal-stage-filter");
       const ownerFilter = document.getElementById("deal-owner-filter");
+      const retainerFilter = document.getElementById("deal-retainer-filter");
       const setupFilter = document.getElementById("deal-setup-filter");
 
       if (searchInput) searchInput.value = dealsFilterState.keyword || "";
       if (portfolioFilter) portfolioFilter.value = dealsFilterState.portfolio || "active";
       if (stageFilter) stageFilter.value = dealsFilterState.stage || "all";
       if (ownerFilter) ownerFilter.value = dealsFilterState.owner || "all";
+      if (retainerFilter) retainerFilter.value = dealsFilterState.retainer || "all";
       if (setupFilter) setupFilter.value = dealsFilterState.setup || "all";
     }
 
@@ -374,6 +418,7 @@
     function matchesDealFilters(deal) {
       if (!deal) return false;
       if (!matchesPortfolioFilter(deal)) return false;
+      if (!matchesDealRetainerFilter(deal, dealsFilterState.retainer)) return false;
 
       const keyword = dealsFilterState.keyword;
       if (keyword) {
@@ -477,6 +522,7 @@
       if (!summaryEl) return;
       const portfolioFilter = document.getElementById("deal-portfolio-filter");
       const ownerFilter = document.getElementById("deal-owner-filter");
+      const retainerFilter = document.getElementById("deal-retainer-filter");
       const setupFilter = document.getElementById("deal-setup-filter");
 
       const total = (Array.isArray(dealsData) ? dealsData : []).filter((deal) => matchesPortfolioFilter(deal)).length;
@@ -498,6 +544,12 @@
           : dealsFilterState.owner;
         summaryParts.push(`owner: ${ownerLabel}`);
       }
+      if (dealsFilterState.retainer !== "all") {
+        const retainerLabel = retainerFilter && retainerFilter.selectedOptions && retainerFilter.selectedOptions[0]
+          ? retainerFilter.selectedOptions[0].text
+          : dealsFilterState.retainer.replace(/-/g, " ");
+        summaryParts.push(`retainer: ${retainerLabel}`);
+      }
       if (dealsFilterState.setup !== "all") {
         const setupLabel = setupFilter && setupFilter.selectedOptions && setupFilter.selectedOptions[0]
           ? setupFilter.selectedOptions[0].text
@@ -516,12 +568,13 @@
       const portfolioFilter = document.getElementById("deal-portfolio-filter");
       const stageFilter = document.getElementById("deal-stage-filter");
       const ownerFilter = document.getElementById("deal-owner-filter");
+      const retainerFilter = document.getElementById("deal-retainer-filter");
       const setupFilter = document.getElementById("deal-setup-filter");
       const resetBtn = document.getElementById("btn-reset-deal-filters");
       const metaRow = document.getElementById("meta-row");
       const integrityRow = document.getElementById("deal-integrity-row");
 
-      [searchInput, portfolioFilter, stageFilter, ownerFilter, setupFilter].forEach((control) => {
+      [searchInput, portfolioFilter, stageFilter, ownerFilter, retainerFilter, setupFilter].forEach((control) => {
         if (!control) return;
         const eventName = control.tagName === "INPUT" ? "input" : "change";
         control.addEventListener(eventName, () => {
@@ -537,6 +590,7 @@
             keyword: "",
             stage: "all",
             owner: "all",
+            retainer: "all",
             setup: "all",
           };
           applyDealFilterStateToUi();
@@ -1198,7 +1252,12 @@
       populateDealOwnerFilter();
       applyDealFilterStateToUi();
 
-      const filteredDeals = getFilteredDeals();
+      const filteredDeals = sortDealsByRetainerState(
+        getFilteredDeals(),
+        (left, right) => normalizeValue(left && (left.company || left.name || left.id)).localeCompare(
+          normalizeValue(right && (right.company || right.name || right.id)),
+        ),
+      );
       const portfolioDeals = (Array.isArray(dealsData) ? dealsData : []).filter((deal) => matchesPortfolioFilter(deal));
       const allCounts = buildDealStageCounts(portfolioDeals);
 
@@ -1215,6 +1274,7 @@
         const tr = document.createElement("tr");
         const stage = String(deal.stage || "").toLowerCase();
         const lifecycleStatus = getDealLifecycleStatus(deal);
+        const retainerState = getDealRetainerState(deal);
         const stageCell = `
           <div class="deal-stage-cell">
             <span class="stage-badge">
@@ -1236,7 +1296,7 @@
           <td class="amount">${formatAmountCell(deal.raisedAmount, deal.currency)}</td>
           <td>${formatTextOrUnknown(deal.CashCommission)}</td>
           <td>${formatTextOrUnknown(deal.EquityCommission)}</td>
-          <td>${formatTextOrUnknown(deal.Retainer)}</td>
+          <td>${retainerState.hasRetainer ? formatTextOrUnknown(retainerState.rawValue) : `<span class="chip">${escapeHtml(retainerState.label)}</span>`}</td>
           <td>${renderDealIntegrityCell(deal)}</td>
           <td>${renderDealActions(deal)}</td>
         `;

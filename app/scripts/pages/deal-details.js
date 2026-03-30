@@ -46,6 +46,23 @@ function buildPageUrl(pageId, params) {
   return queryString ? `${pageId}.html?${queryString}` : `${pageId}.html`;
 }
 
+function getDealRetainerState(deal) {
+  if (AppCore && typeof AppCore.getDealRetainerState === "function") {
+    return AppCore.getDealRetainerState(deal);
+  }
+  const rawValue = String(deal && (deal.retainerMonthly != null ? deal.retainerMonthly : deal && deal.Retainer) || "").trim();
+  const cleaned = rawValue.replace(/,/g, "").replace(/[^0-9.-]/g, "");
+  const amount = Number(cleaned);
+  const hasRetainer = Number.isFinite(amount) && amount > 0;
+  return {
+    rawValue,
+    amount: hasRetainer ? amount : 0,
+    hasRetainer,
+    bucket: hasRetainer ? "with-retainer" : "no-retainer",
+    label: hasRetainer ? "With retainer" : "0 / no retainer",
+  };
+}
+
 function loadDealsData() {
   allDeals = AppCore ? AppCore.loadDealsData() : (Array.isArray(DEALS) ? JSON.parse(JSON.stringify(DEALS)) : []);
 }
@@ -720,6 +737,103 @@ function collectDealContactsFromEditor() {
     contacts[0].isPrimary = true;
   }
   return contacts;
+}
+
+function normalizeInvestorContactStatus(value) {
+  const normalized = normalizeValue(value);
+  if (normalized === "queued") return "queued";
+  if (normalized === "contacted") return "contacted";
+  if (normalized === "follow-up") return "follow-up";
+  if (normalized === "replied") return "replied";
+  if (normalized === "invested") return "invested";
+  if (normalized === "passed") return "passed";
+  return "not-contacted";
+}
+
+function getInvestorContactStatusLabel(value) {
+  const normalized = normalizeInvestorContactStatus(value);
+  if (normalized === "queued") return "Queued";
+  if (normalized === "contacted") return "Contacted";
+  if (normalized === "follow-up") return "Follow up";
+  if (normalized === "replied") return "Replied";
+  if (normalized === "invested") return "Invested";
+  if (normalized === "passed") return "Passed";
+  return "Not contacted";
+}
+
+function normalizeDealInvestorContacts(deal) {
+  const source = deal && Array.isArray(deal.investorContacts) ? deal.investorContacts : [];
+  const normalized = source
+    .map((entry, index) => {
+      if (!entry || typeof entry !== "object") return null;
+      const email = String(entry.email || "").trim();
+      if (!email) return null;
+      return {
+        id: String(entry.id || `investor-${index}`).trim(),
+        name: String(entry.name || "").trim(),
+        email,
+        contactStatus: normalizeInvestorContactStatus(entry.contactStatus),
+        sourceMessageSubject: String(entry.sourceMessageSubject || "").trim(),
+        sourceMessageWebLink: String(entry.sourceMessageWebLink || "").trim(),
+        sourceReceivedAt: String(entry.sourceReceivedAt || "").trim(),
+        sourceFromName: String(entry.sourceFromName || "").trim(),
+        sourceFromEmail: String(entry.sourceFromEmail || "").trim(),
+        notes: String(entry.notes || "").trim(),
+        addedAt: String(entry.addedAt || "").trim(),
+        updatedAt: String(entry.updatedAt || "").trim(),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftValue = Date.parse(left.updatedAt || left.addedAt || "") || 0;
+      const rightValue = Date.parse(right.updatedAt || right.addedAt || "") || 0;
+      if (leftValue !== rightValue) return rightValue - leftValue;
+      return String(left.name || left.email).localeCompare(String(right.name || right.email));
+    });
+
+  if (deal && typeof deal === "object") {
+    deal.investorContacts = normalized;
+  }
+  return normalized;
+}
+
+function renderDealInvestorContacts() {
+  const listEl = document.getElementById("deal-investor-contacts-list");
+  const summaryEl = document.getElementById("deal-investor-contacts-summary");
+  if (!listEl || !summaryEl || !currentDeal) return;
+
+  const investors = normalizeDealInvestorContacts(currentDeal);
+  if (!investors.length) {
+    summaryEl.textContent = "Track investors added from Outlook or manual entries for this deal.";
+    listEl.innerHTML = '<div class="contact-card"><div class="contact-title">No investor contacts have been saved yet. Use the Outlook investors page to pull recipients onto this deal.</div></div>';
+    return;
+  }
+
+  summaryEl.textContent = `${investors.length} investor contact${investors.length === 1 ? "" : "s"} tracked for this deal.`;
+  listEl.innerHTML = investors.map((investor) => `
+    <div class="contact-card investor-contact-card">
+      <div class="contact-card-top">
+        <div>
+          <div class="contact-name">${escapeHtml(investor.name || investor.email)}</div>
+          <div class="contact-title">
+            ${escapeHtml(getInvestorContactStatusLabel(investor.contactStatus))}
+            ${investor.sourceReceivedAt ? ` · ${escapeHtml(formatDate(investor.sourceReceivedAt))}` : ""}
+          </div>
+        </div>
+        <span class="contact-primary-badge investor-status-badge investor-status-${escapeHtml(investor.contactStatus)}">
+          ${escapeHtml(getInvestorContactStatusLabel(investor.contactStatus))}
+        </span>
+      </div>
+      <a class="contact-email" href="mailto:${escapeHtml(investor.email)}">${escapeHtml(investor.email)}</a>
+      ${investor.sourceMessageSubject
+        ? `<div class="contact-title">Source email: ${escapeHtml(investor.sourceMessageSubject)}</div>`
+        : '<div class="contact-title">Source email: Manual entry</div>'}
+      ${investor.sourceMessageWebLink
+        ? `<a class="task-link" href="${escapeHtml(investor.sourceMessageWebLink)}" target="_blank" rel="noopener noreferrer">Open source email</a>`
+        : ""}
+      ${investor.notes ? `<div class="task-notes">${escapeHtml(investor.notes)}</div>` : ""}
+    </div>
+  `).join("");
 }
 
 function formatAmount(amount, currency) {
@@ -1521,7 +1635,12 @@ function renderDealHeader() {
   }
   document.getElementById("deal-cash-comm").textContent = textOrDash(currentDeal.CashCommission);
   document.getElementById("deal-equity-comm").textContent = textOrDash(currentDeal.EquityCommission);
-  document.getElementById("deal-retainer").textContent = textOrDash(currentDeal.Retainer);
+  const retainerState = getDealRetainerState(currentDeal);
+  document.getElementById("deal-retainer").textContent = retainerState.rawValue || "0";
+  const retainerStateEl = document.getElementById("deal-retainer-state");
+  if (retainerStateEl) {
+    retainerStateEl.textContent = retainerState.label;
+  }
 
   const progressPercent =
     currentDeal.targetAmount && !isNaN(currentDeal.targetAmount) && currentDeal.raisedAmount && !isNaN(currentDeal.raisedAmount)
@@ -1572,10 +1691,25 @@ function renderDealHeader() {
   }
 
   const btnDashboard = document.getElementById("btn-open-dashboard");
+  const btnOutlookInvestors = document.getElementById("btn-open-outlook-investors");
+  const btnOutlookInvestorsSecondary = document.getElementById("btn-open-outlook-investors-secondary");
   const btnEditDashboardConfig = document.getElementById("btn-edit-dashboard-config");
   const btnAccounting = document.getElementById("btn-open-accounting");
   const btnLegalWorkspace = document.getElementById("btn-open-legal-workspace");
   const dashboard = getDashboardForCurrentDeal();
+
+  [btnOutlookInvestors, btnOutlookInvestorsSecondary].forEach((button) => {
+    if (!button) return;
+    if (currentDeal && currentDeal.id) {
+      button.disabled = false;
+      button.onclick = () => {
+        window.location.href = buildPageUrl("outlook-investor-sync", { id: currentDeal.id });
+      };
+    } else {
+      button.disabled = true;
+      button.onclick = null;
+    }
+  });
 
   if (btnAccounting) {
     if (accountingAccessState.restricted && !accountingAccessState.allowed) {
@@ -1634,6 +1768,7 @@ function renderDealHeader() {
   syncLegacyPrimaryContactFields(currentDeal);
   renderDealLegalLinks();
   renderDealContactsSummary();
+  renderDealInvestorContacts();
   refreshDealTaskOwnerSuggestions();
   refreshStageButton();
   refreshDealLifecycleControls();

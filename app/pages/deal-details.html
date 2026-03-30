@@ -124,7 +124,7 @@
               <br />
               Cash commission: <span id="deal-cash-comm">–</span><br />
               Equity commission: <span id="deal-equity-comm">–</span><br />
-              Retainer: <span id="deal-retainer">–</span>
+              Retainer: <span id="deal-retainer">–</span> <span class="chip" id="deal-retainer-state">0 / no retainer</span>
             </p>
             <div class="linked-asset-card">
               <div class="linked-asset-label">Linked deck</div>
@@ -139,6 +139,9 @@
             <div class="btn-row">
               <button class="btn btn-primary" type="button" id="btn-open-dashboard">
                 Open fundraising dashboard
+              </button>
+              <button class="btn" type="button" id="btn-open-outlook-investors">
+                Open Outlook investors
               </button>
               <button class="btn" type="button" id="btn-edit-dashboard-config">
                 Edit dashboard config
@@ -164,6 +167,17 @@
           <h2>Contacts</h2>
           <p id="deal-contacts-summary">Track the main company contacts for this deal.</p>
           <div class="contact-card-list" id="deal-contacts-list"></div>
+        </div>
+
+        <div class="panel" style="margin-top: 12px;">
+          <div class="panel-heading-row">
+            <div>
+              <h2>Investor Contacts</h2>
+              <p id="deal-investor-contacts-summary">Track investors added from Outlook or manual entries for this deal.</p>
+            </div>
+            <button class="btn" type="button" id="btn-open-outlook-investors-secondary">Manage in Outlook page</button>
+          </div>
+          <div class="contact-card-list" id="deal-investor-contacts-list"></div>
         </div>
 
         <div class="panel" style="margin-top: 12px;">

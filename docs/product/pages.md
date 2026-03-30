@@ -12,6 +12,7 @@ Primary navigation includes:
 - Accounting
 - Tasks by owner
 - Sharedrive folders
+- Outlook investors
 
 ## Page responsibilities
 
@@ -48,6 +49,12 @@ Primary navigation includes:
 - Device-code sign-in
 - Folder browsing
 - Upload and diagnostics tools
+
+### `outlook-investor-sync.html`
+
+- Connects to Outlook through the existing Microsoft Graph session
+- Loads recent emails and extracts To/Cc recipients
+- Saves selected recipients onto a deal as tracked investors with contact statuses
 
 ### `deal-ownership.html`
 

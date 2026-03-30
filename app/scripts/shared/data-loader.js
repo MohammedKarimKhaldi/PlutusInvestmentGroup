@@ -84,7 +84,7 @@
 
   const dealsJson =
     readDesktopJson("deals") ||
-    (sharedDealsEnabled || isFileProtocol
+    (isFileProtocol
       ? null
       : readJsonSync(appConfig.getDataPath ? appConfig.getDataPath("deals") : `../data/${dataFiles.deals}`)) ||
     [];

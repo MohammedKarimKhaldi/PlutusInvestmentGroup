@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
-  <title>Sharedrive Folders</title>
+  <title>Workspace Connection</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../styles/base.css" />
@@ -18,115 +18,213 @@
       <aside class="sidebar-nav" data-sidebar-nav></aside>
 
       <div class="main-column">
-        <div class="header">
+        <div class="header sharedrive-header">
           <div class="title-block">
-            <h1>Sharedrive Folders</h1>
-            <p>Dynamic folder list from your SharePoint / OneDrive directory.</p>
+            <h1>Workspace Connection</h1>
+            <p>Connect Microsoft once, confirm the active account, and let the app use that workspace everywhere.</p>
           </div>
           <div class="header-actions">
-            <div class="pill"><span class="dot"></span><span>Live Graph API</span></div>
+            <div class="pill"><span class="dot"></span><span>Plutus access hub</span></div>
           </div>
         </div>
 
-        <div class="panel form-panel">
-          <h2>Connection</h2>
-          <div class="toolbar-row">
-            <label class="wide">
-              Share URL
-              <input id="share-url" type="text" placeholder="https://.../onedrive.aspx?id=..." />
-            </label>
-          </div>
-          <div class="toolbar-row">
-            <label class="wide">
-              Access token (optional)
-              <input id="access-token" type="password" placeholder="Paste Microsoft Graph bearer token, or leave empty to use env vars" />
-            </label>
-          </div>
-          <div class="toolbar-row actions-row">
-            <label class="remember-toggle">
-              <input id="remember-url" type="checkbox" checked />
-              <span>Remember URL on this machine</span>
-            </label>
-            <div class="action-buttons">
-              <button class="btn btn-secondary" type="button" id="device-code-btn">Sign in with Microsoft</button>
-              <button class="btn btn-primary" type="button" id="fetch-folders-btn">Load items</button>
+        <section class="panel connection-shell-card">
+          <div class="connection-shell-grid">
+            <div class="connection-stage-panel">
+              <div class="connection-stage-copy">
+                <div class="eyebrow">App onboarding</div>
+                <h2>Connect the app to Microsoft</h2>
+                <p>Use the device sign-in flow, then load the shared workspace. Once connected, folder browsing and uploads feel like a natural part of the app instead of separate setup steps.</p>
+              </div>
+
+              <div class="connection-step-track">
+                <div class="connection-step" id="connection-step-account">
+                  <div class="connection-step-index">1</div>
+                  <div>
+                    <div class="connection-step-title">Account</div>
+                    <div class="connection-step-copy">Sign in with Microsoft</div>
+                  </div>
+                </div>
+                <div class="connection-step" id="connection-step-workspace">
+                  <div class="connection-step-index">2</div>
+                  <div>
+                    <div class="connection-step-title">Workspace</div>
+                    <div class="connection-step-copy">Load the saved ShareDrive</div>
+                  </div>
+                </div>
+                <div class="connection-step" id="connection-step-tools">
+                  <div class="connection-step-index">3</div>
+                  <div>
+                    <div class="connection-step-title">Use the app</div>
+                    <div class="connection-step-copy">Browse and upload smoothly</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="connection-primary-actions">
+                <button class="btn btn-primary" type="button" id="device-code-btn">Connect Microsoft</button>
+                <button class="btn btn-secondary" type="button" id="fetch-folders-btn">Load workspace</button>
+              </div>
+
+              <div class="connection-quiet-note">
+                Device sign-in is the default path. Raw links, tokens, and diagnostics stay out of the way unless you deliberately open them.
+              </div>
+
+              <div id="device-code-box" class="device-code-box" hidden>
+                <div class="device-code-title">Complete device code sign-in</div>
+                <div class="device-code-message" id="device-code-message">Follow the prompt to finish signing in.</div>
+                <div class="device-code-row">
+                  <div class="device-code-label">Code</div>
+                  <div class="device-code-value" id="device-code-value">-</div>
+                </div>
+                <div class="device-code-row">
+                  <div class="device-code-label">Verify</div>
+                  <a class="device-code-link" id="device-code-link" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener noreferrer">
+                    https://microsoft.com/devicelogin
+                  </a>
+                </div>
+                <div class="device-code-status" id="device-code-status">Waiting for authorization...</div>
+              </div>
             </div>
+
+            <aside class="connection-cockpit">
+              <section class="panel connection-status-panel">
+                <div class="eyebrow">Live status</div>
+                <div class="summary-pill-row">
+                  <span id="connection-state-pill" class="connection-pill is-idle">Idle</span>
+                  <span class="summary-context">Microsoft Graph + ShareDrive</span>
+                </div>
+                <h2 id="connection-state-title">Ready to connect your workspace</h2>
+                <p id="connection-state-copy">Sign in with Microsoft, then load the workspace the app should use.</p>
+              </section>
+
+              <div class="connection-identity-grid">
+                <section class="panel connection-user-card">
+                  <div class="connection-user-label">Connected account</div>
+                  <div class="connection-user-name" id="connection-user-name">No Microsoft account connected</div>
+                  <div class="connection-user-email" id="connection-user-email">Sign in to load the workspace with your session.</div>
+                  <div class="connection-user-meta" id="connection-user-meta">No workspace connected yet.</div>
+                </section>
+
+                <section class="panel connection-user-card">
+                  <div class="connection-user-label">Workspace source</div>
+                  <div class="connection-user-name connection-workspace-name" id="connection-workspace-name">Saved workspace link ready</div>
+                  <div class="connection-user-email" id="connection-workspace-note">The raw ShareDrive link stays hidden unless you open Advanced and debug.</div>
+                </section>
+              </div>
+            </aside>
           </div>
-          <div class="toolbar-row">
-            <label class="wide">
-              Search folders
-              <input id="folder-search" type="text" placeholder="Type a folder name..." />
-            </label>
+        </section>
+
+        <div class="workspace-tools-header">
+          <div>
+            <div class="eyebrow">Workspace tools</div>
+            <h2>Use the connected workspace</h2>
+            <p>Once the connection is active, browse folders and send files without leaving this screen.</p>
           </div>
-          <div id="device-code-box" class="device-code-box" hidden>
-            <div class="device-code-title">Device code sign-in</div>
-            <div class="device-code-message" id="device-code-message">Follow the prompt to finish signing in.</div>
-            <div class="device-code-row">
-              <div class="device-code-label">Code</div>
-              <div class="device-code-value" id="device-code-value">—</div>
+        </div>
+
+        <div class="sharedrive-content-grid">
+          <section class="panel explorer-panel">
+            <div class="panel-heading-row explorer-heading">
+              <div>
+                <h2>Workspace explorer</h2>
+                <p>Search first, then expand the live tree to move through the connected workspace naturally.</p>
+              </div>
+              <span id="folders-status" class="status-text">Idle</span>
             </div>
-            <div class="device-code-row">
-              <div class="device-code-label">Verify</div>
-              <a class="device-code-link" id="device-code-link" href="https://microsoft.com/devicelogin" target="_blank" rel="noopener noreferrer">
-                https://microsoft.com/devicelogin
-              </a>
+            <div class="toolbar-row explorer-search-row">
+              <label class="wide">
+                Search folders
+                <input id="folder-search" type="text" placeholder="Type part of a folder name..." />
+              </label>
             </div>
-            <div class="device-code-status" id="device-code-status">Waiting for authorization…</div>
+            <div id="folders-error" class="error-banner" hidden></div>
+            <div id="folders-empty" class="empty-state" hidden>No folders found at this location.</div>
+            <div id="folders-list" class="folders-list"></div>
+          </section>
+
+          <div class="sharedrive-side-column">
+            <section class="panel utility-panel">
+              <div class="panel-heading-row utility-heading">
+                <div>
+                  <h2>Upload to workspace</h2>
+                  <p>Send a file to the connected root folder, or target a specific folder only when needed.</p>
+                </div>
+              </div>
+              <div class="toolbar-row">
+                <label class="wide">
+                  Target folder ID (optional)
+                  <input id="upload-folder-id" type="text" placeholder="Leave empty to upload to the shared root folder" />
+                </label>
+              </div>
+              <div class="toolbar-row upload-row">
+                <input id="upload-file" class="upload-input" type="file" />
+                <select id="upload-conflict" class="upload-select">
+                  <option value="replace">Replace if exists</option>
+                  <option value="rename">Rename if exists</option>
+                  <option value="fail">Fail if exists</option>
+                </select>
+                <button class="btn btn-primary" type="button" id="upload-btn">Upload file</button>
+              </div>
+              <div class="upload-status" id="upload-status">Idle</div>
+              <p class="hint">Uploads happen through Microsoft Graph. Large files are sent in chunks automatically.</p>
+            </section>
           </div>
-          <div id="auth-debug-box" class="error-banner" hidden></div>
-          <p class="hint">
-            Dynamic listing requires desktop mode (`npm run desktop`) and a valid Microsoft Graph token.
-            You can also set environment vars: `PLUTUS_GRAPH_ACCESS_TOKEN` or
-            `PLUTUS_AZURE_TENANT_ID` + `PLUTUS_AZURE_CLIENT_ID` + `PLUTUS_AZURE_CLIENT_SECRET`.
-          </p>
         </div>
 
-        <div class="meta-row" id="sharedrive-meta-row"></div>
+        <section class="panel debug-panel">
+          <details id="connection-debug-panel">
+            <summary>Advanced and debug</summary>
+            <div class="debug-panel-body">
+              <div class="connection-form">
+                <div class="toolbar-row">
+                  <label class="wide">
+                    Share URL
+                    <input id="share-url" type="text" placeholder="https://.../onedrive.aspx?id=..." />
+                  </label>
+                </div>
+                <div class="toolbar-row">
+                  <label class="wide">
+                    Access token (optional)
+                    <input id="access-token" type="password" placeholder="Paste a Microsoft Graph bearer token, or leave this empty to use the built-in sign-in flow" />
+                  </label>
+                </div>
+                <div class="toolbar-row actions-row">
+                  <label class="remember-toggle">
+                    <input id="remember-url" type="checkbox" checked />
+                    <span>Remember this workspace on this machine</span>
+                  </label>
+                </div>
+              </div>
 
-        <div class="panel form-panel">
-          <h2>Upload</h2>
-          <div class="toolbar-row">
-            <label class="wide">
-              Target folder ID (optional)
-              <input id="upload-folder-id" type="text" placeholder="Leave empty to upload to the shared root folder" />
-            </label>
-          </div>
-          <div class="toolbar-row upload-row">
-            <input id="upload-file" class="upload-input" type="file" />
-            <select id="upload-conflict" class="upload-select">
-              <option value="replace">Replace if exists</option>
-              <option value="rename">Rename if exists</option>
-              <option value="fail">Fail if exists</option>
-            </select>
-            <button class="btn btn-primary" type="button" id="upload-btn">Upload file</button>
-          </div>
-          <div class="upload-status" id="upload-status">Idle</div>
-          <p class="hint">Uploads happen via Microsoft Graph. Large files are sent in chunks.</p>
-        </div>
+              <div id="auth-debug-box" class="error-banner" hidden></div>
 
-        <div class="panel form-panel">
-          <div class="panel-heading-row">
-            <h2>Sync diagnostics</h2>
-            <span id="diagnostics-status" class="status-text">Idle</span>
-          </div>
-          <div class="action-buttons">
-            <button class="btn" type="button" id="debug-tasks-btn">Inspect tasks JSON</button>
-            <button class="btn" type="button" id="debug-deals-btn">Inspect deals JSON</button>
-            <button class="btn" type="button" id="debug-config-btn">Inspect config JSON</button>
-          </div>
-          <div class="hint">This downloads the raw shared file and shows whether Android/desktop sees valid JSON or an HTML/error response.</div>
-          <pre id="diagnostics-output" class="diagnostics-output">No diagnostics run yet.</pre>
-        </div>
+              <p class="hint">
+                Desktop mode (`npm run desktop`) gives the full bridge experience. You can also use environment variables:
+                `PLUTUS_GRAPH_ACCESS_TOKEN` or `PLUTUS_AZURE_TENANT_ID` + `PLUTUS_AZURE_CLIENT_ID` + `PLUTUS_AZURE_CLIENT_SECRET`.
+              </p>
 
-        <div class="panel list-panel">
-          <div class="panel-heading-row">
-            <h2>Items</h2>
-            <span id="folders-status" class="status-text">Idle</span>
-          </div>
-          <div id="folders-error" class="error-banner" hidden></div>
-          <div id="folders-empty" class="empty-state" hidden>No folders found at this location.</div>
-          <div id="folders-list" class="folders-list"></div>
-        </div>
+              <div class="meta-row sharedrive-meta-row" id="sharedrive-meta-row"></div>
+
+              <section class="diagnostics-inline">
+                <div class="panel-heading-row utility-heading">
+                  <div>
+                    <h2>Sync diagnostics</h2>
+                    <p>Check whether shared JSON files are valid when mobile or desktop sync looks off.</p>
+                  </div>
+                  <span id="diagnostics-status" class="status-text">Idle</span>
+                </div>
+                <div class="action-buttons">
+                  <button class="btn" type="button" id="debug-tasks-btn">Inspect tasks JSON</button>
+                  <button class="btn" type="button" id="debug-deals-btn">Inspect deals JSON</button>
+                  <button class="btn" type="button" id="debug-config-btn">Inspect config JSON</button>
+                </div>
+                <pre id="diagnostics-output" class="diagnostics-output">No diagnostics run yet.</pre>
+              </section>
+            </div>
+          </details>
+        </section>
       </div>
     </div>
   </div>

@@ -40,4 +40,7 @@ contextBridge.exposeInMainWorld("PlutusDesktop", {
   getGraphSession() {
     return ipcRenderer.invoke("plutus:graph:session");
   },
+  listOutlookMessages(payload) {
+    return ipcRenderer.invoke("plutus:graph:outlook:list-messages", payload || {});
+  },
 });

@@ -20,6 +20,7 @@
         link: "all",
         coverage: "all",
         stage: "all",
+        retainer: "all",
         sector: "all",
         location: "all",
         fundingStage: "all",
@@ -34,6 +35,58 @@
             return AppCore.normalizeValue(value);
         }
         return String(value || '').trim().toLowerCase();
+    }
+
+    function getDealRetainerState(deal) {
+        if (AppCore && typeof AppCore.getDealRetainerState === 'function') {
+            return AppCore.getDealRetainerState(deal);
+        }
+        const rawValue = String(deal && (deal.retainerMonthly != null ? deal.retainerMonthly : deal && deal.Retainer) || '').trim();
+        const cleaned = rawValue.replace(/,/g, '').replace(/[^0-9.-]/g, '');
+        const amount = Number(cleaned);
+        const hasRetainer = Number.isFinite(amount) && amount > 0;
+        return {
+            rawValue,
+            amount: hasRetainer ? amount : 0,
+            hasRetainer,
+            bucket: hasRetainer ? 'with-retainer' : 'no-retainer',
+            label: hasRetainer ? 'With retainer' : '0 / no retainer',
+        };
+    }
+
+    function matchesDealRetainerFilter(deal, filterValue) {
+        if (AppCore && typeof AppCore.matchesDealRetainerFilter === 'function') {
+            return AppCore.matchesDealRetainerFilter(deal, filterValue);
+        }
+        const normalizedFilter = normalizeValue(filterValue);
+        if (!normalizedFilter || normalizedFilter === 'all') return true;
+        return getDealRetainerState(deal).bucket === normalizedFilter;
+    }
+
+    function compareDealsByRetainerState(left, right) {
+        if (AppCore && typeof AppCore.compareDealsByRetainerState === 'function') {
+            return AppCore.compareDealsByRetainerState(left, right);
+        }
+        const leftState = getDealRetainerState(left);
+        const rightState = getDealRetainerState(right);
+        if (leftState.hasRetainer === rightState.hasRetainer) return 0;
+        return leftState.hasRetainer ? -1 : 1;
+    }
+
+    function compareOwnershipEntries(left, right) {
+        const leftNeedsAttention = Boolean(left && left.requiresAttention);
+        const rightNeedsAttention = Boolean(right && right.requiresAttention);
+        const riskOrder = leftNeedsAttention === rightNeedsAttention ? 0 : leftNeedsAttention ? -1 : 1;
+        if (riskOrder) return riskOrder;
+
+        const retainerOrder = compareDealsByRetainerState(left && left.match, right && right.match);
+        if (retainerOrder) return retainerOrder;
+
+        const leftAssignments = Number(left && left.assignments || 0);
+        const rightAssignments = Number(right && right.assignments || 0);
+        if (leftAssignments !== rightAssignments) return rightAssignments - leftAssignments;
+
+        return getSummaryDisplayLabel(left).localeCompare(getSummaryDisplayLabel(right));
     }
 
     function normalizeDealLifecycleStatus(value) {
@@ -72,6 +125,7 @@
         const linkFilter = document.getElementById('ownership-link-filter');
         const coverageFilter = document.getElementById('ownership-coverage-filter');
         const stageFilter = document.getElementById('ownership-stage-filter');
+        const retainerFilter = document.getElementById('ownership-retainer-filter');
         const resetBtn = document.getElementById('ownership-reset-filters');
         const visualFilters = document.getElementById('ownership-visual-filters');
 
@@ -81,7 +135,7 @@
                 renderDashboardState();
             });
         }
-        [viewFilter, linkFilter, coverageFilter, stageFilter].forEach((control) => {
+        [viewFilter, linkFilter, coverageFilter, stageFilter, retainerFilter].forEach((control) => {
             if (!control) return;
             control.addEventListener('change', () => {
                 syncOwnershipFiltersFromUi();
@@ -96,6 +150,7 @@
                     link: "all",
                     coverage: "all",
                     stage: "all",
+                    retainer: "all",
                     sector: "all",
                     location: "all",
                     fundingStage: "all",
@@ -140,6 +195,7 @@
             link: String(document.getElementById('ownership-link-filter') && document.getElementById('ownership-link-filter').value || 'all').trim().toLowerCase() || 'all',
             coverage: String(document.getElementById('ownership-coverage-filter') && document.getElementById('ownership-coverage-filter').value || 'all').trim().toLowerCase() || 'all',
             stage: String(document.getElementById('ownership-stage-filter') && document.getElementById('ownership-stage-filter').value || 'all').trim().toLowerCase() || 'all',
+            retainer: String(document.getElementById('ownership-retainer-filter') && document.getElementById('ownership-retainer-filter').value || 'all').trim().toLowerCase() || 'all',
             sector: ownershipFilters.sector || 'all',
             location: ownershipFilters.location || 'all',
             fundingStage: ownershipFilters.fundingStage || 'all',
@@ -154,12 +210,14 @@
         const linkFilter = document.getElementById('ownership-link-filter');
         const coverageFilter = document.getElementById('ownership-coverage-filter');
         const stageFilter = document.getElementById('ownership-stage-filter');
+        const retainerFilter = document.getElementById('ownership-retainer-filter');
 
         if (searchInput) searchInput.value = ownershipFilters.keyword || '';
         if (viewFilter) viewFilter.value = ownershipFilters.view || 'summary';
         if (linkFilter) linkFilter.value = ownershipFilters.link || 'all';
         if (coverageFilter) coverageFilter.value = ownershipFilters.coverage || 'all';
         if (stageFilter) stageFilter.value = ownershipFilters.stage || 'all';
+        if (retainerFilter) retainerFilter.value = ownershipFilters.retainer || 'all';
     }
 
     function rebuildOwnershipContext() {
@@ -780,14 +838,7 @@
                 entry.requiresAttention = entry.coverageBucket !== 'healthy' || entry.systemIssueCount > 0;
                 return entry;
             })
-            .sort((a, b) => {
-                const riskOrder = a.requiresAttention === b.requiresAttention ? 0 : a.requiresAttention ? -1 : 1;
-                if (riskOrder) return riskOrder;
-                const aAssignments = Number(a.assignments || 0);
-                const bAssignments = Number(b.assignments || 0);
-                if (aAssignments !== bAssignments) return bAssignments - aAssignments;
-                return getSummaryDisplayLabel(a).localeCompare(getSummaryDisplayLabel(b));
-            });
+            .sort((a, b) => compareOwnershipEntries(a, b));
 
         const summaryEntriesByKey = new Map(summaryEntries.map((entry) => [entry.key, entry]));
 
@@ -838,6 +889,8 @@
 
         const profileLabel = buildDealProfileLabel(match);
         const keywordLabel = getDealKeywords(match).slice(0, 4).join(', ');
+        const retainerState = getDealRetainerState(match);
+        const retainerText = retainerState.hasRetainer ? retainerState.rawValue : retainerState.label;
 
         return `
             <div class="ownership-stack">
@@ -845,6 +898,7 @@
                 <span class="ownership-muted">${escapeHtml(buildOwnerRosterLabel(match))}</span>
                 ${profileLabel ? `<span class="ownership-muted">${escapeHtml(profileLabel)}</span>` : ''}
                 ${keywordLabel ? `<span class="ownership-muted">Thematics: ${escapeHtml(keywordLabel)}</span>` : ''}
+                <span class="ownership-muted">Retainer: ${escapeHtml(retainerText || retainerState.label)}</span>
                 <span class="ownership-muted">Target: ${formatAmountCell(match.targetAmount, match.currency)} · Raised: ${formatAmountCell(match.raisedAmount, match.currency)}</span>
             </div>
         `;
@@ -1189,6 +1243,11 @@
         if (ownershipFilters.stage !== 'all' && entry.stageKey !== ownershipFilters.stage) {
             return false;
         }
+        if (ownershipFilters.retainer !== 'all') {
+            if (!entry.match || !matchesDealRetainerFilter(entry.match, ownershipFilters.retainer)) {
+                return false;
+            }
+        }
         if (!matchesProfileFilterValue(entry.sectors, ownershipFilters.sector)) {
             return false;
         }
@@ -1305,14 +1364,7 @@
         return Array.from(groups.values())
             .map((group) => {
                 const groupEntries = Array.isArray(group.entries) ? group.entries.slice() : [];
-                groupEntries.sort((a, b) => {
-                    const riskOrder = a.requiresAttention === b.requiresAttention ? 0 : a.requiresAttention ? -1 : 1;
-                    if (riskOrder) return riskOrder;
-                    const aAssignments = Number(a.assignments || 0);
-                    const bAssignments = Number(b.assignments || 0);
-                    if (aAssignments !== bAssignments) return bAssignments - aAssignments;
-                    return getSummaryDisplayLabel(a).localeCompare(getSummaryDisplayLabel(b));
-                });
+                groupEntries.sort((a, b) => compareOwnershipEntries(a, b));
 
                 const attentionCount = groupEntries.filter((entry) => entry.requiresAttention).length;
                 const dealCount = groupEntries.length;
@@ -1381,6 +1433,7 @@
         if (!summaryEl) return;
         const linkFilter = document.getElementById('ownership-link-filter');
         const coverageFilter = document.getElementById('ownership-coverage-filter');
+        const retainerFilter = document.getElementById('ownership-retainer-filter');
 
         const viewLabel = ownershipFilters.view === 'rows'
             ? 'staffing rows'
@@ -1401,6 +1454,12 @@
             parts.push(`coverage: ${coverageLabel}`);
         }
         if (ownershipFilters.stage !== 'all') parts.push(`stage: ${getStageLabel(ownershipFilters.stage)}`);
+        if (ownershipFilters.retainer !== 'all') {
+            const retainerLabel = retainerFilter && retainerFilter.selectedOptions && retainerFilter.selectedOptions[0]
+                ? retainerFilter.selectedOptions[0].text
+                : ownershipFilters.retainer.replace(/-/g, ' ');
+            parts.push(`retainer: ${retainerLabel}`);
+        }
         if (ownershipFilters.sector !== 'all') parts.push(`sectors: ${ownershipFilters.sector}`);
         if (ownershipFilters.location !== 'all') parts.push(`location: ${ownershipFilters.location}`);
         if (ownershipFilters.fundingStage !== 'all') parts.push(`funding stage: ${ownershipFilters.fundingStage}`);

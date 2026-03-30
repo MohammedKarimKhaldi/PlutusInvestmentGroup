@@ -1,0 +1,461 @@
+.connection-panel,
+.message-list,
+.recipient-list,
+.deal-investors-list,
+.manual-recipient-list {
+  display: grid;
+  gap: 10px;
+}
+
+.connection-grid,
+.content-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.assignment-grid {
+  margin-top: 16px;
+}
+
+.panel h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 500;
+  color: var(--text-soft);
+}
+
+.panel p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.panel-heading-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.panel-heading-row .btn {
+  flex-shrink: 0;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.form-status {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.connection-card,
+.message-card,
+.recipient-card,
+.manual-recipient-card,
+.selected-message-card,
+.deal-investor-card {
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #ffffff;
+}
+
+.connection-card {
+  padding: 14px 16px;
+}
+
+.connection-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-soft);
+  margin-bottom: 6px;
+}
+
+.connection-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.connection-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.status-text {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.wide {
+  flex: 1 1 280px;
+}
+
+.wide input {
+  width: 100%;
+}
+
+.message-toolbar {
+  align-items: end;
+}
+
+.message-picker-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.message-toolbar .btn {
+  align-self: end;
+}
+
+.message-picker-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.message-picker-row select {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--text-main);
+  background: #ffffff;
+}
+
+.message-results-summary,
+.message-selection-copy {
+  border-radius: 14px;
+  border: 1px solid rgba(79, 70, 229, 0.12);
+  background: linear-gradient(145deg, rgba(79, 70, 229, 0.08), rgba(255, 255, 255, 0.96));
+  color: #4338ca;
+}
+
+.message-results-summary {
+  padding: 11px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.message-selection-copy {
+  margin-top: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.message-card {
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.message-card:hover,
+.message-card.is-active {
+  border-color: rgba(79, 70, 229, 0.45);
+  box-shadow: 0 18px 35px rgba(79, 70, 229, 0.12);
+  transform: translateY(-1px);
+}
+
+.message-list {
+  margin-top: 14px;
+  max-height: 560px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.message-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.message-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.4);
+}
+
+.message-card-top,
+.recipient-card-top,
+.deal-investor-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.message-card-subject,
+.selected-message-title,
+.deal-investor-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.message-card-meta,
+.selected-message-meta,
+.recipient-card-meta,
+.manual-recipient-meta,
+.deal-investor-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.message-card-preview {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.recipient-card,
+.manual-recipient-card,
+.deal-investor-card,
+.selected-message-card {
+  padding: 12px 14px;
+}
+
+.selected-message-card {
+  border-color: rgba(79, 70, 229, 0.28);
+  background: linear-gradient(145deg, rgba(79, 70, 229, 0.08), rgba(255, 255, 255, 0.98));
+  box-shadow: 0 16px 30px rgba(79, 70, 229, 0.08);
+}
+
+.recipient-card label,
+.manual-recipient-card label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.recipient-card input[type="checkbox"],
+.manual-recipient-card input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.recipient-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(79, 70, 229, 0.08);
+  color: #4338ca;
+  border: 1px solid rgba(79, 70, 229, 0.18);
+}
+
+.manual-recipient-form {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr auto;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.manual-recipient-form label,
+.deal-form-full {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.manual-recipient-form input,
+.deal-form-grid select,
+.deal-form-full textarea {
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--text-main);
+  background: #ffffff;
+}
+
+.manual-recipient-form button {
+  align-self: end;
+}
+
+.deal-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.deal-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.deal-investor-card-top {
+  margin-bottom: 8px;
+}
+
+.deal-investor-email {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.deal-investor-email:hover {
+  text-decoration: underline;
+}
+
+.deal-investor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.deal-investor-actions select {
+  min-width: 150px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  padding: 7px 11px;
+  font: inherit;
+  color: var(--text-main);
+  background: #ffffff;
+}
+
+.deal-investor-source-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.deal-investor-source-link:hover {
+  text-decoration: underline;
+}
+
+.investor-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-not-contacted {
+  background: rgba(148, 163, 184, 0.14);
+  color: #475569;
+}
+
+.status-queued {
+  background: rgba(14, 165, 233, 0.12);
+  color: #0f4c81;
+}
+
+.status-contacted,
+.status-follow-up {
+  background: rgba(251, 191, 36, 0.18);
+  color: #92400e;
+}
+
+.status-replied {
+  background: rgba(79, 70, 229, 0.14);
+  color: #4338ca;
+}
+
+.status-invested {
+  background: rgba(34, 197, 94, 0.14);
+  color: #166534;
+}
+
+.status-passed {
+  background: rgba(244, 63, 94, 0.14);
+  color: #be123c;
+}
+
+.device-code-box {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(79, 70, 229, 0.12), rgba(14, 165, 233, 0.1));
+  border: 1px solid rgba(79, 70, 229, 0.18);
+}
+
+.device-code-title,
+.device-code-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-soft);
+}
+
+.device-code-message,
+.device-code-status {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.device-code-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.device-code-value {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--text-main);
+}
+
+.device-code-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.device-code-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 960px) {
+  .connection-grid,
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .manual-recipient-form,
+  .deal-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .message-results-summary {
+    width: 100%;
+    white-space: normal;
+  }
+
+  .message-toolbar .btn {
+    width: 100%;
+  }
+}

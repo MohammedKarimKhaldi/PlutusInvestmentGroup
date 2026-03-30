@@ -22,6 +22,7 @@
                 let currentDashboard = null;
                 let currentDashboardMode = 'home';
                 let dashboardFormMode = 'edit';
+                let refreshButtonBusy = false;
 
                 // Proxy fallback chain loaded from external config if available
                 const PROXIES = window.DASHBOARD_PROXIES || [];
@@ -41,6 +42,7 @@
                     'Name',
                     'Email',
                     'Type',
+                    'Type of Client',
                     'Description',
                     'Size of Investment',
                     'Investment Size',
@@ -58,13 +60,34 @@
                     'Contacted / Meeting Done',
                     'Waiting / Ongoing',
                     'Replied / Moving Forward',
-                    'Passed',
                 ];
                 const COMPOSITION_GROUPS = [
                     { key: 'vc', label: 'VC Funds', shortLabel: 'VC', color: '#4f46e5', childColors: ['#312e81', '#3730a3', '#4338ca', '#6366f1', '#818cf8', '#a5b4fc'] },
                     { key: 'hnwi', label: 'HNWI / Angels', shortLabel: 'HNWI', color: '#10b981', childColors: ['#065f46', '#047857', '#059669', '#10b981', '#34d399', '#6ee7b7'] },
                     { key: 'fo', label: 'Family Offices', shortLabel: 'FO', color: '#f59e0b', childColors: ['#92400e', '#b45309', '#d97706', '#f59e0b', '#fbbf24', '#fcd34d'] },
                 ];
+                const NAVRO_KEY_TYPE_LABELS = {
+                    CVC: 'Corporate Venture Capital',
+                    VC: 'Venture Capital',
+                    PB: 'Private Bank',
+                    SFO: 'Single Family Office',
+                    MFO: 'Multi Family Office',
+                    AS: 'Angel Syndicate',
+                    PF: 'Pension Funds',
+                    AM: 'Asset Manager',
+                    INS: 'Insurance Company',
+                    HNW: 'High Net Worth Individual',
+                };
+                const NAVRO_CLIENT_TYPE_TO_KEY = Object.entries(NAVRO_KEY_TYPE_LABELS).reduce((acc, [key, label]) => {
+                    acc[normalizeDashboardText(label)] = key;
+                    return acc;
+                }, {});
+                const NAVRO_VC_KEYS = new Set(['CVC', 'VC', 'PB', 'PF', 'INS', 'AM']);
+                const NAVRO_HNWI_KEYS = new Set(['AS', 'HNW']);
+                const CONTACT_FIELD_KEYS = ['Contact\u00a0', 'Contact', 'Contact ', 'Contact/Call', 'Contact / Call'];
+                const CALL_FIELD_KEYS = ['Call/Meeting', 'Call'];
+                const MEETING_FIELD_KEYS = ['Meeting\u00a0', 'Meeting with Company', 'Meeting'];
+                const FORWARD_FIELD_KEYS = ['Reply', 'Replied', 'Moving Forward'];
 
                 function normalizeDashboardText(value) {
                     return String(value || '').trim().toLowerCase();
@@ -114,7 +137,72 @@
                     return normalizeDealLifecycleStatus(deal && (deal.lifecycleStatus || deal.dealStatus)) === 'active';
                 }
 
+                function isNavroDashboard() {
+                    return normalizeDashboardId(currentDashboard && currentDashboard.id) === 'navro';
+                }
+
+                function getDashboardTypeKey(row) {
+                    return String(
+                        row && (
+                            row["KEY"] ||
+                            row["Key"] ||
+                            row["key"] ||
+                            ''
+                        )
+                    ).trim().toUpperCase();
+                }
+
+                function getNavroClientType(row) {
+                    return String(
+                        row && (
+                            row["Type of Client"] ||
+                            row["Type of client"] ||
+                            row["Type Of Client"] ||
+                            row["type of client"] ||
+                            row["Type"] ||
+                            ''
+                        )
+                    ).trim();
+                }
+
+                function normalizeNavroClientTypeCode(value) {
+                    const normalized = String(value || '').trim().toUpperCase();
+                    if (NAVRO_KEY_TYPE_LABELS[normalized]) {
+                        return normalized;
+                    }
+
+                    const normalizedLabel = normalizeDashboardText(value);
+                    return NAVRO_CLIENT_TYPE_TO_KEY[normalizedLabel] || '';
+                }
+
+                function getNavroClientTypeCode(row) {
+                    const clientTypeCode = normalizeNavroClientTypeCode(getNavroClientType(row));
+                    if (clientTypeCode) return clientTypeCode;
+                    return normalizeNavroClientTypeCode(getDashboardTypeKey(row));
+                }
+
+                function getInvestorTypeLabel(row) {
+                    if (isNavroDashboard()) {
+                        const navroCode = getNavroClientTypeCode(row);
+                        if (navroCode && NAVRO_KEY_TYPE_LABELS[navroCode]) {
+                            return NAVRO_KEY_TYPE_LABELS[navroCode];
+                        }
+                        const navroClientType = getNavroClientType(row);
+                        if (navroClientType) {
+                            return navroClientType;
+                        }
+                    }
+                    return String(row && row["Type"] || 'Unknown').trim() || 'Unknown';
+                }
+
+                function isNavroVcRow(row) {
+                    return NAVRO_VC_KEYS.has(getNavroClientTypeCode(row));
+                }
+
                 function isHNWIOrAngelRow(row) {
+                    if (isNavroDashboard()) {
+                        return NAVRO_HNWI_KEYS.has(getNavroClientTypeCode(row));
+                    }
                     const t = String(row && row["Type"] || "").toLowerCase();
                     const d = String(row && row["Description"] || "").toLowerCase();
                     return t.includes('angel') || d.includes('angel') || t.includes('individual') || d.includes('individual') || t.includes('hnwi') || d.includes('hnwi');
@@ -122,6 +210,16 @@
 
                 function getCompositionGroupMeta(groupKey) {
                     return COMPOSITION_GROUPS.find((group) => group.key === groupKey) || null;
+                }
+
+                function getDashboardFieldValue(row, keys) {
+                    for (const key of keys) {
+                        if (row && Object.prototype.hasOwnProperty.call(row, key)) {
+                            const value = String(row[key]).trim().toLowerCase();
+                            if (value) return value;
+                        }
+                    }
+                    return '';
                 }
 
                 function getCompositionRowsForGroup(groupKey) {
@@ -259,6 +357,7 @@
                     const openLocalBtn = document.getElementById('btn-open-local-file');
                     const fileInput = document.getElementById('file-input');
                     const retryBtn = document.getElementById('btn-retry-sync');
+                    const refreshBtn = document.getElementById('btn-refresh-dashboard');
                     const dashboardSwitcher = document.getElementById('dashboard-switcher');
                     const dashboardSwitcherTrigger = document.getElementById('dashboard-switcher-trigger');
                     const dashboardSwitcherMenu = document.getElementById('dashboard-switcher-menu');
@@ -271,6 +370,7 @@
                     const exportBtn = document.getElementById('btn-export-html');
                     const exportMenu = document.getElementById('dashboard-export-menu');
                     const exportConfirmBtn = document.getElementById('btn-export-html-confirm');
+                    const exportNamesOnlyBtn = document.getElementById('btn-export-html-names-only');
                     const exportContainer = document.getElementById('dashboard-export');
 
                     if (openLocalBtn && fileInput) {
@@ -281,6 +381,9 @@
                     }
                     if (retryBtn) {
                         retryBtn.addEventListener('click', retrySync);
+                    }
+                    if (refreshBtn) {
+                        refreshBtn.addEventListener('click', refreshCurrentDashboard);
                     }
                     if (dashboardSwitcherTrigger) {
                         dashboardSwitcherTrigger.addEventListener('click', () => {
@@ -368,6 +471,9 @@
                     }
                     if (exportConfirmBtn) {
                         exportConfirmBtn.addEventListener('click', exportStandaloneHtml);
+                    }
+                    if (exportNamesOnlyBtn) {
+                        exportNamesOnlyBtn.addEventListener('click', () => exportStandaloneHtml({ exportPreset: 'names-no-emails' }));
                     }
                     if (exportContainer) {
                         document.addEventListener('click', (event) => {
@@ -595,7 +701,8 @@
                     }
                 }
 
-                async function selectDashboardById(selectedId) {
+                async function selectDashboardById(selectedId, options = {}) {
+                    const forceReload = Boolean(options && options.forceReload);
                     dashboardsConfig = getMergedDashboardsConfig();
                     if (!dashboardsConfig || !dashboardsConfig.dashboards) return;
 
@@ -605,7 +712,7 @@
                         showDashboardHome();
                         return;
                     }
-                    if (currentDashboardMode === 'dashboard' && currentDashboard && next.id === currentDashboard.id) {
+                    if (!forceReload && currentDashboardMode === 'dashboard' && currentDashboard && next.id === currentDashboard.id) {
                         return;
                     }
 
@@ -633,7 +740,7 @@
                     if (currentDashboard.excelUrl) {
                         console.log('[Dashboard] Restarting sync for', currentDashboard.id, 'with URL:', currentDashboard.excelUrl);
                         replaceDashboardUrl({ dashboard: currentDashboard.id });
-                        startSync(0, currentDashboard.excelUrl);
+                        await startSync(0, currentDashboard.excelUrl);
                     }
                 }
 
@@ -726,18 +833,79 @@
                     if (trigger) trigger.setAttribute('aria-expanded', 'false');
                 }
 
+                async function refreshCurrentDashboard() {
+                    if (refreshButtonBusy) return;
+
+                    refreshButtonBusy = true;
+                    updateDashboardActionButtons();
+                    closeDashboardSwitcher();
+                    closeExportMenu();
+
+                    const loader = document.getElementById('loader');
+                    const spinner = document.getElementById('loading-spinner');
+                    const errorPanel = document.getElementById('error-panel');
+                    const loaderMsg = document.getElementById('loader-msg');
+                    const dashboardEl = document.getElementById('dashboard');
+
+                    if (errorPanel) errorPanel.style.display = 'none';
+                    if (spinner) spinner.style.display = 'block';
+                    if (loader) loader.style.display = 'flex';
+                    if (dashboardEl && currentDashboardMode === 'dashboard') {
+                        dashboardEl.style.display = 'none';
+                    }
+                    if (loaderMsg) {
+                        loaderMsg.textContent = currentDashboardMode === 'dashboard'
+                            ? 'Refreshing dashboard data...'
+                            : 'Refreshing dashboards...';
+                    }
+
+                    try {
+                        if (window.AppCore && typeof window.AppCore.refreshDashboardConfigFromShareDrive === "function") {
+                            await window.AppCore.refreshDashboardConfigFromShareDrive();
+                        }
+                        dashboardsConfig = getMergedDashboardsConfig();
+                        renderDashboardSwitcher();
+                        updateDashboardActionButtons();
+
+                        if (currentDashboardMode === 'dashboard' && currentDashboard && currentDashboard.id) {
+                            await selectDashboardById(currentDashboard.id, { forceReload: true });
+                        } else {
+                            await initializeDashboard();
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        showFailure();
+                    } finally {
+                        refreshButtonBusy = false;
+                        updateDashboardActionButtons();
+                    }
+                }
+
                 function updateDashboardActionButtons() {
+                    const refreshBtn = document.getElementById('btn-refresh-dashboard');
                     const exportBtn = document.getElementById('btn-export-html');
                     const exportConfirmBtn = document.getElementById('btn-export-html-confirm');
+                    const exportNamesOnlyBtn = document.getElementById('btn-export-html-names-only');
                     const editBtn = document.getElementById('btn-edit-current-dashboard');
                     const canExport = currentDashboardMode === 'dashboard' && currentDashboard;
 
+                    if (refreshBtn) {
+                        refreshBtn.disabled = refreshButtonBusy;
+                        refreshBtn.textContent = refreshButtonBusy
+                            ? 'Refreshing...'
+                            : (currentDashboardMode === 'dashboard' && currentDashboard
+                                ? 'Refresh data'
+                                : 'Refresh dashboards');
+                    }
                     if (exportBtn) {
                         exportBtn.disabled = !canExport;
                         if (!canExport) closeExportMenu();
                     }
                     if (exportConfirmBtn) {
                         exportConfirmBtn.disabled = !canExport;
+                    }
+                    if (exportNamesOnlyBtn) {
+                        exportNamesOnlyBtn.disabled = !canExport;
                     }
                     if (editBtn) {
                         editBtn.disabled = !canExport;
@@ -1081,7 +1249,7 @@
 
                     } catch (err) {
                         console.warn(`[Dashboard] Proxy ${proxyIndex} failed for URL: ${excelUrl}`, err);
-                        startSync(proxyIndex + 1, excelUrl, true); // Try next proxy
+                        return startSync(proxyIndex + 1, excelUrl, true); // Try next proxy
                     }
                 }
 
@@ -1162,8 +1330,24 @@
                     console.log('[Dashboard] Detected header row index (0-based):', headerRowIndex);
 
                     // Parse using detected header row
-                    rawData.vc = XLSX.utils.sheet_to_json(fSheet, { range: headerRowIndex, defval: "" }).filter(r => r["Investor"]);
-                    rawData.fo = XLSX.utils.sheet_to_json(oSheet, { range: headerRowIndex, defval: "" }).filter(r => r["Investor"]);
+                    const sameSheetConfigured =
+                        normalizeDashboardText(sheetNames.funds) &&
+                        normalizeDashboardText(sheetNames.funds) === normalizeDashboardText(sheetNames.familyOffices);
+
+                    if (isNavroDashboard() && sameSheetConfigured && fSheet) {
+                        const navroRows = XLSX.utils.sheet_to_json(fSheet, { range: headerRowIndex, defval: "" })
+                            .filter(r => r["Investor"]);
+                        rawData.vc = navroRows.filter((row) => isNavroVcRow(row));
+                        rawData.fo = navroRows.filter((row) => {
+                            const clientTypeCode = getNavroClientTypeCode(row);
+                            if (clientTypeCode) return !NAVRO_VC_KEYS.has(clientTypeCode);
+                            return !isNavroVcRow(row);
+                        });
+                    } else {
+                        rawData.vc = XLSX.utils.sheet_to_json(fSheet, { range: headerRowIndex, defval: "" }).filter(r => r["Investor"]);
+                        rawData.fo = XLSX.utils.sheet_to_json(oSheet, { range: headerRowIndex, defval: "" }).filter(r => r["Investor"]);
+                    }
+
                     prepareDashboardRows(rawData.vc);
                     prepareDashboardRows(rawData.fo);
                     const figures = gSheet ? XLSX.utils.sheet_to_json(gSheet, { defval: "" }) : [];
@@ -1173,7 +1357,7 @@
                     console.log('[Dashboard] Parsed row counts -> vc:', rawData.vc.length, 'fo:', rawData.fo.length, 'combined:', combined.length);
 
                     // 1. Dynamic Type Color Mapping
-                    const uniqueTypes = [...new Set(combined.map(r => r["Type"]).filter(t => t))];
+                    const uniqueTypes = [...new Set(combined.map(r => getInvestorTypeLabel(r)).filter(t => t))];
                     typeColors = {};
                     uniqueTypes.forEach((type, idx) => {
                         typeColors[type] = COLOR_PALETTE[idx % COLOR_PALETTE.length];
@@ -1185,10 +1369,18 @@
                     let hnwiCount = 0;
                     let foCount = 0;
 
-                    const hasTypeColumn = rawData.fo.some(r => Object.prototype.hasOwnProperty.call(r, "Type"));
-                    console.log('[Dashboard] Has "Type" column on FO sheet:', hasTypeColumn);
+                    const hasTypeSignals = rawData.fo.some(r =>
+                        Object.prototype.hasOwnProperty.call(r, "Type of Client") ||
+                        Object.prototype.hasOwnProperty.call(r, "Type Of Client") ||
+                        Object.prototype.hasOwnProperty.call(r, "type of client") ||
+                        Object.prototype.hasOwnProperty.call(r, "Type") ||
+                        Object.prototype.hasOwnProperty.call(r, "KEY") ||
+                        Object.prototype.hasOwnProperty.call(r, "Key") ||
+                        Object.prototype.hasOwnProperty.call(r, "key")
+                    );
+                    console.log('[Dashboard] Has type signal on FO sheet:', hasTypeSignals);
 
-                    if (!hasTypeColumn) {
+                    if (!hasTypeSignals) {
                         // If there's no "Type" column on the FO sheet at all, treat all FO rows as Family Offices
                         foCount = rawData.fo.length;
                         hnwiCount = 0;
@@ -1223,25 +1415,23 @@
                     }).length;
 
                     // Per requirements: contact attempts come from the contact-related column only.
-                    const getContactStatus = (row) => {
-                        const keys = ['Contact', 'Contact ', 'Contact/Call', 'Contact / Call', 'Call/Meeting', 'Call'];
-                        for (const k of keys) {
-                            if (row && Object.prototype.hasOwnProperty.call(row, k)) {
-                                const val = String(row[k]).trim().toLowerCase();
-                                if (val) return val;
-                            }
-                        }
-                        return '';
-                    };
+                    const getContactStatus = (row) => getDashboardFieldValue(row, CONTACT_FIELD_KEYS);
+                    const getCallStatus = (row) => getDashboardFieldValue(row, CALL_FIELD_KEYS);
 
-                    const ongoingCount = combined.filter(r => getContactStatus(r) === 'waiting').length;
-                    const contactedCount = combined.filter(r => getContactStatus(r) === 'yes').length;
+                    const ongoingCount = combined.filter(r => {
+                        const s = getCallStatus(r);
+                        return s === 'yes' || s === 'waiting';
+                    }).length;
                     const totalContactCount = combined.filter(r => {
                         const s = getContactStatus(r);
                         return s === 'yes' || s === 'waiting';
                     }).length;
-                    const repliedCount = countExact(['Reply', 'Replied', 'Moving Forward'], 'yes');
-                    const meetingsCount = countExact(['Meeting with Company', 'Meeting'], 'yes');
+                    const repliedCount = countExact(FORWARD_FIELD_KEYS, 'yes');
+                    const meetingsCount = countExact(MEETING_FIELD_KEYS, 'yes');
+                    const isCurrentDashboardNavro = isNavroDashboard();
+                    const contactedCardValue = totalContactCount;
+                    const meetingsCardLabel = isCurrentDashboardNavro ? 'Ongoing' : 'Meetings';
+                    const meetingsCardValue = isCurrentDashboardNavro ? ongoingCount : meetingsCount;
 
                     const poolSize = combined.length;
 
@@ -1251,11 +1441,14 @@
                     };
 
                     setText('k-pool', poolSize);
-                    setText('k-contacted', totalContactCount);
+                    setText('k-contacted', contactedCardValue);
                     setText('k-replied', repliedCount);
-                    setText('k-meetings', meetingsCount);
+                    setText('k-meetings-label', meetingsCardLabel);
+                    setText('k-meetings', meetingsCardValue);
 
                     // 4. Visuals Refresh
+                    activeFilters = normalizeQuickFilters(activeFilters);
+                    applyQuickFilterButtons();
                     renderRangeBars();
                     resetCompositionSelectionState();
                     switchTab('vc', document.querySelector('[data-tab-type="vc"]'), { keepCompositionSelection: true });
@@ -1267,13 +1460,13 @@
                 }
 
                 function getStatusText(item) {
-                    const forward = String(item['Moving Forward'] || item['Replied'] || '').toLowerCase();
-                    const meeting = String(item['Meeting with Company'] || item['Meeting'] || '').toLowerCase();
-                    const call = String(item['Call/Meeting'] || item['Call'] || item['Contact'] || '').toLowerCase();
+                    const forward = getDashboardFieldValue(item, FORWARD_FIELD_KEYS);
+                    const meeting = getDashboardFieldValue(item, MEETING_FIELD_KEYS);
+                    const call = getDashboardFieldValue(item, [...CALL_FIELD_KEYS, ...CONTACT_FIELD_KEYS]);
 
                     if (forward === 'yes') return 'Replied / Moving Forward';
                     if (forward === 'waiting' || meeting === 'waiting' || call === 'waiting') return 'Waiting / Ongoing';
-                    if (forward === 'no') return 'Passed';
+                    if (forward === 'no') return '';
                     if (meeting === 'yes') return 'Contacted / Meeting Done';
                     if (call === 'yes') return 'Contact Started';
                     return 'Target';
@@ -1293,7 +1486,7 @@
                         item.__dashboardName = String(item["Investor"] || item["Investor Name"] || item["Name"] || '').trim();
                         item.__dashboardSize = String(item["Size of Investment"] || item["Investment Size"] || '–').trim() || '–';
                         item.__dashboardEmail = String(item["Email"] || '–').trim() || '–';
-                        item.__dashboardType = String(item["Type"] || 'Unknown').trim() || 'Unknown';
+                        item.__dashboardType = getInvestorTypeLabel(item);
                         item.__dashboardStatusText = getStatusText(item);
                         item.__dashboardStatusBadge = getStatusBadge(item);
                         item.__dashboardSearchIndex = buildDashboardSearchIndex(item);
@@ -1571,9 +1764,9 @@
 
                     const header = document.getElementById('table-head');
                     if (type === 'vc') {
-                        header.innerHTML = '<tr><th>VC Funds Name</th><th>Investment Size</th><th>Stage</th><th>Contact Email</th></tr>';
+                        header.innerHTML = '<tr><th>VC Funds Name</th><th>Investment Size</th><th>Contact Email</th></tr>';
                     } else {
-                        header.innerHTML = '<tr><th>Investor Name</th><th>Investor Type</th><th>Investment Size</th><th>Stage</th></tr>';
+                        header.innerHTML = '<tr><th>Investor Name</th><th>Investor Type</th><th>Investment Size</th></tr>';
                     }
                     renderCompositionChart();
                     scheduleTableRender(getCurrentSearchKeyword());
@@ -1581,53 +1774,68 @@
                 }
 
                 function toggleFilter(filter) {
-                    // Reset others if 'all' is clicked
-                    if (filter === 'all') {
-                        activeFilters = { all: true, calls: false, meetings: false, forward: false };
-                    } else {
-                        activeFilters.all = false;
-                        activeFilters[filter] = !activeFilters[filter];
-
-                        // If all sub-filters are off, turn 'all' back on
-                        if (!activeFilters.calls && !activeFilters.meetings && !activeFilters.forward) {
-                            activeFilters.all = true;
-                        }
-                    }
-
-                    // Update Buttons UI
-                    Object.keys(activeFilters).forEach(f => {
-                        const btn = document.getElementById(`f-${f}`);
-                        if (activeFilters[f]) btn.classList.add('active');
-                        else btn.classList.remove('active');
-                    });
-
+                    const normalizedFilter = ['all', 'calls', 'meetings', 'forward'].includes(filter) ? filter : 'all';
+                    activeFilters = normalizeQuickFilters(activeFilters);
+                    activeFilters = normalizedFilter === 'all'
+                        ? normalizeQuickFilters({ all: true })
+                        : normalizeQuickFilters({ [normalizedFilter]: !activeFilters[normalizedFilter] });
+                    applyQuickFilterButtons();
                     scheduleTableRender(getCurrentSearchKeyword());
                 }
 
                 function getStatusBadge(item) {
-                    const forward = String(item['Moving Forward'] || item['Replied'] || '').toLowerCase();
-                    const meeting = String(item['Meeting with Company'] || item['Meeting'] || '').toLowerCase();
-                    const call = String(item['Call/Meeting'] || item['Call'] || item['Contact'] || '').toLowerCase();
+                    const forward = getDashboardFieldValue(item, FORWARD_FIELD_KEYS);
+                    const meeting = getDashboardFieldValue(item, MEETING_FIELD_KEYS);
+                    const call = getDashboardFieldValue(item, [...CALL_FIELD_KEYS, ...CONTACT_FIELD_KEYS]);
 
                     if (forward === 'yes') return `<span class="stage-pill badge-green">Replied / Mov. Forward</span>`;
                     if (forward === 'waiting' || meeting === 'waiting' || call === 'waiting') return `<span class="stage-pill badge-amber">Waiting / Ongoing</span>`;
-                    if (forward === 'no') return `<span class="stage-pill badge-red">Passed</span>`;
+                    if (forward === 'no') return '';
                     if (meeting === 'yes') return `<span class="stage-pill badge-neutral">Contacted / Met</span>`;
                     if (call === 'yes') return `<span class="stage-pill badge-neutral">Contact Started</span>`;
                     return `<span class="stage-pill" style="color:var(--text-dim); opacity:0.5;">Target</span>`;
                 }
 
+                function normalizeQuickFilters(filters) {
+                    const source = filters && typeof filters === 'object' ? filters : {};
+                    const next = { all: false, calls: false, meetings: false, forward: false };
+                    if (source.calls) next.calls = true;
+                    else if (source.meetings) next.meetings = true;
+                    else if (source.forward) next.forward = true;
+                    else next.all = true;
+                    return next;
+                }
+
+                function applyQuickFilterButtons() {
+                    Object.keys(activeFilters).forEach((filterKey) => {
+                        const btn = document.getElementById(`f-${filterKey}`);
+                        if (!btn) return;
+                        btn.classList.toggle('active', Boolean(activeFilters[filterKey]));
+                    });
+                }
+
+                function matchesQuickFilter(item, filterKey) {
+                    const contact = getDashboardFieldValue(item, CONTACT_FIELD_KEYS);
+                    const call = getDashboardFieldValue(item, CALL_FIELD_KEYS);
+                    const forward = getDashboardFieldValue(item, FORWARD_FIELD_KEYS);
+
+                    if (filterKey === 'calls') {
+                        return call === 'yes' || call === 'waiting';
+                    }
+                    if (filterKey === 'meetings') {
+                        return contact === 'yes' || contact === 'waiting';
+                    }
+                    if (filterKey === 'forward') {
+                        return forward === 'yes';
+                    }
+                    return true;
+                }
+
                 function matchesActiveFilters(item) {
+                    activeFilters = normalizeQuickFilters(activeFilters);
                     if (activeFilters.all) return true;
-
-                    let match = false;
-                    const isYes = (col) => String(item[col]).toLowerCase() === 'yes';
-                    const isWait = (col) => String(item[col]).toLowerCase() === 'waiting';
-
-                    if (activeFilters.calls && (isYes('Call/Meeting') || isWait('Call/Meeting'))) match = true;
-                    if (activeFilters.meetings && isYes('Meeting with Company')) match = true;
-                    if (activeFilters.forward && isYes('Moving Forward')) match = true;
-                    return match;
+                    const activeFilterKey = Object.keys(activeFilters).find((filterKey) => filterKey !== 'all' && activeFilters[filterKey]) || 'all';
+                    return matchesQuickFilter(item, activeFilterKey);
                 }
 
                 function scheduleTableRender(keyword = getCurrentSearchKeyword()) {
@@ -1657,14 +1865,12 @@
 
                         const size = escapeHtml(item.__dashboardSize || '–');
                         const email = escapeHtml(item.__dashboardEmail || '–');
-                        const statusBadge = item.__dashboardStatusBadge || getStatusBadge(item);
 
                         if (activeType === 'vc') {
                             rows.push(`
                         <tr>
                             <td><b>${escapeHtml(name)}</b></td>
                             <td><span class="size-tag">${size}</span></td>
-                            <td>${statusBadge}</td>
                             <td><a href="mailto:${email}" style="color:var(--accent); text-decoration:none;">${email}</a></td>
                         </tr>`);
                             return;
@@ -1677,12 +1883,11 @@
                             <td><b>${escapeHtml(name)}</b></td>
                             <td><span style="color:${typeColor}; font-weight:600;">${escapeHtml(investorType)}</span></td>
                             <td><span class="size-tag">${size}</span></td>
-                            <td>${statusBadge}</td>
                         </tr>`);
                     });
 
                     if (!rows.length) {
-                        const emptyStateColspan = activeType === 'vc' ? 4 : 4;
+                        const emptyStateColspan = activeType === 'vc' ? 3 : 3;
                         tbody.innerHTML = `
                         <tr class="dashboard-empty-row">
                             <td colspan="${emptyStateColspan}">No investors match the current filters.</td>
@@ -1733,14 +1938,24 @@
                         .replace(/^-|-$/g, '') || 'snapshot';
                 }
 
-                function getExportOptions() {
+                function getExportOptions(exportPreset = 'default') {
                     const includeInvestorDetailsInput = document.getElementById('export-include-investor-details');
+                    if (exportPreset === 'names-no-emails') {
+                        return {
+                            includeInvestorNames: true,
+                            includeInvestorEmails: false,
+                            exportPreset,
+                        };
+                    }
+                    const includeInvestorDetails = !includeInvestorDetailsInput || includeInvestorDetailsInput.checked;
                     return {
-                        includeInvestorDetails: !includeInvestorDetailsInput || includeInvestorDetailsInput.checked,
+                        includeInvestorNames: includeInvestorDetails,
+                        includeInvestorEmails: includeInvestorDetails,
+                        exportPreset: includeInvestorDetails ? 'full' : 'anonymized',
                     };
                 }
 
-                function isSensitiveInvestorField(fieldName) {
+                function isSensitiveInvestorNameField(fieldName) {
                     const normalized = String(fieldName || '')
                         .trim()
                         .toLowerCase()
@@ -1750,24 +1965,44 @@
                         'investor',
                         'investor name',
                         'name',
+                        'contact name',
+                    ].includes(normalized);
+                }
+
+                function isSensitiveInvestorEmailField(fieldName) {
+                    const normalized = String(fieldName || '')
+                        .trim()
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, ' ')
+                        .trim();
+                    return [
                         'email',
                         'contact email',
-                        'contact name',
                         'e mail',
                     ].includes(normalized);
                 }
 
                 function buildSnapshotRawData(options) {
-                    const includeInvestorDetails = !options || options.includeInvestorDetails !== false;
+                    const exportOptions = options || {};
+                    const includeInvestorNames = exportOptions.includeInvestorNames !== false;
+                    const includeInvestorEmails = exportOptions.includeInvestorEmails !== false;
                     const buildCollection = (rows) => (Array.isArray(rows) ? rows : []).map((row, index) => {
                         const next = Object.assign({}, row || {});
                         next.__snapshotInvestorLabel = `Investor ${index + 1}`;
-                        if (!includeInvestorDetails) {
+                        if (!includeInvestorNames || !includeInvestorEmails) {
                             Object.keys(next).forEach((key) => {
-                                if (isSensitiveInvestorField(key)) {
-                                    next[key] = '';
-                                }
+                                if (!includeInvestorNames && isSensitiveInvestorNameField(key)) next[key] = '';
+                                if (!includeInvestorEmails && isSensitiveInvestorEmailField(key)) next[key] = '';
                             });
+                        }
+                        if (!includeInvestorNames) {
+                            next.__dashboardName = '';
+                        }
+                        if (!includeInvestorEmails) {
+                            next.__dashboardEmail = '';
+                        }
+                        if (!includeInvestorNames || !includeInvestorEmails) {
+                            next.__dashboardSearchIndex = '';
                         }
                         return next;
                     });
@@ -1869,14 +2104,14 @@
                     return 'downloaded';
                 }
 
-                async function exportStandaloneHtml() {
+                async function exportStandaloneHtml(options = {}) {
                     try {
                         if (!(currentDashboardMode === 'dashboard' && currentDashboard)) {
                             alert('Open a linked investor dashboard first, then export the live snapshot.');
                             return;
                         }
                         closeExportMenu();
-                        const exportOptions = getExportOptions();
+                        const exportOptions = getExportOptions(options && options.exportPreset ? options.exportPreset : 'default');
                         const dashboardEl = document.getElementById('dashboard');
                         const shellEl = document.querySelector('.shell');
                         if (!dashboardEl || dashboardEl.style.display === 'none') {
@@ -1911,7 +2146,7 @@
                             typeColors,
                             activeType,
                             activeFilters,
-                            searchTerm: exportOptions.includeInvestorDetails
+                            searchTerm: (exportOptions.includeInvestorNames || exportOptions.includeInvestorEmails)
                                 ? (document.getElementById('search')?.value || '').toLowerCase()
                                 : '',
                             exportOptions,
@@ -1936,23 +2171,73 @@ ${clone.outerHTML}
   let activeType = state.activeType || 'vc';
   let activeFilters = state.activeFilters || { all: true, calls: false, meetings: false, forward: false };
   const searchTerm = state.searchTerm || '';
-  const exportOptions = state.exportOptions || { includeInvestorDetails: true };
-  const includeInvestorDetails = exportOptions.includeInvestorDetails !== false;
+  const exportOptions = state.exportOptions || { includeInvestorNames: true, includeInvestorEmails: true };
+  const includeInvestorNames = exportOptions.includeInvestorNames !== false;
+  const includeInvestorEmails = exportOptions.includeInvestorEmails !== false;
+  const CONTACT_FIELD_KEYS = ['Contact\\u00a0', 'Contact', 'Contact ', 'Contact/Call', 'Contact / Call'];
+  const CALL_FIELD_KEYS = ['Call/Meeting', 'Call'];
+  const MEETING_FIELD_KEYS = ['Meeting\\u00a0', 'Meeting with Company', 'Meeting'];
+  const FORWARD_FIELD_KEYS = ['Reply', 'Replied', 'Moving Forward'];
 
   const searchInput = document.getElementById('search');
   if (searchInput && searchTerm) searchInput.value = searchTerm;
 
+  function getFieldValue(item, keys) {
+    for (const key of keys) {
+      if (item && Object.prototype.hasOwnProperty.call(item, key)) {
+        const value = String(item[key]).trim().toLowerCase();
+        if (value) return value;
+      }
+    }
+    return '';
+  }
+
   function getStatusBadge(item) {
-    const forward = String(item['Moving Forward'] || item['Replied'] || '').toLowerCase();
-    const meeting = String(item['Meeting with Company'] || item['Meeting'] || '').toLowerCase();
-    const call = String(item['Call/Meeting'] || item['Call'] || item['Contact'] || '').toLowerCase();
+    const forward = getFieldValue(item, FORWARD_FIELD_KEYS);
+    const meeting = getFieldValue(item, MEETING_FIELD_KEYS);
+    const call = getFieldValue(item, [...CALL_FIELD_KEYS, ...CONTACT_FIELD_KEYS]);
 
     if (forward === 'yes') return '<span class="stage-pill badge-green">Replied / Mov. Forward</span>';
     if (forward === 'waiting' || meeting === 'waiting' || call === 'waiting') return '<span class="stage-pill badge-amber">Waiting / Ongoing</span>';
-    if (forward === 'no') return '<span class="stage-pill badge-red">Passed</span>';
+    if (forward === 'no') return '';
     if (meeting === 'yes') return '<span class="stage-pill badge-neutral">Contacted / Met</span>';
     if (call === 'yes') return '<span class="stage-pill badge-neutral">Contact Started</span>';
     return '<span class="stage-pill" style="color:var(--text-dim); opacity:0.5;">Target</span>';
+  }
+
+  function normalizeQuickFilters(filters) {
+    const source = filters && typeof filters === 'object' ? filters : {};
+    const next = { all: false, calls: false, meetings: false, forward: false };
+    if (source.calls) next.calls = true;
+    else if (source.meetings) next.meetings = true;
+    else if (source.forward) next.forward = true;
+    else next.all = true;
+    return next;
+  }
+
+  function applyQuickFilterButtons() {
+    Object.keys(activeFilters).forEach(filterKey => {
+      const btn = document.getElementById(\`f-\${filterKey}\`);
+      if (!btn) return;
+      btn.classList.toggle('active', Boolean(activeFilters[filterKey]));
+    });
+  }
+
+  function matchesQuickFilter(item, filterKey) {
+    const contact = getFieldValue(item, CONTACT_FIELD_KEYS);
+    const call = getFieldValue(item, CALL_FIELD_KEYS);
+    const forward = getFieldValue(item, FORWARD_FIELD_KEYS);
+
+    if (filterKey === 'calls') {
+      return call === 'yes' || call === 'waiting';
+    }
+    if (filterKey === 'meetings') {
+      return contact === 'yes' || contact === 'waiting';
+    }
+    if (filterKey === 'forward') {
+      return forward === 'yes';
+    }
+    return true;
   }
 
   function renderTable(keyword = '') {
@@ -1962,23 +2247,19 @@ ${clone.outerHTML}
     const data = activeType === 'vc' ? (rawData.vc || []) : (rawData.fo || []);
 
     data.forEach(item => {
-      const name = includeInvestorDetails
+      const name = includeInvestorNames
         ? (item['Investor'] || item['Investor Name'] || item['Name'] || '')
         : (item.__snapshotInvestorLabel || '');
       const size = item['Size of Investment'] || item['Investment Size'] || '–';
-      const email = includeInvestorDetails ? (item['Email'] || '–') : '';
+      const email = includeInvestorEmails ? (item['Email'] || '–') : '';
 
       if (keyword && !JSON.stringify(item).toLowerCase().includes(keyword)) return;
       if (!name) return;
 
+      activeFilters = normalizeQuickFilters(activeFilters);
       if (!activeFilters.all) {
-        let match = false;
-        const isYes = col => String(item[col]).toLowerCase() === 'yes';
-        const isWait = col => String(item[col]).toLowerCase() === 'waiting';
-        if (activeFilters.calls && (isYes('Call/Meeting') || isWait('Call/Meeting'))) match = true;
-        if (activeFilters.meetings && isYes('Meeting with Company')) match = true;
-        if (activeFilters.forward && isYes('Moving Forward')) match = true;
-        if (!match) return;
+        const activeFilterKey = Object.keys(activeFilters).find(filterKey => filterKey !== 'all' && activeFilters[filterKey]) || 'all';
+        if (!matchesQuickFilter(item, activeFilterKey)) return;
       }
 
       const statusBadge = getStatusBadge(item);
@@ -1986,12 +2267,11 @@ ${clone.outerHTML}
       const typeColor = typeColors[iType] || '#94a3b8';
 
       if (activeType === 'vc') {
-        if (includeInvestorDetails) {
+        if (includeInvestorEmails) {
           tbody.innerHTML += \`
             <tr>
               <td><b>\${name}</b></td>
               <td><span class="size-tag">\${size}</span></td>
-              <td>\${statusBadge}</td>
               <td><a href="mailto:\${email}" style="color:var(--accent); text-decoration:none;">\${email}</a></td>
             </tr>\`;
         } else {
@@ -1999,7 +2279,6 @@ ${clone.outerHTML}
             <tr>
               <td><b>\${name}</b></td>
               <td><span class="size-tag">\${size}</span></td>
-              <td>\${statusBadge}</td>
             </tr>\`;
         }
       } else {
@@ -2008,7 +2287,6 @@ ${clone.outerHTML}
             <td><b>\${name}</b></td>
             <td><span style="color:\${typeColor}; font-weight:600;">\${iType}</span></td>
             <td><span class="size-tag">\${size}</span></td>
-            <td>\${statusBadge}</td>
           </tr>\`;
       }
     });
@@ -2023,35 +2301,28 @@ ${clone.outerHTML}
     const header = document.getElementById('table-head');
     if (header) {
       if (type === 'vc') {
-        header.innerHTML = includeInvestorDetails
-          ? '<tr><th>VC Funds Name</th><th>Investment Size</th><th>Stage</th><th>Contact Email</th></tr>'
-          : '<tr><th>Investor</th><th>Investment Size</th><th>Stage</th></tr>';
+        header.innerHTML = includeInvestorNames
+          ? '<tr><th>VC Funds Name</th><th>Investment Size</th><th>Contact Email</th></tr>'
+          : '<tr><th>Investor</th><th>Investment Size</th></tr>';
+        if (includeInvestorNames && !includeInvestorEmails) {
+          header.innerHTML = '<tr><th>VC Funds Name</th><th>Investment Size</th></tr>';
+        }
       } else {
-        header.innerHTML = includeInvestorDetails
-          ? '<tr><th>Investor Name</th><th>Investor Type</th><th>Investment Size</th><th>Stage</th></tr>'
-          : '<tr><th>Investor</th><th>Investor Type</th><th>Investment Size</th><th>Stage</th></tr>';
+        header.innerHTML = includeInvestorNames
+          ? '<tr><th>Investor Name</th><th>Investor Type</th><th>Investment Size</th></tr>'
+          : '<tr><th>Investor</th><th>Investor Type</th><th>Investment Size</th></tr>';
       }
     }
     renderTable(searchInput ? searchInput.value.toLowerCase() : '');
   }
 
   function toggleFilter(filter) {
-    if (filter === 'all') {
-      activeFilters = { all: true, calls: false, meetings: false, forward: false };
-    } else {
-      activeFilters.all = false;
-      activeFilters[filter] = !activeFilters[filter];
-      if (!activeFilters.calls && !activeFilters.meetings && !activeFilters.forward) {
-        activeFilters.all = true;
-      }
-    }
-    Object.keys(activeFilters).forEach(f => {
-      const btn = document.getElementById(\`f-\${f}\`);
-      if (btn) {
-        if (activeFilters[f]) btn.classList.add('active');
-        else btn.classList.remove('active');
-      }
-    });
+    const normalizedFilter = ['all', 'calls', 'meetings', 'forward'].includes(filter) ? filter : 'all';
+    activeFilters = normalizeQuickFilters(activeFilters);
+    activeFilters = normalizedFilter === 'all'
+      ? normalizeQuickFilters({ all: true })
+      : normalizeQuickFilters({ [normalizedFilter]: !activeFilters[normalizedFilter] });
+    applyQuickFilterButtons();
     renderTable(searchInput ? searchInput.value.toLowerCase() : '');
   }
 
@@ -2071,12 +2342,8 @@ ${clone.outerHTML}
     // Restore active tab/filter visual state
     const activeTabBtn = document.querySelector(\`[data-tab-type=\"\${activeType}\"]\`);
     if (activeTabBtn) activeTabBtn.classList.add('active');
-    Object.keys(activeFilters).forEach(f => {
-      if (activeFilters[f]) {
-        const btn = document.getElementById(\`f-\${f}\`);
-        if (btn) btn.classList.add('active');
-      }
-    });
+    activeFilters = normalizeQuickFilters(activeFilters);
+    applyQuickFilterButtons();
 
     // Seed header and table content
     switchTab(activeType);
@@ -2089,7 +2356,9 @@ ${clone.outerHTML}
 
                         const blob = new Blob([snapshotHtml], { type: 'text/html' });
                         const dashId = (currentDashboard && currentDashboard.id) || 'snapshot';
-                        const exportSuffix = exportOptions.includeInvestorDetails ? '' : '-anonymized';
+                        const exportSuffix = exportOptions.includeInvestorNames
+                            ? (exportOptions.includeInvestorEmails ? '' : '-names-no-emails')
+                            : '-anonymized';
                         const fileName = `investor-dashboard-${sanitizeExportFileName(dashId)}${exportSuffix}.html`;
                         await exportBlobForCurrentPlatform(blob, fileName);
                     } catch (err) {
