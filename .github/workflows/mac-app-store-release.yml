@@ -20,11 +20,11 @@ jobs:
           - x64
 
     env:
-      CSC_LINK: ${{ runner.temp }}/apple-mas-app-signing.p12
+      CSC_LINK: ${{ github.workspace }}/.github-tmp/apple-mas-app-signing.p12
       CSC_KEY_PASSWORD: ${{ secrets.APPLE_MAS_APP_CERT_PASSWORD }}
-      CSC_INSTALLER_LINK: ${{ runner.temp }}/apple-mas-installer-signing.p12
+      CSC_INSTALLER_LINK: ${{ github.workspace }}/.github-tmp/apple-mas-installer-signing.p12
       CSC_INSTALLER_KEY_PASSWORD: ${{ secrets.APPLE_MAS_INSTALLER_CERT_PASSWORD }}
-      MAS_PROVISIONING_PROFILE_PATH: ${{ runner.temp }}/plutus-mas.provisionprofile
+      MAS_PROVISIONING_PROFILE_PATH: ${{ github.workspace }}/.github-tmp/plutus-mas.provisionprofile
 
     steps:
       - name: Check out repository
@@ -70,6 +70,7 @@ jobs:
           APPLE_MAS_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_MAS_PROVISIONING_PROFILE_BASE64 }}
         run: |
           set -euo pipefail
+          mkdir -p "$(dirname "$CSC_LINK")"
           python3 - <<'PY'
           import base64
           import os

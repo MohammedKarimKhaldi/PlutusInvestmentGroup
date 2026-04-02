@@ -17,10 +17,10 @@ jobs:
       contents: write
 
     env:
-      CSC_LINK: ${{ runner.temp }}/apple-dev-id-application.p12
+      CSC_LINK: ${{ github.workspace }}/.github-tmp/apple-dev-id-application.p12
       CSC_KEY_PASSWORD: ${{ secrets.APPLE_DEV_ID_APP_CERT_PASSWORD }}
       CSC_NAME: "Developer ID Application: Mohammed-Karim Khaldi (8574X8NBPZ)"
-      APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey_GitHubRelease.p8
+      APPLE_API_KEY_PATH: ${{ github.workspace }}/.github-tmp/AuthKey_GitHubRelease.p8
 
     steps:
       - name: Check out repository
@@ -85,6 +85,7 @@ jobs:
           APPLE_DEV_ID_APP_CERT_BASE64: ${{ secrets.APPLE_DEV_ID_APP_CERT_BASE64 }}
         run: |
           set -euo pipefail
+          mkdir -p "$(dirname "$CSC_LINK")"
           python3 - <<'PY'
           import base64
           import os
