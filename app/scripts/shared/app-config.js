@@ -110,6 +110,154 @@
     return (page && page.navPageId) || pageId;
   }
 
+  function localReadDataJson(key) {
+    try {
+      const raw = localStorage.getItem(String(key || "").trim());
+      if (!raw) return { ok: false, data: null, error: "not_found" };
+      return { ok: true, data: JSON.parse(raw), error: null };
+    } catch (error) {
+      return { ok: false, data: null, error: String(error) };
+    }
+  }
+
+  function localWriteDataJson(key, payload) {
+    try {
+      localStorage.setItem(String(key || "").trim(), JSON.stringify(payload || {}));
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: String(error) };
+    }
+  }
+
+  function localReadArrayStore(key) {
+    try {
+      const raw = localStorage.getItem(String(key || "").trim());
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      return Array.isArray(data) ? data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function localWriteArrayStore(key, values) {
+    try {
+      localStorage.setItem(String(key || "").trim(), JSON.stringify(Array.isArray(values) ? values : []));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const isTauri = Boolean(global.__TAURI__ && global.__TAURI__.tauri && typeof global.__TAURI__.tauri.invoke === "function");
+  const tauriInvoke = isTauri ? (cmd, payload) => global.__TAURI__.tauri.invoke(cmd, payload) : null;
+
+  function sanitizeTauriPayload(value) {
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) => sanitizeTauriPayload(entry))
+        .filter((entry) => typeof entry !== "undefined");
+    }
+
+    if (value && typeof value === "object") {
+      return Object.entries(value).reduce((result, [key, entry]) => {
+        if (entry == null) return result;
+        const sanitized = sanitizeTauriPayload(entry);
+        if (typeof sanitized !== "undefined") result[key] = sanitized;
+        return result;
+      }, {});
+    }
+
+    if (typeof value === "undefined") return undefined;
+    return value;
+  }
+
+  function tauriInvokeWithPayload(cmd, payload) {
+    return tauriInvoke
+      ? tauriInvoke(cmd, { payload: sanitizeTauriPayload(payload || {}) })
+      : Promise.resolve({ ok: false, error: "Tauri unavailable" });
+  }
+
+  function syncLocalDataJsonFromTauri(key) {
+    if (!isTauri || !tauriInvoke) return;
+    tauriInvoke("read_data_json", { key })
+      .then((result) => {
+        if (result && result.ok) localWriteDataJson(key, result.data);
+      })
+      .catch(() => {});
+  }
+
+  function syncArrayStoreFromTauri(key) {
+    if (!isTauri || !tauriInvoke) return;
+    tauriInvoke("read_array_store", { key })
+      .then((values) => {
+        if (Array.isArray(values)) localWriteArrayStore(key, values);
+      })
+      .catch(() => {});
+  }
+
+  const desktopBridge = {
+    readDataJson(key) {
+      const result = localReadDataJson(key);
+      syncLocalDataJsonFromTauri(key);
+      return result;
+    },
+    writeDataJson(key, value) {
+      const localResult = localWriteDataJson(key, value);
+      if (isTauri && tauriInvoke) {
+        tauriInvoke("write_data_json", { key, value }).catch(() => {});
+      }
+      return localResult;
+    },
+    readArrayStore(key) {
+      const local = localReadArrayStore(key);
+      syncArrayStoreFromTauri(key);
+      return local;
+    },
+    writeArrayStore(key, values) {
+      const local = localWriteArrayStore(key, values);
+      if (isTauri && tauriInvoke) {
+        tauriInvoke("write_array_store", { key, values }).catch(() => {});
+      }
+      return local;
+    },
+  };
+
+  if (isTauri && tauriInvoke) {
+    Object.assign(desktopBridge, {
+      async listShareDriveChildren(payload) {
+        return tauriInvokeWithPayload("list_share_drive_children", payload).catch((err) => ({ ok: false, error: String(err) }));
+      },
+      async getShareDriveDownloadUrl(payload) {
+        return tauriInvokeWithPayload("get_share_drive_download_url", payload).catch((err) => ({ ok: false, error: String(err) }));
+      },
+      async downloadShareDriveFile(payload) {
+        return tauriInvokeWithPayload("download_share_drive_file", payload).catch((err) => ({ ok: false, error: String(err) }));
+      },
+      async uploadShareDriveFile(payload) {
+        return tauriInvokeWithPayload("upload_share_drive_file", payload).catch((err) => ({ ok: false, error: String(err) }));
+      },
+      async requestGraphDeviceCode() {
+        return tauriInvoke("request_graph_device_code").catch((err) => ({ ok: false, error: String(err) }));
+      },
+      async pollGraphDeviceCode(payload) {
+        return tauriInvokeWithPayload("poll_graph_device_code", payload).catch((err) => ({ ok: false, error: String(err) }));
+      },
+      async getGraphSession() {
+        return tauriInvoke("get_graph_session").catch((err) => ({ ok: false, error: String(err) }));
+      },
+      async listOutlookMessages(payload) {
+        return tauriInvokeWithPayload("list_outlook_messages", payload).catch((err) => ({ ok: false, error: String(err) }));
+      },
+      isTauri: true,
+    });
+
+    ["config", "deals", "tasks", "sharedrive-tasks"].forEach(syncLocalDataJsonFromTauri);
+    [storageKeys.deals, storageKeys.tasks].forEach(syncArrayStoreFromTauri);
+  }
+
+  global.PlutusDesktop = Object.assign({}, global.PlutusDesktop || {}, desktopBridge);
+
   global.PlutusAppConfig = {
     entryPageId: "sharedrive-folders",
     storageKeys,

@@ -1,0 +1,37 @@
+{
+  "package": {
+    "productName": "Plutus Investment Dashboard",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "bundle": {
+      "active": true,
+      "identifier": "com.plutus.investment.dashboard",
+      "icon": ["../electron-builder-resources/icon.png", "../electron-builder-resources/icon.icns", "../electron-builder-resources/icon.ico"]
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
+    },
+    "windows": [{
+      "title": "Plutus Investment Dashboard",
+      "width": 1280,
+      "height": 820,
+      "minWidth": 1000,
+      "minHeight": 700,
+      "center": true
+    }],
+    "allowlist": {
+      "all": true
+    }
+  },
+  "build": {
+    "withGlobalTauri": true,
+    "beforeDevCommand": "npm run web:prepare",
+    "beforeBuildCommand": "npm run web:prepare",
+    "devPath": "../app",
+    "distDir": "../build/web"
+  }
+}

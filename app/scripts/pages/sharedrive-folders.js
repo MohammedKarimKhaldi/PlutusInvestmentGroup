@@ -158,6 +158,14 @@
     if (isError) setDebugPanelOpen(true);
   }
 
+  function formatAuthDebug(label, payload) {
+    try {
+      return `${label}: ${JSON.stringify(payload, null, 2)}`;
+    } catch {
+      return `${label}: ${String(payload || "")}`;
+    }
+  }
+
   function renderMeta(data) {
     const metaRow = document.getElementById("sharedrive-meta-row");
     if (!metaRow) return;
@@ -677,41 +685,67 @@
     setError("");
     setAuthDebug("");
     setStatus("Starting sign-in...");
+    try {
+      const result = useDesktop
+        ? await window.PlutusDesktop.requestGraphDeviceCode()
+        : await AppCore.requestGraphDeviceCode();
+      const data = result && result.ok && result.data ? result.data : null;
+      if (!data) {
+        throw new Error((result && result.error) || "Failed to start device code flow.");
+      }
 
-    const result = useDesktop
-      ? await window.PlutusDesktop.requestGraphDeviceCode()
-      : await AppCore.requestGraphDeviceCode();
-    if (!result || !result.ok) {
+      deviceCodeState = {
+        deviceCode: data.device_code,
+        interval: Math.max(Number(data.interval || 5), 2),
+        expiresAt: Date.now() + Number(data.expires_in || 0) * 1000,
+      };
+
+      setDeviceCodeBox(true, {
+        userCode: data.user_code,
+        verificationUri: data.verification_uri || data.verification_uri_complete,
+        message: data.message,
+      });
+      setStatus("Awaiting sign-in...");
+      setAuthDebug(formatAuthDebug("Auth debug: start result", {
+        bridge: useDesktop ? "desktop" : "browser",
+        interval: data.interval,
+        expires_in: data.expires_in,
+        verification_uri: data.verification_uri || data.verification_uri_complete || "",
+      }), false);
+      console.log("[WorkspaceAuth] device-code start", {
+        bridge: useDesktop ? "desktop" : "browser",
+        result,
+      });
+
+      clearDeviceCodeTimer();
+      setAuthDebug(formatAuthDebug("Auth debug: poll scheduled", {
+        intervalMs: deviceCodeState.interval * 1000,
+        expiresAt: deviceCodeState.expiresAt,
+        deviceCodePresent: Boolean(deviceCodeState.deviceCode),
+      }), false);
+      deviceCodeTimer = setTimeout(pollDeviceCodeFlow, deviceCodeState.interval * 1000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to start device code flow.";
       setStatus("Failed to start sign-in");
-      setError((result && result.error) || "Failed to start device code flow.");
+      setError(message);
       setAuthDebug(
-        `Auth debug: bridge=${useDesktop ? "desktop" : "browser"} result=${JSON.stringify(result || {})}`,
+        formatAuthDebug("Auth debug: start error", {
+          bridge: useDesktop ? "desktop" : "browser",
+          error: message,
+        }),
         true,
       );
-      return;
+      console.error("[WorkspaceAuth] start error", error);
     }
-
-    const data = result.data || {};
-    deviceCodeState = {
-      deviceCode: data.device_code,
-      interval: Number(data.interval || 5),
-      expiresAt: Date.now() + Number(data.expires_in || 0) * 1000,
-    };
-
-    setDeviceCodeBox(true, {
-      userCode: data.user_code,
-      verificationUri: data.verification_uri || data.verification_uri_complete,
-      message: data.message,
-    });
-    setStatus("Awaiting sign-in...");
-    setAuthDebug("");
-
-    clearDeviceCodeTimer();
-    deviceCodeTimer = setTimeout(pollDeviceCodeFlow, deviceCodeState.interval * 1000);
   }
 
   async function pollDeviceCodeFlow() {
     if (!deviceCodeState || !deviceCodeState.deviceCode) return;
+    console.log("[WorkspaceAuth] poll tick", {
+      expiresAt: deviceCodeState.expiresAt,
+      interval: deviceCodeState.interval,
+      deviceCodePresent: Boolean(deviceCodeState.deviceCode),
+    });
 
     if (Date.now() > deviceCodeState.expiresAt) {
       setStatus("Device code expired");
@@ -720,28 +754,56 @@
       return;
     }
 
-    const result = deviceCodeState && deviceCodeState.deviceCode
-      ? (
-        (window.PlutusDesktop && typeof window.PlutusDesktop.pollGraphDeviceCode === "function")
-          ? await window.PlutusDesktop.pollGraphDeviceCode({ deviceCode: deviceCodeState.deviceCode })
-          : await AppCore.pollGraphDeviceCode(deviceCodeState.deviceCode)
-      )
-      : null;
+    try {
+      const result = deviceCodeState && deviceCodeState.deviceCode
+        ? (
+          (window.PlutusDesktop && typeof window.PlutusDesktop.pollGraphDeviceCode === "function")
+            ? await window.PlutusDesktop.pollGraphDeviceCode({ deviceCode: deviceCodeState.deviceCode })
+            : await AppCore.pollGraphDeviceCode(deviceCodeState.deviceCode)
+        )
+        : null;
 
-    if (!result || !result.ok) {
-      setError((result && result.error) || "Failed to poll device code.");
-      setStatus("Sign-in failed");
-      setDebugPanelOpen(true);
-      setDeviceCodeBox(false);
-      deviceCodeState = null;
-      return;
-    }
+      const payload = result && result.ok && result.data ? result.data : null;
+      if (!payload) {
+        throw new Error((result && result.error) || "Failed to poll device code.");
+      }
 
-    const payload = result.data || {};
-    if (payload.ok) {
+      if (payload.ok === false) {
+        const statusEl = document.getElementById("device-code-status");
+        const nextInterval = Math.max(Number(payload.interval || deviceCodeState.interval || 5), 2);
+        if (statusEl) {
+          statusEl.textContent = payload.error === "authorization_pending"
+            ? "Waiting for authorization..."
+            : (payload.error_description || payload.error || "Authorization pending.");
+        }
+
+        if (payload.error === "slow_down") {
+          deviceCodeState.interval = Math.max(nextInterval + 5, 10);
+        } else {
+          deviceCodeState.interval = nextInterval;
+        }
+
+        if (payload.error === "authorization_pending" || payload.error === "slow_down") {
+          setAuthDebug(formatAuthDebug("Auth debug: polling", {
+            bridge: (window.PlutusDesktop && typeof window.PlutusDesktop.pollGraphDeviceCode === "function") ? "desktop" : "browser",
+            ok: payload.ok,
+            error: payload.error,
+            error_description: payload.error_description || "",
+            interval: deviceCodeState.interval,
+          }), false);
+          console.log("[WorkspaceAuth] polling", payload);
+          clearDeviceCodeTimer();
+          deviceCodeTimer = setTimeout(pollDeviceCodeFlow, deviceCodeState.interval * 1000);
+          return;
+        }
+
+        throw new Error(payload.error_description || payload.error || "Sign-in failed.");
+      }
+
       const tokenInput = document.getElementById("access-token");
       if (tokenInput) tokenInput.value = payload.accessToken || "";
       setStatus("Signed in");
+      setError("");
       try {
         localStorage.setItem(SHAREDRIVE_GATE_KEY, "true");
       } catch {
@@ -750,33 +812,34 @@
       window.dispatchEvent(new CustomEvent("appcore:graph-session-updated"));
       setDeviceCodeBox(false);
       deviceCodeState = null;
+      console.log("[WorkspaceAuth] success summary", {
+        hasAccessToken: Boolean(payload.accessToken),
+        expiresIn: payload.expiresIn,
+        scope: payload.scope || "",
+        tokenType: payload.tokenType || "",
+      });
+      setAuthDebug("");
+      console.log("[WorkspaceAuth] success", payload);
       await refreshConnectionSummary();
       if (getConfiguredShareUrl()) {
         await fetchItems();
       } else {
         setDebugPanelOpen(true);
       }
-      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Sign-in failed.";
+      setError(message);
+      setStatus("Sign-in failed");
+      setAuthDebug(formatAuthDebug("Auth debug: polling error", {
+        error: message,
+        deviceCodePresent: Boolean(deviceCodeState && deviceCodeState.deviceCode),
+        expiresAt: deviceCodeState && deviceCodeState.expiresAt ? deviceCodeState.expiresAt : 0,
+      }), true);
+      console.error("[WorkspaceAuth] polling error", error);
+      setDebugPanelOpen(true);
+      setDeviceCodeBox(false);
+      deviceCodeState = null;
     }
-
-    if (payload.error === "authorization_pending") {
-      clearDeviceCodeTimer();
-      deviceCodeTimer = setTimeout(pollDeviceCodeFlow, deviceCodeState.interval * 1000);
-      return;
-    }
-
-    if (payload.error === "slow_down") {
-      deviceCodeState.interval = Math.max(deviceCodeState.interval + 5, 10);
-      clearDeviceCodeTimer();
-      deviceCodeTimer = setTimeout(pollDeviceCodeFlow, deviceCodeState.interval * 1000);
-      return;
-    }
-
-    setError(payload.error_description || "Sign-in failed.");
-    setStatus("Sign-in failed");
-    setDebugPanelOpen(true);
-    setDeviceCodeBox(false);
-    deviceCodeState = null;
   }
 
   function readFileAsDataUrl(file) {

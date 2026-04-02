@@ -10,6 +10,10 @@
     "docs:build": "python3 -m mkdocs build --strict",
     "predesktop": "npm run web:prepare",
     "desktop": "electron .",
+    "pretauri:dev": "npm run web:prepare",
+    "pretauri:build": "npm run web:prepare",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "preios:add": "npm run web:prepare",
     "ios:add": "npx cap add ios --packagemanager cocoapods",
     "preios:sync": "npm run web:prepare",
@@ -144,12 +148,14 @@
     }
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^1.4.0",
     "@capacitor/cli": "^8.2.0",
     "electron": "^27.3.11",
     "electron-builder": "^26.8.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@tauri-apps/api": "^1.4.0",
     "@capacitor/android": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/filesystem": "^8.1.2",

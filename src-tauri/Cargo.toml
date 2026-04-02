@@ -1,0 +1,23 @@
+[package]
+name = "plutus-investment-group-desktop"
+version = "1.0.0"
+edition = "2021"
+authors = ["Plutus Team <support@plutus.com>"]
+description = "Tauri backend for Plutus Investment Group dashboard"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "1.4.0", features = ["api-all"] }
+anyhow = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["clock"] }
+serde_urlencoded = "0.7"
+urlencoding = "2.1"
+
+[build-dependencies]
+tauri-build = { version = "1.4.0", features = [] }
+
+[workspace]
