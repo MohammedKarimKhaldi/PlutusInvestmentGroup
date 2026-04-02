@@ -19,7 +19,7 @@ jobs:
     env:
       CSC_LINK: ${{ github.workspace }}/.github-tmp/apple-dev-id-application.p12
       CSC_KEY_PASSWORD: ${{ secrets.APPLE_DEV_ID_APP_CERT_PASSWORD }}
-      CSC_NAME: "Developer ID Application: Mohammed-Karim Khaldi (8574X8NBPZ)"
+      CSC_NAME: "Mohammed-Karim Khaldi (8574X8NBPZ)"
       APPLE_API_KEY_PATH: ${{ github.workspace }}/.github-tmp/AuthKey_GitHubRelease.p8
 
     steps:
