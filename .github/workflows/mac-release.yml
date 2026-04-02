@@ -135,12 +135,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build, notarize, and publish Mac release
+      - name: Build signed Mac DMG
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist:mac:release
+          APPLE_API_KEY: ""
+          APPLE_API_KEY_ID: ""
+          APPLE_API_ISSUER: ""
+          APPLE_ID: ""
+          APPLE_APP_SPECIFIC_PASSWORD: ""
+          APPLE_TEAM_ID: ""
+        run: |
+          set -euo pipefail
+          npm run web:prepare
+          npx electron-builder --mac dmg --universal --publish never
 
-      - name: Validate notarized DMG
+      - name: Notarize Mac DMG
+        env:
+          NOTARY_MODE: ${{ steps.validate.outputs.notary_mode }}
+          APPLE_NOTARY_API_KEY_ID: ${{ secrets.APPLE_NOTARY_API_KEY_ID }}
+          APPLE_NOTARY_API_ISSUER: ${{ secrets.APPLE_NOTARY_API_ISSUER }}
+          APPLE_NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_NOTARY_APP_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_PASSWORD }}
+          APPLE_NOTARY_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
         run: |
           set -euo pipefail
           dmg_path="$(find dist -maxdepth 1 -name "*-mac-universal.dmg" -print -quit)"
@@ -149,7 +164,50 @@ jobs:
             exit 1
           fi
 
+          submit_args=(submit "${dmg_path}" --wait --timeout 30m)
+
+          if [ "${NOTARY_MODE}" = "api-key" ]; then
+            submit_args+=(--key "${APPLE_API_KEY_PATH}" --key-id "${APPLE_NOTARY_API_KEY_ID}")
+            if [ -n "${APPLE_NOTARY_API_ISSUER:-}" ]; then
+              submit_args+=(--issuer "${APPLE_NOTARY_API_ISSUER}")
+            fi
+          else
+            submit_args+=(--apple-id "${APPLE_NOTARY_APPLE_ID}" --password "${APPLE_NOTARY_APP_PASSWORD}" --team-id "${APPLE_NOTARY_TEAM_ID}")
+          fi
+
+          xcrun notarytool "${submit_args[@]}"
+
+      - name: Staple and validate notarized DMG
+        run: |
+          set -euo pipefail
+          dmg_path="$(find dist -maxdepth 1 -name "*-mac-universal.dmg" -print -quit)"
+          if [ -z "${dmg_path}" ]; then
+            echo "No universal DMG was produced."
+            exit 1
+          fi
+
+          xcrun stapler staple "${dmg_path}"
           xcrun stapler validate "${dmg_path}"
+
+      - name: Upload Mac assets to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag_name="${GITHUB_REF_NAME}"
+          dmg_path="$(find dist -maxdepth 1 -name "*-mac-universal.dmg" -print -quit)"
+          if [ -z "${dmg_path}" ]; then
+            echo "No universal DMG was produced."
+            exit 1
+          fi
+
+          assets=("${dmg_path}")
+          if [ -f "${dmg_path}.blockmap" ]; then
+            assets+=("${dmg_path}.blockmap")
+          fi
+
+          gh release view "${tag_name}" >/dev/null 2>&1 || gh release create "${tag_name}" --title "${tag_name#v}" --notes ""
+          gh release upload "${tag_name}" "${assets[@]}" --clobber
 
       - name: Upload Mac release artifacts
         uses: actions/upload-artifact@v4
@@ -157,7 +215,5 @@ jobs:
           name: mac-release-${{ github.sha }}
           path: |
             dist/*-mac-universal.dmg
-            dist/*-mac-universal.zip
-            dist/*.blockmap
-            dist/latest-mac.yml
+            dist/*-mac-universal.dmg.blockmap
           if-no-files-found: error
