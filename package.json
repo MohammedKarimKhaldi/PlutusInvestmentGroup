@@ -37,6 +37,8 @@
     "dist:mac:universal": "electron-builder --mac dmg --universal --publish never",
     "predist:mac:zip": "npm run web:prepare",
     "dist:mac:zip": "electron-builder --mac zip --universal --publish never",
+    "predist:mac:release": "npm run web:prepare",
+    "dist:mac:release": "electron-builder --mac dmg zip --universal --publish always",
     "predist:mas:arm64": "npm run web:prepare",
     "dist:mas:arm64": "electron-builder --mac mas --arm64 --publish never",
     "predist:mas:x64": "npm run web:prepare",
@@ -74,6 +76,9 @@
     "mac": {
       "category": "public.app-category.finance",
       "icon": "electron-builder-resources/icon.icns",
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
+      "hardenedRuntime": true,
       "target": [
         {
           "target": "zip"

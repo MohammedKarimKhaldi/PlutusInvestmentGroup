@@ -3,7 +3,7 @@ name: Mac App Store Release
 on:
   push:
     tags:
-      - "v*"
+      - "mas-v*"
   workflow_dispatch:
 
 jobs:
