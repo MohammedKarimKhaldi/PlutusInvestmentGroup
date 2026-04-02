@@ -1,6 +1,6 @@
 {
   "name": "plutus-investment-group-desktop",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "private": true,
   "description": "Desktop wrapper for Plutus Investment Group dashboard",
   "main": "electron/main.cjs",

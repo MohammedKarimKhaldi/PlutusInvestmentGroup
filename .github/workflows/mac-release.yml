@@ -19,6 +19,7 @@ jobs:
     env:
       CSC_LINK: ${{ runner.temp }}/apple-dev-id-application.p12
       CSC_KEY_PASSWORD: ${{ secrets.APPLE_DEV_ID_APP_CERT_PASSWORD }}
+      CSC_NAME: "Developer ID Application: Mohammed-Karim Khaldi (8574X8NBPZ)"
       APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey_GitHubRelease.p8
 
     steps:
@@ -70,10 +71,9 @@ jobs:
           fi
 
           if [ "${has_api_key_auth}" -eq 0 ] && [ "${has_apple_id_auth}" -eq 0 ]; then
-            echo "Missing notarization credentials."
+            echo "No notarization credentials detected. Build will be signed, but not notarized."
             echo "Provide either APPLE_NOTARY_API_KEY_BASE64 + APPLE_NOTARY_API_KEY_ID + APPLE_NOTARY_API_ISSUER"
-            echo "or APPLE_NOTARY_APPLE_ID + APPLE_NOTARY_APP_PASSWORD + APPLE_NOTARY_TEAM_ID."
-            missing=1
+            echo "or APPLE_NOTARY_APPLE_ID + APPLE_NOTARY_APP_PASSWORD + APPLE_NOTARY_TEAM_ID to enable notarization later."
           fi
 
           if [ "${missing}" -ne 0 ]; then
