@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="../styles/components.css" />
   <link rel="stylesheet" href="../styles/outlook-investor-sync.css" />
   <script src="../scripts/shared/app-config.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 </head>
 
 <body data-page-id="outlook-investor-sync">
@@ -21,12 +22,11 @@
         <div class="header">
           <div class="title-block">
             <h1>Outlook Investors</h1>
-            <p>Connect Outlook, review recent emails, and attach selected recipients to a deal with a tracked contact status.</p>
+            <p>Connect Outlook, type a company once, and instantly review the latest mail status, matching emails, and deal-linked investor contacts.</p>
           </div>
           <div class="header-actions">
-            <div class="pill"><span class="dot"></span><span>Outlook + deals</span></div>
+            <div class="pill"><span class="dot"></span><span>Mail intelligence</span></div>
             <button class="btn btn-primary" type="button" id="sign-in-btn">Sign in with Microsoft</button>
-            <button class="btn" type="button" id="reload-messages-btn">Run last search</button>
           </div>
         </div>
 
@@ -69,21 +69,47 @@
 
         <div class="meta-row" id="deal-investor-metrics"></div>
 
+        <div class="panel outlook-command-panel">
+          <div class="panel-heading-row">
+            <div>
+              <h2>Company Mail Status</h2>
+              <p>Type a company name once and get the latest Outlook signal, the likely mail status, and the most relevant contacts.</p>
+            </div>
+            <span id="company-status-pill" class="company-status-pill is-idle">Idle</span>
+          </div>
+          <div class="outlook-command-grid">
+            <div class="outlook-command-form">
+              <label class="outlook-search-field">
+                Company name
+                <input id="message-search" type="search" placeholder="Type a company name, investor firm, or keyword" />
+              </label>
+              <button class="btn btn-primary" type="button" id="search-messages-btn">Check Outlook status</button>
+              <button class="btn" type="button" id="search-selected-deal-btn">Use selected deal company</button>
+              <button class="btn" type="button" id="reload-messages-btn">Run last search</button>
+            </div>
+            <div class="outlook-command-copy">
+              <div class="outlook-command-title">Smart lookup</div>
+              <div class="outlook-command-text" id="company-status-copy">
+                Search Outlook by company name to pull matching emails, surface the newest conversation, and prepare recipients for the selected deal.
+              </div>
+              <div class="outlook-command-match" id="company-deal-match">
+                No linked deal detected yet.
+              </div>
+            </div>
+          </div>
+          <div class="company-status-grid" id="company-status-grid"></div>
+        </div>
+
         <div class="content-grid">
           <div class="panel">
             <div class="panel-heading-row">
               <div>
-                <h2>Recent Emails</h2>
-                <p>Choose an Outlook email to import recipients from the To and Cc lists.</p>
+                <h2>Matching Outlook Emails</h2>
+                <p>The newest matching email is selected automatically so you can review contacts right away.</p>
               </div>
               <span id="messages-status" class="status-text">Idle</span>
             </div>
-            <div class="toolbar-row message-toolbar">
-              <label class="wide">
-                Search Outlook before loading emails
-                <input id="message-search" type="search" placeholder="Type a sender, subject, or keyword" />
-              </label>
-              <button class="btn btn-primary" type="button" id="search-messages-btn">Search Outlook</button>
+            <div class="toolbar-row message-toolbar message-toolbar--summary">
               <div class="message-results-summary" id="message-results-summary">No emails loaded</div>
             </div>
             <div class="message-picker-row">
@@ -95,7 +121,7 @@
               </label>
             </div>
             <div class="message-selection-copy" id="message-selection-copy">
-              Search Outlook first, then choose the email you want to use for contacts.
+              Search Outlook first, then either use one source email or collect recipients from all matching emails.
             </div>
             <div id="message-empty" class="empty-state" hidden>Search Outlook to load matching emails.</div>
             <div id="message-list" class="message-list"></div>
@@ -105,13 +131,21 @@
             <div class="panel-heading-row">
               <div>
                 <h2>Recipients To Add</h2>
-                <p>Select Outlook recipients, or add an email manually when it was not on the message.</p>
+                <p>Detected recipients appear here with deal-aware context, and @plutus-investment.com emails are excluded automatically.</p>
               </div>
-              <span id="recipient-count" class="status-text">0 selected</span>
+              <div class="recipient-panel-actions">
+                <button class="btn" type="button" id="export-recipients-btn">Export Excel</button>
+                <span id="recipient-count" class="status-text">0 selected</span>
+                <span id="recipient-export-status" class="status-text"></span>
+              </div>
             </div>
             <div class="selected-message-card" id="selected-message-card">
               <div class="selected-message-title" id="selected-message-title">No email selected</div>
               <div class="selected-message-meta" id="selected-message-meta">Pick an email on the left to review its recipients.</div>
+            </div>
+            <div class="recipient-source-switcher" id="recipient-source-switcher">
+              <button class="btn btn-primary" type="button" id="use-selected-message-btn">Selected email</button>
+              <button class="btn" type="button" id="use-search-recipient-list-btn">All emails with this title</button>
             </div>
             <div id="recipient-empty" class="empty-state">Select an email to see recipients.</div>
             <div id="recipient-list" class="recipient-list"></div>

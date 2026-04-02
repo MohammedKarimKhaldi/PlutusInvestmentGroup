@@ -652,11 +652,12 @@ async function listOutlookMessages({ accessToken, top, search }) {
   }
   const requestedTop = Number(top || 50);
   const safeTop = Number.isFinite(requestedTop)
-    ? Math.min(Math.max(Math.floor(requestedTop), 1), 100)
+    ? Math.min(Math.max(Math.floor(requestedTop), 1), 5000)
     : 50;
+  const pageSize = Math.min(safeTop, 250);
   const searchTerm = String(search || "").trim();
   const params = new URLSearchParams({
-    $top: String(safeTop),
+    $top: String(pageSize),
     $select: [
       "id",
       "subject",
@@ -674,17 +675,30 @@ async function listOutlookMessages({ accessToken, top, search }) {
   } else {
     params.set("$orderby", "receivedDateTime DESC");
   }
-  const url = `https://graph.microsoft.com/v1.0/me/messages?${params.toString()}`;
-  const payload = await fetchJson(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      ...(searchTerm ? { ConsistencyLevel: "eventual" } : {}),
-    },
-  });
-  const values = Array.isArray(payload && payload.value) ? payload.value : [];
+  let nextUrl = `https://graph.microsoft.com/v1.0/me/messages?${params.toString()}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+    ...(searchTerm ? { ConsistencyLevel: "eventual" } : {}),
+  };
+  const items = [];
+  const seenIds = new Set();
+
+  while (nextUrl && items.length < safeTop) {
+    const payload = await fetchJson(nextUrl, { headers });
+    const values = Array.isArray(payload && payload.value) ? payload.value : [];
+    values.forEach((message) => {
+      const normalized = normalizeOutlookMessage(message);
+      const id = String(normalized && normalized.id || "").trim();
+      if (id && seenIds.has(id)) return;
+      if (id) seenIds.add(id);
+      items.push(normalized);
+    });
+    nextUrl = payload && payload["@odata.nextLink"] ? String(payload["@odata.nextLink"]).trim() : "";
+  }
+
   return {
-    items: values.map((message) => normalizeOutlookMessage(message)),
+    items: items.slice(0, safeTop),
     fetchedAt: new Date().toISOString(),
   };
 }

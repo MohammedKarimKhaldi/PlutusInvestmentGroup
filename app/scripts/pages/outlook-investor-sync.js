@@ -20,10 +20,13 @@
     selectedMessageId: "",
     selectedRecipientEmails: new Set(),
     manualRecipients: [],
+    recipientSourceMode: "message",
     messageFilter: "",
     hasSearchedMessages: false,
     deviceCodeState: null,
     deviceCodeTimer: null,
+    connectedPerson: null,
+    autoSelectedDealId: "",
   };
 
   function normalizeValue(value) {
@@ -33,6 +36,10 @@
     return String(value || "").trim().toLowerCase();
   }
 
+  function isExcludedRecipientEmail(email) {
+    return normalizeValue(email).endsWith("@plutus-investment.com");
+  }
+
   function escapeHtml(value) {
     return String(value == null ? "" : value)
       .replace(/&/g, "&amp;")
@@ -40,6 +47,60 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function toTitleCase(value) {
+    return String(value || "")
+      .split(/([\s'-]+)/)
+      .map((part) => {
+        if (!part || /^[\s'-]+$/.test(part)) return part;
+        return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      })
+      .join("");
+  }
+
+  function deriveContactNameParts(name, email) {
+    const cleanName = String(name || "").replace(/\s+/g, " ").trim();
+    if (cleanName) {
+      if (cleanName.includes(",")) {
+        const [lastChunk, ...restChunks] = cleanName.split(",");
+        const firstName = toTitleCase(restChunks.join(" ").trim());
+        const lastName = toTitleCase(lastChunk.trim());
+        const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+        return {
+          name: fullName || cleanName,
+          firstName,
+          lastName,
+        };
+      }
+
+      const parts = cleanName.split(/\s+/).filter(Boolean);
+      const prefixes = new Set(["mr", "mrs", "ms", "dr", "miss", "sir"]);
+      while (parts.length > 2 && prefixes.has(normalizeValue(parts[0]).replace(/\./g, ""))) {
+        parts.shift();
+      }
+      const firstName = toTitleCase(parts[0] || "");
+      const lastName = toTitleCase(parts.slice(1).join(" "));
+      return {
+        name: cleanName,
+        firstName,
+        lastName,
+      };
+    }
+
+    const localPart = String(email || "").split("@")[0] || "";
+    const derivedParts = localPart
+      .replace(/[._-]+/g, " ")
+      .split(/\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const firstName = toTitleCase(derivedParts[0] || "");
+    const lastName = toTitleCase(derivedParts.slice(1).join(" "));
+    return {
+      name: [firstName, lastName].filter(Boolean).join(" ").trim() || String(email || "").trim(),
+      firstName,
+      lastName,
+    };
   }
 
   function buildPageUrl(pageId, params) {
@@ -65,6 +126,33 @@
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+
+  function getTimeValue(value) {
+    const timestamp = Date.parse(String(value || ""));
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  function describeRelativeTime(value) {
+    const timestamp = getTimeValue(value);
+    if (!timestamp) return "No recent email";
+    const diffMs = Date.now() - timestamp;
+    const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+    if (diffDays <= 0) return "Today";
+    if (diffDays === 1) return "1 day ago";
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) === 1 ? "" : "s"} ago`;
+    return formatDateTime(value);
+  }
+
+  function sanitizeFileNamePart(value) {
+    return String(value || "")
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, " ")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase();
   }
 
   function setStatus(elementId, text) {
@@ -136,6 +224,32 @@
     return state.deals.find((deal) => normalizeValue(deal && deal.id) === normalizeValue(state.selectedDealId)) || null;
   }
 
+  function findDealsMatchingSearch(term) {
+    const normalizedTerm = normalizeValue(term);
+    if (!normalizedTerm) return [];
+    const parts = normalizedTerm.split(/\s+/).filter(Boolean);
+    return state.deals.filter((deal) => {
+      const haystack = normalizeValue([
+        deal && deal.company,
+        deal && deal.name,
+        deal && deal.id,
+      ].join(" "));
+      return parts.every((part) => haystack.includes(part));
+    });
+  }
+
+  function syncMatchedDealsForSearch(term) {
+    const matches = findDealsMatchingSearch(term);
+    state.autoSelectedDealId = "";
+
+    if (matches.length === 1 && normalizeValue(matches[0].id) !== normalizeValue(state.selectedDealId)) {
+      state.selectedDealId = matches[0].id;
+      state.autoSelectedDealId = matches[0].id;
+    }
+
+    return matches;
+  }
+
   function getDealRetainerState(deal) {
     if (AppCore && typeof AppCore.getDealRetainerState === "function") {
       return AppCore.getDealRetainerState(deal);
@@ -186,9 +300,12 @@
         if (!entry || typeof entry !== "object") return null;
         const email = String(entry.email || "").trim();
         if (!email) return null;
+        const nameParts = deriveContactNameParts(entry.name, email);
         return {
           id: String(entry.id || `investor-${index}`).trim(),
-          name: String(entry.name || "").trim(),
+          name: String(entry.name || nameParts.name || "").trim(),
+          firstName: String(entry.firstName || nameParts.firstName || "").trim(),
+          lastName: String(entry.lastName || nameParts.lastName || "").trim(),
           email,
           contactStatus: normalizeContactStatus(entry.contactStatus),
           source: String(entry.source || "").trim(),
@@ -227,8 +344,25 @@
     return state.messages.find((message) => String(message.id || "").trim() === String(state.selectedMessageId || "").trim()) || null;
   }
 
+  function sortMessagesNewestFirst(messages) {
+    return (Array.isArray(messages) ? messages.slice() : []).sort((left, right) => {
+      const leftTime = getTimeValue(left && left.receivedDateTime);
+      const rightTime = getTimeValue(right && right.receivedDateTime);
+      if (leftTime !== rightTime) return rightTime - leftTime;
+      return String(left && left.subject || "").localeCompare(String(right && right.subject || ""));
+    });
+  }
+
   function getFilteredMessages() {
     return Array.isArray(state.messages) ? state.messages.slice() : [];
+  }
+
+  function getTitleMatchedMessages() {
+    const titleTerm = normalizeValue(state.messageFilter);
+    const messages = getFilteredMessages();
+    if (!titleTerm) return messages;
+    const subjectMatches = messages.filter((message) => normalizeValue(message && message.subject).includes(titleTerm));
+    return subjectMatches.length ? subjectMatches : messages;
   }
 
   function buildMessageOptionLabel(message) {
@@ -246,7 +380,7 @@
         .map((recipient) => normalizeValue(recipient.email))
         .filter(Boolean),
     );
-    getMessageRecipients(getSelectedMessage()).forEach((recipient) => {
+    getActiveOutlookRecipients().forEach((recipient) => {
       const key = normalizeValue(recipient.email);
       if (key) selectedEmails.add(key);
     });
@@ -278,10 +412,16 @@
     ].forEach((recipient) => {
       const email = String(recipient && recipient.address || "").trim();
       const key = normalizeValue(email);
-      if (!key) return;
+      if (!key || isExcludedRecipientEmail(email)) return;
       const existing = deduped.get(key);
+      const nameParts = deriveContactNameParts(
+        String(recipient && recipient.name || (existing && existing.name) || "").trim(),
+        email,
+      );
       deduped.set(key, {
-        name: String(recipient && recipient.name || (existing && existing.name) || "").trim(),
+        name: nameParts.name,
+        firstName: String((existing && existing.firstName) || nameParts.firstName || "").trim(),
+        lastName: String((existing && existing.lastName) || nameParts.lastName || "").trim(),
         email,
         kind: existing && existing.kind === "to" ? "to" : (recipient.kind || "to"),
       });
@@ -289,35 +429,265 @@
     return Array.from(deduped.values());
   }
 
+  function getBulkRecipientsFromMatchedMessages() {
+    const deduped = new Map();
+
+    getTitleMatchedMessages().forEach((message) => {
+      getMessageRecipients(message).forEach((recipient) => {
+        const key = normalizeValue(recipient.email);
+        if (!key) return;
+        const existing = deduped.get(key);
+        const latestReceivedAt = existing && getTimeValue(existing.latestReceivedAt) > getTimeValue(message.receivedDateTime)
+          ? existing.latestReceivedAt
+          : String(message.receivedDateTime || "").trim();
+        deduped.set(key, {
+          name: String((existing && existing.name) || recipient.name || recipient.email).trim(),
+          firstName: String((existing && existing.firstName) || recipient.firstName || "").trim(),
+          lastName: String((existing && existing.lastName) || recipient.lastName || "").trim(),
+          email: String(recipient.email || "").trim(),
+          kind: existing && existing.kind === "to" ? "to" : String(recipient.kind || "to"),
+          matchCount: Number(existing && existing.matchCount || 0) + 1,
+          latestReceivedAt,
+          latestSubject: latestReceivedAt === String(message.receivedDateTime || "").trim()
+            ? String(message.subject || "").trim()
+            : String(existing && existing.latestSubject || "").trim(),
+        });
+      });
+    });
+
+    return Array.from(deduped.values()).sort((left, right) => {
+      if ((left.matchCount || 0) !== (right.matchCount || 0)) {
+        return (right.matchCount || 0) - (left.matchCount || 0);
+      }
+      return String(left.name || left.email).localeCompare(String(right.name || right.email));
+    });
+  }
+
+  function getActiveOutlookRecipients() {
+    return state.recipientSourceMode === "search"
+      ? getBulkRecipientsFromMatchedMessages()
+      : getMessageRecipients(getSelectedMessage());
+  }
+
   function getAllRecipientCandidates() {
     const recipients = new Map();
 
     state.manualRecipients.forEach((recipient) => {
       const key = normalizeValue(recipient.email);
-      if (!key) return;
+      if (!key || isExcludedRecipientEmail(recipient.email)) return;
       recipients.set(key, {
         name: String(recipient.name || "").trim(),
+        firstName: String(recipient.firstName || "").trim(),
+        lastName: String(recipient.lastName || "").trim(),
         email: String(recipient.email || "").trim(),
         kind: "manual",
       });
     });
 
-    getMessageRecipients(getSelectedMessage()).forEach((recipient) => {
+    getActiveOutlookRecipients().forEach((recipient) => {
       const key = normalizeValue(recipient.email);
       if (!key) return;
       const existing = recipients.get(key);
       recipients.set(key, {
         name: existing && existing.name ? existing.name : recipient.name,
+        firstName: String((existing && existing.firstName) || recipient.firstName || "").trim(),
+        lastName: String((existing && existing.lastName) || recipient.lastName || "").trim(),
         email: recipient.email,
         kind: recipient.kind,
+        matchCount: Number(recipient.matchCount || 0),
+        latestReceivedAt: String(recipient.latestReceivedAt || "").trim(),
+        latestSubject: String(recipient.latestSubject || "").trim(),
       });
     });
 
     return Array.from(recipients.values());
   }
 
+  function getTrackedInvestorByEmail(email) {
+    const deal = getSelectedDeal();
+    if (!deal) return null;
+    return normalizeDealInvestorContacts(deal).find((entry) => normalizeValue(entry.email) === normalizeValue(email)) || null;
+  }
+
+  function countTrackedRecipientsForMessage(message) {
+    return getMessageRecipients(message).filter((recipient) => Boolean(getTrackedInvestorByEmail(recipient.email))).length;
+  }
+
+  function renderTrackedInvestorHint(email) {
+    const trackedInvestor = getTrackedInvestorByEmail(email);
+    if (!trackedInvestor) return "";
+    const status = normalizeContactStatus(trackedInvestor.contactStatus);
+    return `
+      <div class="recipient-card-meta">
+        Already tracked on this deal
+        · <span class="${escapeHtml(getStatusBadgeClass(status))}">
+          ${escapeHtml(CONTACT_STATUS_LABELS[status])}
+        </span>
+      </div>
+    `;
+  }
+
+  function buildCompanyStatusSummary() {
+    const messages = sortMessagesNewestFirst(state.messages);
+    const selectedDeal = getSelectedDeal();
+    const latestMessage = messages[0] || null;
+    const unreadCount = messages.filter((message) => !message.isRead).length;
+    const connectedEmail = normalizeValue(state.connectedPerson && state.connectedPerson.email);
+    const contactMap = new Map();
+
+    messages.forEach((message) => {
+      const from = message && message.from ? message.from : null;
+      const fromEmail = normalizeValue(from && from.address);
+      if (fromEmail && fromEmail !== connectedEmail && !isExcludedRecipientEmail(from && from.address)) {
+        contactMap.set(fromEmail, {
+          name: String(from && (from.name || from.address) || "").trim(),
+          email: String(from && from.address || "").trim(),
+        });
+      }
+
+      getMessageRecipients(message).forEach((recipient) => {
+        const email = normalizeValue(recipient.email);
+        if (!email || email === connectedEmail || isExcludedRecipientEmail(recipient.email)) return;
+        if (!contactMap.has(email)) {
+          contactMap.set(email, {
+            name: String(recipient.name || recipient.email || "").trim(),
+            email: String(recipient.email || "").trim(),
+          });
+        }
+      });
+    });
+
+    const trackedOnDeal = selectedDeal
+      ? Array.from(contactMap.values()).filter((contact) => Boolean(getTrackedInvestorByEmail(contact.email))).length
+      : 0;
+
+    let tone = "idle";
+    let label = "Idle";
+    let note = "Search Outlook by company name to surface the latest mail status.";
+    if (state.hasSearchedMessages && !messages.length) {
+      tone = "muted";
+      label = "No activity";
+      note = "No Outlook emails matched this company search.";
+    } else if (messages.length) {
+      const latestAgeDays = Math.floor((Date.now() - getTimeValue(latestMessage && latestMessage.receivedDateTime)) / (24 * 60 * 60 * 1000));
+      if (unreadCount > 0) {
+        tone = "warning";
+        label = "Needs review";
+        note = `${unreadCount} unread email${unreadCount === 1 ? "" : "s"} matched this company search.`;
+      } else if (latestAgeDays <= 7) {
+        tone = "live";
+        label = "Active";
+        note = `Latest Outlook activity was ${describeRelativeTime(latestMessage.receivedDateTime)}.`;
+      } else {
+        tone = "muted";
+        label = "Quiet";
+        note = `Latest Outlook activity was ${describeRelativeTime(latestMessage.receivedDateTime)}.`;
+      }
+    }
+
+    return {
+      tone,
+      label,
+      note,
+      totalMessages: messages.length,
+      unreadCount,
+      latestMessage,
+      relevantContacts: contactMap.size,
+      trackedOnDeal,
+      matchedDeals: findDealsMatchingSearch(state.messageFilter),
+    };
+  }
+
   function getSelectedRecipients() {
     return getAllRecipientCandidates().filter((recipient) => state.selectedRecipientEmails.has(normalizeValue(recipient.email)));
+  }
+
+  function getExportRecipients() {
+    return getActiveOutlookRecipients()
+      .filter((recipient) => recipient && recipient.email && !isExcludedRecipientEmail(recipient.email))
+      .map((recipient) => ({
+        firstName: String(recipient.firstName || "").trim(),
+        lastName: String(recipient.lastName || "").trim(),
+        name: String(recipient.name || "").trim(),
+        email: String(recipient.email || "").trim(),
+        recipientType: String(recipient.kind || "").trim().toUpperCase(),
+        matchCount: Number(recipient.matchCount || 0),
+        latestSubject: String(recipient.latestSubject || "").trim(),
+        latestReceivedAt: String(recipient.latestReceivedAt || "").trim(),
+      }));
+  }
+
+  function renderRecipientExportAction() {
+    const exportBtn = document.getElementById("export-recipients-btn");
+    const statusEl = document.getElementById("recipient-export-status");
+    if (!exportBtn) return;
+
+    const exportRows = getExportRecipients();
+    const label = state.recipientSourceMode === "search" ? "Export title list" : "Export Excel";
+    exportBtn.textContent = label;
+    exportBtn.disabled = exportRows.length === 0;
+    if (statusEl && statusEl.textContent !== "Exporting…") {
+      statusEl.textContent = exportRows.length ? `${exportRows.length} ready for Excel` : "";
+    }
+  }
+
+  function exportRecipientsToExcel() {
+    const exportBtn = document.getElementById("export-recipients-btn");
+    const statusEl = document.getElementById("recipient-export-status");
+    const rows = getExportRecipients();
+
+    if (typeof window.XLSX === "undefined") {
+      if (statusEl) statusEl.textContent = "Excel export is unavailable right now.";
+      return;
+    }
+
+    if (!rows.length) {
+      if (statusEl) statusEl.textContent = "No recipients available to export.";
+      return;
+    }
+
+    const selectedDeal = getSelectedDeal();
+    const sheetRows = rows.map((recipient) => ({
+      "First Name": recipient.firstName,
+      "Last Name": recipient.lastName,
+      Name: recipient.name,
+      Email: recipient.email,
+      "Recipient Type": recipient.recipientType,
+      "Seen In Matching Emails": recipient.matchCount || "",
+      "Latest Email Subject": recipient.latestSubject,
+      "Latest Email Date": recipient.latestReceivedAt ? formatDateTime(recipient.latestReceivedAt) : "",
+      Search: state.messageFilter || "",
+      Deal: selectedDeal ? String(selectedDeal.company || selectedDeal.name || selectedDeal.id || "").trim() : "",
+    }));
+
+    const workbook = window.XLSX.utils.book_new();
+    const worksheet = window.XLSX.utils.json_to_sheet(sheetRows);
+    window.XLSX.utils.book_append_sheet(workbook, worksheet, "Recipients");
+
+    const fileStemBase = state.recipientSourceMode === "search"
+      ? (state.messageFilter || "outlook-title-recipients")
+      : ((getSelectedMessage() && getSelectedMessage().subject) || state.messageFilter || "outlook-recipients");
+    const fileStem = sanitizeFileNamePart(fileStemBase) || "outlook-recipients";
+    const filename = `${fileStem}.xlsx`;
+
+    if (exportBtn) exportBtn.disabled = true;
+    if (statusEl) statusEl.textContent = "Exporting…";
+
+    try {
+      window.XLSX.writeFile(workbook, filename);
+      if (statusEl) statusEl.textContent = `Exported ${rows.length} recipients to ${filename}`;
+    } catch (error) {
+      if (statusEl) {
+        statusEl.textContent = error instanceof Error ? error.message : "Failed to export Excel file.";
+      }
+    } finally {
+      window.setTimeout(() => {
+        if (statusEl && statusEl.textContent.includes("Exported")) {
+          statusEl.textContent = `${rows.length} ready for Excel`;
+        }
+        renderRecipientExportAction();
+      }, 1600);
+    }
   }
 
   function renderConnectionSummary(person) {
@@ -334,12 +704,79 @@
     }
     if (summaryEl) {
       summaryEl.textContent = person && person.connected
-        ? "Microsoft Graph session is ready for Outlook mailbox reads."
-        : "Sign in with Microsoft to load recent Outlook emails.";
+        ? "Microsoft Graph session is ready for company-level Outlook lookups."
+        : "Sign in with Microsoft to search Outlook by company and review mailbox status.";
     }
     if (statusEl) {
       statusEl.textContent = person && person.connected ? "Connected" : "Not connected";
     }
+  }
+
+  function renderCompanyStatus() {
+    const pillEl = document.getElementById("company-status-pill");
+    const copyEl = document.getElementById("company-status-copy");
+    const matchEl = document.getElementById("company-deal-match");
+    const gridEl = document.getElementById("company-status-grid");
+    if (!pillEl || !copyEl || !matchEl || !gridEl) return;
+
+    const summary = buildCompanyStatusSummary();
+    pillEl.className = `company-status-pill is-${summary.tone}`;
+    pillEl.textContent = summary.label;
+    copyEl.textContent = summary.note;
+
+    if (!state.hasSearchedMessages || !state.messageFilter) {
+      matchEl.textContent = "No linked deal detected yet.";
+    } else if (!summary.matchedDeals.length) {
+      matchEl.textContent = "No deal matched this company search. You can still review emails and save contacts manually.";
+    } else if (summary.matchedDeals.length === 1) {
+      const match = summary.matchedDeals[0];
+      const wasAutoSelected = normalizeValue(match.id) === normalizeValue(state.autoSelectedDealId);
+      matchEl.textContent = wasAutoSelected
+        ? `Matched deal ${match.company || match.name || match.id} and selected it automatically.`
+        : `Matched deal ${match.company || match.name || match.id}.`;
+    } else {
+      const currentMatch = summary.matchedDeals.find((deal) => normalizeValue(deal.id) === normalizeValue(state.selectedDealId));
+      matchEl.textContent = currentMatch
+        ? `${summary.matchedDeals.length} deals match this company search. ${currentMatch.company || currentMatch.name || currentMatch.id} is currently selected.`
+        : `${summary.matchedDeals.length} deals match this company search. Keep the right deal selected before saving contacts.`;
+    }
+
+    const cards = [
+      {
+        label: "Mail status",
+        value: summary.label,
+        note: summary.note,
+      },
+      {
+        label: "Matching emails",
+        value: String(summary.totalMessages),
+        note: summary.unreadCount
+          ? `${summary.unreadCount} unread need review`
+          : "No unread emails in these matches",
+      },
+      {
+        label: "Latest activity",
+        value: summary.latestMessage ? describeRelativeTime(summary.latestMessage.receivedDateTime) : "No recent email",
+        note: summary.latestMessage
+          ? `${summary.latestMessage.subject || "(No subject)"} · ${formatDateTime(summary.latestMessage.receivedDateTime)}`
+          : "Search Outlook to see the most recent email touchpoint",
+      },
+      {
+        label: "Relevant contacts",
+        value: String(summary.relevantContacts),
+        note: getSelectedDeal()
+          ? `${summary.trackedOnDeal} already tracked on the selected deal`
+          : "Select a deal to compare against saved investor contacts",
+      },
+    ];
+
+    gridEl.innerHTML = cards.map((card) => `
+      <div class="company-status-card">
+        <div class="company-status-label">${escapeHtml(card.label)}</div>
+        <div class="company-status-value">${escapeHtml(card.value)}</div>
+        <div class="company-status-note">${escapeHtml(card.note)}</div>
+      </div>
+    `).join("");
   }
 
   function renderDealInvestorMetrics() {
@@ -435,6 +872,7 @@
     const selectedDealMeta = document.getElementById("selected-deal-meta");
     const openDealBtn = document.getElementById("open-deal-btn");
     const saveBtn = document.getElementById("save-selection-btn");
+    const useDealSearchBtn = document.getElementById("search-selected-deal-btn");
     if (!select) return;
 
     const requestedId = getRequestedDealId();
@@ -479,6 +917,13 @@
           : "No deals are loaded yet. Open Deals overview or let the shared deals sync finish.");
     }
     if (saveBtn) saveBtn.disabled = !selectedDeal;
+    if (useDealSearchBtn) {
+      const dealSearchLabel = selectedDeal
+        ? `Use ${selectedDeal.company || selectedDeal.name || "selected deal"}`
+        : "Use selected deal company";
+      useDealSearchBtn.textContent = dealSearchLabel;
+      useDealSearchBtn.disabled = !selectedDeal;
+    }
     if (openDealBtn) {
       if (selectedDeal && selectedDeal.id) {
         openDealBtn.hidden = false;
@@ -492,6 +937,10 @@
     updateSelectedDealInUrl();
     renderDealInvestorMetrics();
     renderDealInvestors();
+    renderMessages();
+    renderSelectedMessage();
+    renderCompanyStatus();
+    renderRecipientExportAction();
   }
 
   function renderMessages() {
@@ -514,9 +963,8 @@
 
     listEl.innerHTML = filteredMessages.map((message) => {
       const isActive = String(message.id || "") === String(state.selectedMessageId || "");
-      const totalRecipients =
-        (Array.isArray(message.toRecipients) ? message.toRecipients.length : 0) +
-        (Array.isArray(message.ccRecipients) ? message.ccRecipients.length : 0);
+      const totalRecipients = getMessageRecipients(message).length;
+      const trackedRecipients = countTrackedRecipientsForMessage(message);
       return `
         <button class="message-card${isActive ? " is-active" : ""}" type="button" data-message-id="${escapeHtml(message.id || "")}">
           <div class="message-card-top">
@@ -527,12 +975,18 @@
                 · ${escapeHtml(formatDateTime(message.receivedDateTime))}
               </div>
             </div>
-            <span class="recipient-pill">${escapeHtml(String(totalRecipients))} recipients</span>
+            <div class="message-card-badges">
+              <span class="recipient-pill">${escapeHtml(String(totalRecipients))} recipients</span>
+              ${!message.isRead ? '<span class="message-state-pill is-unread">Unread</span>' : ""}
+              ${trackedRecipients ? `<span class="message-state-pill is-linked">${escapeHtml(String(trackedRecipients))} tracked</span>` : ""}
+            </div>
           </div>
           <div class="message-card-preview">${escapeHtml(message.bodyPreview || "No preview available.")}</div>
         </button>
       `;
     }).join("");
+
+    renderRecipientExportAction();
   }
 
   function renderMessagePicker(filteredMessages) {
@@ -544,11 +998,11 @@
 
     if (summaryEl) {
       if (!state.hasSearchedMessages) {
-        summaryEl.textContent = "Search Outlook to begin";
+        summaryEl.textContent = "Search a company to begin";
       } else if (!state.messages.length) {
-        summaryEl.textContent = "No emails found";
+        summaryEl.textContent = `No Outlook emails found for "${state.messageFilter}"`;
       } else if (state.messageFilter) {
-        summaryEl.textContent = `${visibleMessages.length} match${visibleMessages.length === 1 ? "" : "es"} for "${state.messageFilter}"`;
+        summaryEl.textContent = `${visibleMessages.length} matching email${visibleMessages.length === 1 ? "" : "s"} for "${state.messageFilter}"`;
       } else {
         summaryEl.textContent = `${visibleMessages.length} emails loaded`;
       }
@@ -567,9 +1021,9 @@
 
     if (copyEl) {
       if (!state.hasSearchedMessages) {
-        copyEl.textContent = "Type your Outlook search first, click Search Outlook, then choose the email you want to use.";
+        copyEl.textContent = "Type a company name, check Outlook status, and the latest matching email will be picked automatically.";
       } else if (!visibleMessages.length) {
-        copyEl.textContent = "Try a different Outlook search to load matching emails.";
+        copyEl.textContent = "Try a different company name or keyword to pull matching Outlook emails.";
       } else if (currentMessage) {
         copyEl.textContent = `Using "${currentMessage.subject || "(No subject)"}" as the source email for recipient import.`;
       } else {
@@ -593,6 +1047,8 @@
             <span>
               <div class="deal-investor-name">${escapeHtml(recipient.name || recipient.email)}</div>
               <div class="manual-recipient-meta">${escapeHtml(recipient.email)} · Added manually</div>
+              ${(recipient.firstName || recipient.lastName) ? `<div class="manual-recipient-meta">First name: ${escapeHtml(recipient.firstName || "—")} · Last name: ${escapeHtml(recipient.lastName || "—")}</div>` : ""}
+              ${renderTrackedInvestorHint(recipient.email)}
             </span>
           </label>
           <div class="deal-investor-actions">
@@ -605,6 +1061,27 @@
     countEl.textContent = `${getSelectedRecipients().length} selected`;
   }
 
+  function renderRecipientSourceSwitcher() {
+    const selectedBtn = document.getElementById("use-selected-message-btn");
+    const searchBtn = document.getElementById("use-search-recipient-list-btn");
+    if (!selectedBtn || !searchBtn) return;
+
+    const hasSelectedMessage = Boolean(getSelectedMessage());
+    const hasBulkRecipients = getBulkRecipientsFromMatchedMessages().length > 0;
+    const useSearchMode = state.recipientSourceMode === "search";
+
+    selectedBtn.disabled = !hasSelectedMessage;
+    searchBtn.disabled = !hasBulkRecipients;
+    selectedBtn.className = `btn${!useSearchMode ? " btn-primary" : ""}`;
+    searchBtn.className = `btn${useSearchMode ? " btn-primary" : ""}`;
+  }
+
+  function setRecipientSourceMode(mode) {
+    state.recipientSourceMode = mode === "search" ? "search" : "message";
+    refreshSelectedRecipientsForCurrentMessage();
+    renderSelectedMessage();
+  }
+
   function renderSelectedMessage() {
     const message = getSelectedMessage();
     const titleEl = document.getElementById("selected-message-title");
@@ -615,21 +1092,35 @@
 
     if (!titleEl || !metaEl || !recipientList || !emptyEl || !countEl) return;
 
-    const recipients = getMessageRecipients(message);
-    titleEl.textContent = message ? (message.subject || "(No subject)") : "No email selected";
-    metaEl.innerHTML = message
-      ? `
-        ${escapeHtml((message.from && (message.from.name || message.from.address)) || "Unknown sender")}
-        · ${escapeHtml(formatDateTime(message.receivedDateTime))}
-        ${message.webLink ? ` · <a class="deal-investor-source-link" href="${escapeHtml(message.webLink)}" target="_blank" rel="noopener noreferrer">Open in Outlook</a>` : ""}
-      `
-      : "Pick an email on the left to review its recipients.";
+    const useSearchMode = state.recipientSourceMode === "search";
+    const recipients = useSearchMode ? getBulkRecipientsFromMatchedMessages() : getMessageRecipients(message);
+    const titleMatchedMessages = getTitleMatchedMessages();
+    titleEl.textContent = useSearchMode
+      ? `All emails with title "${state.messageFilter || "current search"}"`
+      : (message ? (message.subject || "(No subject)") : "No email selected");
+    metaEl.innerHTML = useSearchMode
+      ? (
+        recipients.length
+          ? `${escapeHtml(String(recipients.length))} unique recipient${recipients.length === 1 ? "" : "s"} found across ${escapeHtml(String(titleMatchedMessages.length))} email${titleMatchedMessages.length === 1 ? "" : "s"} whose subject matches this title.`
+          : "Run an Outlook search first to collect recipients from all emails with this title."
+      )
+      : (
+        message
+          ? `
+            ${escapeHtml((message.from && (message.from.name || message.from.address)) || "Unknown sender")}
+            · ${escapeHtml(formatDateTime(message.receivedDateTime))}
+            ${message.webLink ? ` · <a class="deal-investor-source-link" href="${escapeHtml(message.webLink)}" target="_blank" rel="noopener noreferrer">Open in Outlook</a>` : ""}
+          `
+          : "Pick an email on the left to review its recipients."
+      );
 
     emptyEl.hidden = recipients.length > 0;
     if (!recipients.length) {
-      emptyEl.textContent = message
-        ? "This email has no To or Cc recipients to import."
-        : "Select an email to see recipients.";
+      emptyEl.textContent = useSearchMode
+        ? "No recipients were found across the current matching emails."
+        : (message
+          ? "This email has no To or Cc recipients to import."
+          : "Select an email to see recipients.");
     }
 
     recipientList.innerHTML = recipients.map((recipient) => {
@@ -645,23 +1136,32 @@
                 ${escapeHtml(recipient.email)}
                 · <span class="recipient-pill">${escapeHtml(recipient.kind.toUpperCase())}</span>
               </div>
+              ${(recipient.firstName || recipient.lastName) ? `<div class="recipient-card-meta">First name: ${escapeHtml(recipient.firstName || "—")} · Last name: ${escapeHtml(recipient.lastName || "—")}</div>` : ""}
+              ${useSearchMode ? `<div class="recipient-card-meta">Seen on ${escapeHtml(String(recipient.matchCount || 0))} matching email${recipient.matchCount === 1 ? "" : "s"}${recipient.latestSubject ? ` · Latest: ${escapeHtml(recipient.latestSubject)}` : ""}</div>` : ""}
+              ${renderTrackedInvestorHint(recipient.email)}
             </span>
           </label>
         </div>
       `;
     }).join("");
 
+    renderRecipientSourceSwitcher();
     countEl.textContent = `${getSelectedRecipients().length} selected`;
     renderManualRecipients();
+    renderRecipientExportAction();
   }
 
   async function refreshConnectionState() {
     if (!AppCore || typeof AppCore.getCurrentConnectedPerson !== "function") {
+      state.connectedPerson = null;
       renderConnectionSummary(null);
+      renderCompanyStatus();
       return null;
     }
     const person = await AppCore.getCurrentConnectedPerson();
+    state.connectedPerson = person || null;
     renderConnectionSummary(person);
+    renderCompanyStatus();
     return person;
   }
 
@@ -686,9 +1186,11 @@
       state.messageFilter = "";
       state.messages = [];
       state.selectedMessageId = "";
+      state.autoSelectedDealId = "";
       refreshSelectedRecipientsForCurrentMessage();
       renderMessages();
       renderSelectedMessage();
+      renderCompanyStatus();
       setStatus("messages-status", "Enter a search to load emails");
       return;
     }
@@ -697,16 +1199,19 @@
     try {
       state.hasSearchedMessages = true;
       state.messageFilter = searchTerm;
+      syncMatchedDealsForSearch(searchTerm);
+      renderDealSelect();
       const result = AppCore && typeof AppCore.listOutlookMessages === "function"
-        ? await AppCore.listOutlookMessages({ top: 60, search: searchTerm })
+        ? await AppCore.listOutlookMessages({ top: 5000, search: searchTerm })
         : { items: [] };
-      state.messages = Array.isArray(result && result.items) ? result.items : [];
+      state.messages = sortMessagesNewestFirst(Array.isArray(result && result.items) ? result.items : []);
       if (!state.selectedMessageId && state.messages.length) {
         setSelectedMessage(state.messages[0].id);
       } else {
         renderMessages();
         renderSelectedMessage();
       }
+      renderCompanyStatus();
       setStatus("messages-status", `${state.messages.length} match${state.messages.length === 1 ? "" : "es"} loaded`);
     } catch (error) {
       state.hasSearchedMessages = true;
@@ -714,6 +1219,7 @@
       state.selectedMessageId = "";
       renderMessages();
       renderSelectedMessage();
+      renderCompanyStatus();
       setStatus("messages-status", error instanceof Error ? error.message : "Failed to load emails");
     }
   }
@@ -740,6 +1246,7 @@
     const nextStatus = normalizeContactStatus(contactStatusSelect.value);
     const note = String(notesInput.value || "").trim();
     const now = new Date().toISOString();
+    const isSearchAggregateSource = state.recipientSourceMode === "search";
     const byEmail = new Map(
       normalizeDealInvestorContacts(deal).map((entry) => [normalizeValue(entry.email), entry]),
     );
@@ -749,19 +1256,36 @@
       const key = normalizeValue(email);
       if (!key) return;
       const existing = byEmail.get(key);
+      const nameParts = deriveContactNameParts(recipient.name || (existing && existing.name) || "", email);
       byEmail.set(key, {
         id: existing && existing.id ? existing.id : `investor-${Date.now()}-${index}`,
-        name: String(recipient.name || (existing && existing.name) || "").trim(),
+        name: String(recipient.name || (existing && existing.name) || nameParts.name || "").trim(),
+        firstName: String(recipient.firstName || (existing && existing.firstName) || nameParts.firstName || "").trim(),
+        lastName: String(recipient.lastName || (existing && existing.lastName) || nameParts.lastName || "").trim(),
         email,
         contactStatus: nextStatus,
-        source: selectedMessage ? "outlook-message" : "manual-entry",
-        sourceMessageId: selectedMessage ? String(selectedMessage.id || "") : String((existing && existing.sourceMessageId) || ""),
-        sourceMessageSubject: selectedMessage ? String(selectedMessage.subject || "") : String((existing && existing.sourceMessageSubject) || ""),
-        sourceMessageWebLink: selectedMessage ? String(selectedMessage.webLink || "") : String((existing && existing.sourceMessageWebLink) || ""),
-        sourceReceivedAt: selectedMessage ? String(selectedMessage.receivedDateTime || "") : String((existing && existing.sourceReceivedAt) || ""),
+        source: isSearchAggregateSource
+          ? "outlook-search-aggregate"
+          : (selectedMessage ? "outlook-message" : "manual-entry"),
+        sourceMessageId: isSearchAggregateSource
+          ? String((existing && existing.sourceMessageId) || "")
+          : (selectedMessage ? String(selectedMessage.id || "") : String((existing && existing.sourceMessageId) || "")),
+        sourceMessageSubject: isSearchAggregateSource
+          ? String(recipient.latestSubject || state.messageFilter || (existing && existing.sourceMessageSubject) || "")
+          : (selectedMessage ? String(selectedMessage.subject || "") : String((existing && existing.sourceMessageSubject) || "")),
+        sourceMessageWebLink: isSearchAggregateSource
+          ? String((existing && existing.sourceMessageWebLink) || "")
+          : (selectedMessage ? String(selectedMessage.webLink || "") : String((existing && existing.sourceMessageWebLink) || "")),
+        sourceReceivedAt: isSearchAggregateSource
+          ? String(recipient.latestReceivedAt || (existing && existing.sourceReceivedAt) || "")
+          : (selectedMessage ? String(selectedMessage.receivedDateTime || "") : String((existing && existing.sourceReceivedAt) || "")),
         sourceRecipientType: String(recipient.kind || (existing && existing.sourceRecipientType) || "manual"),
-        sourceFromName: selectedMessage && selectedMessage.from ? String(selectedMessage.from.name || "") : String((existing && existing.sourceFromName) || ""),
-        sourceFromEmail: selectedMessage && selectedMessage.from ? String(selectedMessage.from.address || "") : String((existing && existing.sourceFromEmail) || ""),
+        sourceFromName: isSearchAggregateSource
+          ? String((existing && existing.sourceFromName) || "")
+          : (selectedMessage && selectedMessage.from ? String(selectedMessage.from.name || "") : String((existing && existing.sourceFromName) || "")),
+        sourceFromEmail: isSearchAggregateSource
+          ? String((existing && existing.sourceFromEmail) || "")
+          : (selectedMessage && selectedMessage.from ? String(selectedMessage.from.address || "") : String((existing && existing.sourceFromEmail) || "")),
         notes: note || String((existing && existing.notes) || ""),
         addedAt: String((existing && existing.addedAt) || now),
         updatedAt: now,
@@ -814,16 +1338,27 @@
     if (!cleanEmail || !key.includes("@")) {
       throw new Error("Enter a valid email address.");
     }
+    if (isExcludedRecipientEmail(cleanEmail)) {
+      throw new Error("Plutus internal email addresses are excluded from this list.");
+    }
 
     const cleanName = String(name || "").trim();
+    const nameParts = deriveContactNameParts(cleanName, cleanEmail);
     const existingIndex = state.manualRecipients.findIndex((entry) => normalizeValue(entry.email) === key);
     if (existingIndex >= 0) {
       state.manualRecipients[existingIndex] = {
-        name: cleanName || state.manualRecipients[existingIndex].name,
+        name: cleanName || state.manualRecipients[existingIndex].name || nameParts.name,
+        firstName: nameParts.firstName || state.manualRecipients[existingIndex].firstName || "",
+        lastName: nameParts.lastName || state.manualRecipients[existingIndex].lastName || "",
         email: cleanEmail,
       };
     } else {
-      state.manualRecipients.push({ name: cleanName, email: cleanEmail });
+      state.manualRecipients.push({
+        name: cleanName || nameParts.name,
+        firstName: nameParts.firstName,
+        lastName: nameParts.lastName,
+        email: cleanEmail,
+      });
     }
     state.selectedRecipientEmails.add(key);
     renderManualRecipients();
@@ -911,9 +1446,13 @@
     const signInBtn = document.getElementById("sign-in-btn");
     const reloadMessagesBtn = document.getElementById("reload-messages-btn");
     const searchMessagesBtn = document.getElementById("search-messages-btn");
+    const searchSelectedDealBtn = document.getElementById("search-selected-deal-btn");
     const saveSelectionBtn = document.getElementById("save-selection-btn");
     const messageSearch = document.getElementById("message-search");
     const messageSelect = document.getElementById("message-select");
+    const useSelectedMessageBtn = document.getElementById("use-selected-message-btn");
+    const useSearchRecipientListBtn = document.getElementById("use-search-recipient-list-btn");
+    const exportRecipientsBtn = document.getElementById("export-recipients-btn");
 
     if (signInBtn) {
       signInBtn.addEventListener("click", () => {
@@ -933,6 +1472,17 @@
       });
     }
 
+    if (searchSelectedDealBtn) {
+      searchSelectedDealBtn.addEventListener("click", () => {
+        const deal = getSelectedDeal();
+        if (!deal) return;
+        const searchTerm = String(deal.company || deal.name || "").trim();
+        if (!searchTerm) return;
+        if (messageSearch) messageSearch.value = searchTerm;
+        loadMessages();
+      });
+    }
+
     if (messageSearch) {
       messageSearch.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") return;
@@ -943,6 +1493,7 @@
 
     if (messageSelect) {
       messageSelect.addEventListener("change", (event) => {
+        state.recipientSourceMode = "message";
         setSelectedMessage(event.target.value);
       });
     }
@@ -951,7 +1502,26 @@
       messageList.addEventListener("click", (event) => {
         const button = event.target.closest("[data-message-id]");
         if (!button) return;
+        state.recipientSourceMode = "message";
         setSelectedMessage(button.getAttribute("data-message-id"));
+      });
+    }
+
+    if (useSelectedMessageBtn) {
+      useSelectedMessageBtn.addEventListener("click", () => {
+        setRecipientSourceMode("message");
+      });
+    }
+
+    if (useSearchRecipientListBtn) {
+      useSearchRecipientListBtn.addEventListener("click", () => {
+        setRecipientSourceMode("search");
+      });
+    }
+
+    if (exportRecipientsBtn) {
+      exportRecipientsBtn.addEventListener("click", () => {
+        exportRecipientsToExcel();
       });
     }
 
@@ -1006,6 +1576,7 @@
     if (dealSelect) {
       dealSelect.addEventListener("change", (event) => {
         state.selectedDealId = String(event.target.value || "").trim();
+        state.autoSelectedDealId = "";
         renderDealSelect();
       });
     }
@@ -1039,7 +1610,7 @@
 
     window.addEventListener("appcore:deals-updated", (event) => {
       if (!event || !event.detail || !Array.isArray(event.detail.deals)) return;
-      state.deals = event.detail.deals;
+      state.deals = sortDealsByRetainerState(event.detail.deals);
       renderDealSelect();
     });
   }

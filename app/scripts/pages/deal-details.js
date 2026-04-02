@@ -771,6 +771,8 @@ function normalizeDealInvestorContacts(deal) {
       return {
         id: String(entry.id || `investor-${index}`).trim(),
         name: String(entry.name || "").trim(),
+        firstName: String(entry.firstName || "").trim(),
+        lastName: String(entry.lastName || "").trim(),
         email,
         contactStatus: normalizeInvestorContactStatus(entry.contactStatus),
         sourceMessageSubject: String(entry.sourceMessageSubject || "").trim(),

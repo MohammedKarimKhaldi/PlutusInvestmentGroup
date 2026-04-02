@@ -980,11 +980,12 @@
     }
     const requestedTop = Number(config.top || 50);
     const safeTop = Number.isFinite(requestedTop)
-      ? Math.min(Math.max(Math.floor(requestedTop), 1), 100)
+      ? Math.min(Math.max(Math.floor(requestedTop), 1), 5000)
       : 50;
+    const pageSize = Math.min(safeTop, 250);
     const searchTerm = String(config.search || "").trim();
     const params = new URLSearchParams({
-      $top: String(safeTop),
+      $top: String(pageSize),
       $select: [
         "id",
         "subject",
@@ -1002,13 +1003,26 @@
     } else {
       params.set("$orderby", "receivedDateTime DESC");
     }
-    const url = `https://graph.microsoft.com/v1.0/me/messages?${params.toString()}`;
-    const response = await graphFetchJson(url, token, {
-      headers: searchTerm ? { ConsistencyLevel: "eventual" } : {},
-    });
+    let nextUrl = `https://graph.microsoft.com/v1.0/me/messages?${params.toString()}`;
+    const headers = searchTerm ? { ConsistencyLevel: "eventual" } : {};
+    const items = [];
+    const seenIds = new Set();
+
+    while (nextUrl && items.length < safeTop) {
+      const response = await graphFetchJson(nextUrl, token, { headers });
+      const values = Array.isArray(response && response.value) ? response.value : [];
+      values.forEach((message) => {
+        const normalized = normalizeOutlookMessage(message);
+        const id = String(normalized && normalized.id || "").trim();
+        if (id && seenIds.has(id)) return;
+        if (id) seenIds.add(id);
+        items.push(normalized);
+      });
+      nextUrl = response && response["@odata.nextLink"] ? String(response["@odata.nextLink"]).trim() : "";
+    }
+
     return {
-      items: (Array.isArray(response && response.value) ? response.value : [])
-        .map((message) => normalizeOutlookMessage(message)),
+      items: items.slice(0, safeTop),
       fetchedAt: new Date().toISOString(),
     };
   }

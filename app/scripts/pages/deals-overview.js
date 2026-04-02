@@ -22,12 +22,34 @@
       retainer: "all",
       setup: "all",
     };
+    let dealSortState = {
+      key: "retainer",
+      direction: "desc",
+    };
 
     const STAGE_LABELS = {
       "prospect": "Prospect",
       "signing": "Signing",
       "onboarding": "Onboarding",
       "contacting investors": "Contacting investors"
+    };
+    const DEAL_SORT_LABELS = {
+      deal: "Deal",
+      company: "Company",
+      stage: "Stage / Status",
+      owners: "People in Charge",
+      target: "Target",
+      raised: "Raised",
+      cash: "Cash %",
+      equity: "Equity %",
+      retainer: "Retainer",
+      connections: "Connected systems",
+    };
+    const DEAL_STAGE_SORT_ORDER = {
+      "prospect": 1,
+      "signing": 2,
+      "onboarding": 3,
+      "contacting investors": 4,
     };
     const DEAL_LIFECYCLE_LABELS = {
       active: "Active",
@@ -197,6 +219,126 @@
           return leftState.hasRetainer ? -1 : 1;
         }
         return typeof fallbackComparator === "function" ? fallbackComparator(left, right) : 0;
+      });
+    }
+
+    function compareDealsByCompany(left, right) {
+      return normalizeValue(left && (left.company || left.name || left.id)).localeCompare(
+        normalizeValue(right && (right.company || right.name || right.id)),
+      );
+    }
+
+    function getDefaultDealSortDirection(sortKey) {
+      const normalized = normalizeValue(sortKey);
+      return ["target", "raised", "cash", "equity", "retainer", "connections"].includes(normalized)
+        ? "desc"
+        : "asc";
+    }
+
+    function parseSortableNumber(value) {
+      const raw = String(value == null ? "" : value).trim();
+      if (!raw) return null;
+      const parsed = Number(raw.replace(/,/g, "").replace(/[^0-9.-]/g, ""));
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function compareNumberValues(left, right, direction) {
+      const leftIsNumber = Number.isFinite(left);
+      const rightIsNumber = Number.isFinite(right);
+      if (!leftIsNumber && !rightIsNumber) return 0;
+      if (!leftIsNumber) return 1;
+      if (!rightIsNumber) return -1;
+      return direction === "asc" ? left - right : right - left;
+    }
+
+    function compareTextValues(left, right, direction) {
+      const comparison = normalizeValue(left).localeCompare(normalizeValue(right));
+      return direction === "desc" ? comparison * -1 : comparison;
+    }
+
+    function getDealStageSortRank(deal) {
+      const lifecycleStatus = getDealLifecycleStatus(deal);
+      const lifecycleRank = lifecycleStatus === "active"
+        ? 0
+        : lifecycleStatus === "finished"
+          ? 10
+          : 20;
+      const stageRank = DEAL_STAGE_SORT_ORDER[normalizeValue(deal && deal.stage)] || 99;
+      return lifecycleRank + stageRank;
+    }
+
+    function updateDealSortUi() {
+      document.querySelectorAll("[data-deal-sort-column]").forEach((header) => {
+        const sortKey = normalizeValue(header.getAttribute("data-deal-sort-column"));
+        const isActive = sortKey === normalizeValue(dealSortState.key);
+        const direction = dealSortState.direction === "asc" ? "ascending" : "descending";
+        header.setAttribute("aria-sort", isActive ? direction : "none");
+
+        const button = header.querySelector("[data-deal-sort-key]");
+        if (button) {
+          button.classList.toggle("is-active", isActive);
+        }
+
+        const indicator = header.querySelector(".deal-sort-indicator");
+        if (indicator) {
+          indicator.textContent = isActive ? (dealSortState.direction === "asc" ? "↑" : "↓") : "↕";
+        }
+      });
+    }
+
+    function setDealSort(sortKey) {
+      const normalized = normalizeValue(sortKey);
+      if (!normalized) return;
+
+      if (normalizeValue(dealSortState.key) === normalized) {
+        dealSortState.direction = dealSortState.direction === "asc" ? "desc" : "asc";
+      } else {
+        dealSortState = {
+          key: normalized,
+          direction: getDefaultDealSortDirection(normalized),
+        };
+      }
+
+      updateDealSortUi();
+      renderDeals();
+    }
+
+    function getSortedDeals(source) {
+      const deals = Array.isArray(source) ? source.slice() : [];
+      const sortKey = normalizeValue(dealSortState.key) || "retainer";
+      const direction = dealSortState.direction === "asc" ? "asc" : "desc";
+
+      return deals.sort((left, right) => {
+        let comparison = 0;
+
+        if (sortKey === "deal") {
+          comparison = compareTextValues(left && (left.name || left.id), right && (right.name || right.id), direction);
+        } else if (sortKey === "company") {
+          comparison = compareTextValues(left && (left.company || left.name || left.id), right && (right.company || right.name || right.id), direction);
+        } else if (sortKey === "stage") {
+          comparison = compareNumberValues(getDealStageSortRank(left), getDealStageSortRank(right), direction);
+        } else if (sortKey === "owners") {
+          comparison = compareTextValues(getPeopleInChargeText(left), getPeopleInChargeText(right), direction);
+        } else if (sortKey === "target") {
+          comparison = compareNumberValues(parseSortableNumber(left && left.targetAmount), parseSortableNumber(right && right.targetAmount), direction);
+        } else if (sortKey === "raised") {
+          comparison = compareNumberValues(parseSortableNumber(left && left.raisedAmount), parseSortableNumber(right && right.raisedAmount), direction);
+        } else if (sortKey === "cash") {
+          comparison = compareNumberValues(parseSortableNumber(left && left.CashCommission), parseSortableNumber(right && right.CashCommission), direction);
+        } else if (sortKey === "equity") {
+          comparison = compareNumberValues(parseSortableNumber(left && left.EquityCommission), parseSortableNumber(right && right.EquityCommission), direction);
+        } else if (sortKey === "connections") {
+          comparison = compareNumberValues(
+            getDealIntegrityReport(left).counts.total,
+            getDealIntegrityReport(right).counts.total,
+            direction,
+          );
+        } else {
+          comparison = compareNumberValues(getDealRetainerState(left).amount, getDealRetainerState(right).amount, direction);
+        }
+
+        if (comparison !== 0) return comparison;
+        return compareDealsByCompany(left, right);
       });
     }
 
@@ -550,6 +692,7 @@
           : dealsFilterState.retainer.replace(/-/g, " ");
         summaryParts.push(`retainer: ${retainerLabel}`);
       }
+      summaryParts.push(`sorted by: ${DEAL_SORT_LABELS[normalizeValue(dealSortState.key)] || "Retainer"} ${dealSortState.direction === "asc" ? "ascending" : "descending"}`);
       if (dealsFilterState.setup !== "all") {
         const setupLabel = setupFilter && setupFilter.selectedOptions && setupFilter.selectedOptions[0]
           ? setupFilter.selectedOptions[0].text
@@ -619,6 +762,18 @@
           renderDeals();
         });
       }
+    }
+
+    function setupDealSorting() {
+      const tableHead = document.querySelector(".table-wrap thead");
+      if (!tableHead) return;
+
+      updateDealSortUi();
+      tableHead.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-deal-sort-key]");
+        if (!button) return;
+        setDealSort(button.getAttribute("data-deal-sort-key"));
+      });
     }
 
     function toDealId(value) {
@@ -1251,13 +1406,9 @@
       clearDealIntegrityCache();
       populateDealOwnerFilter();
       applyDealFilterStateToUi();
+      updateDealSortUi();
 
-      const filteredDeals = sortDealsByRetainerState(
-        getFilteredDeals(),
-        (left, right) => normalizeValue(left && (left.company || left.name || left.id)).localeCompare(
-          normalizeValue(right && (right.company || right.name || right.id)),
-        ),
-      );
+      const filteredDeals = getSortedDeals(getFilteredDeals());
       const portfolioDeals = (Array.isArray(dealsData) ? dealsData : []).filter((deal) => matchesPortfolioFilter(deal));
       const allCounts = buildDealStageCounts(portfolioDeals);
 
@@ -1333,6 +1484,7 @@
         loadDealsData();
         applyRouteDealFilterFromUrl();
         setupDealFilters();
+        setupDealSorting();
         setupAddDealForm();
         renderDeals();
         refreshOwnershipSnapshot();
