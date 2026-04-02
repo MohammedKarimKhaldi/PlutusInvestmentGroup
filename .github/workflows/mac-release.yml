@@ -56,7 +56,7 @@ jobs:
 
           has_api_key_auth=0
           has_apple_id_auth=0
-          if [ -n "${APPLE_NOTARY_API_KEY_BASE64:-}" ] && [ -n "${APPLE_NOTARY_API_KEY_ID:-}" ] && [ -n "${APPLE_NOTARY_API_ISSUER:-}" ]; then
+          if [ -n "${APPLE_NOTARY_API_KEY_BASE64:-}" ] && [ -n "${APPLE_NOTARY_API_KEY_ID:-}" ]; then
             has_api_key_auth=1
           fi
 
@@ -72,7 +72,7 @@ jobs:
 
           if [ "${has_api_key_auth}" -eq 0 ] && [ "${has_apple_id_auth}" -eq 0 ]; then
             echo "Missing notarization credentials."
-            echo "Provide either APPLE_NOTARY_API_KEY_BASE64 + APPLE_NOTARY_API_KEY_ID + APPLE_NOTARY_API_ISSUER"
+            echo "Provide either APPLE_NOTARY_API_KEY_BASE64 + APPLE_NOTARY_API_KEY_ID (+ APPLE_NOTARY_API_ISSUER for Team keys)"
             echo "or APPLE_NOTARY_APPLE_ID + APPLE_NOTARY_APP_PASSWORD + APPLE_NOTARY_TEAM_ID."
             missing=1
           fi
@@ -113,8 +113,10 @@ jobs:
           {
             echo "APPLE_API_KEY=${APPLE_API_KEY_PATH}"
             echo "APPLE_API_KEY_ID=${APPLE_NOTARY_API_KEY_ID}"
-            echo "APPLE_API_ISSUER=${APPLE_NOTARY_API_ISSUER}"
           } >> "$GITHUB_ENV"
+          if [ -n "${APPLE_NOTARY_API_ISSUER:-}" ]; then
+            echo "APPLE_API_ISSUER=${APPLE_NOTARY_API_ISSUER}" >> "$GITHUB_ENV"
+          fi
 
       - name: Configure notarization with Apple ID
         if: steps.validate.outputs.notary_mode == 'apple-id'
