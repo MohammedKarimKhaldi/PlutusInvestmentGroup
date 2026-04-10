@@ -15,10 +15,8 @@ except ImportError as exc:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RESOURCES_DIR = ROOT / "electron-builder-resources"
-IOS_ICON_PATH = ROOT / "ios" / "App" / "App" / "Assets.xcassets" / "AppIcon.appiconset" / "AppIcon-512@2x.png"
-ANDROID_RES_DIR = ROOT / "android" / "app" / "src" / "main" / "res"
-IOS_ICONSET_DIR = RESOURCES_DIR / "icon.iconset"
+RESOURCES_DIR = ROOT / "src-tauri" / "icons"
+ICNS_ICONSET_DIR = RESOURCES_DIR / "icon.iconset"
 
 NAVY = (20, 24, 95, 255)
 WHITE = (255, 255, 255, 255)
@@ -64,7 +62,6 @@ def generate_base_icons():
     draw_full = ImageDraw.Draw(full_icon)
     draw_mark(draw_full, 1024, NAVY)
     full_icon.save(RESOURCES_DIR / "icon.png")
-    full_icon.save(IOS_ICON_PATH)
     full_icon.save(RESOURCES_DIR / "icon-square-1024.png")
     full_icon.save(
         RESOURCES_DIR / "icon.ico",
@@ -80,9 +77,9 @@ def generate_base_icons():
 
 
 def generate_icns(full_icon):
-    if IOS_ICONSET_DIR.exists():
-        rmtree(IOS_ICONSET_DIR)
-    IOS_ICONSET_DIR.mkdir(parents=True)
+    if ICNS_ICONSET_DIR.exists():
+        rmtree(ICNS_ICONSET_DIR)
+    ICNS_ICONSET_DIR.mkdir(parents=True)
 
     iconset_sizes = {
         "icon_16x16.png": 16,
@@ -98,48 +95,19 @@ def generate_icns(full_icon):
     }
 
     for filename, size in iconset_sizes.items():
-        full_icon.resize((size, size), Image.Resampling.LANCZOS).save(IOS_ICONSET_DIR / filename)
+        full_icon.resize((size, size), Image.Resampling.LANCZOS).save(ICNS_ICONSET_DIR / filename)
 
     subprocess.run(
-        ["iconutil", "-c", "icns", str(IOS_ICONSET_DIR), "-o", str(RESOURCES_DIR / "icon.icns")],
+        ["iconutil", "-c", "icns", str(ICNS_ICONSET_DIR), "-o", str(RESOURCES_DIR / "icon.icns")],
         check=True,
     )
-    rmtree(IOS_ICONSET_DIR)
-
-
-def generate_android_icons(full_icon, foreground):
-    launcher_sizes = {
-        "mipmap-mdpi": 48,
-        "mipmap-hdpi": 72,
-        "mipmap-xhdpi": 96,
-        "mipmap-xxhdpi": 144,
-        "mipmap-xxxhdpi": 192,
-    }
-    foreground_sizes = {
-        "mipmap-mdpi": 108,
-        "mipmap-hdpi": 162,
-        "mipmap-xhdpi": 216,
-        "mipmap-xxhdpi": 324,
-        "mipmap-xxxhdpi": 432,
-    }
-
-    for density, size in launcher_sizes.items():
-        target_dir = ANDROID_RES_DIR / density
-        icon = full_icon.resize((size, size), Image.Resampling.LANCZOS)
-        icon.save(target_dir / "ic_launcher.png")
-        icon.save(target_dir / "ic_launcher_round.png")
-
-    for density, size in foreground_sizes.items():
-        target_dir = ANDROID_RES_DIR / density
-        icon = foreground.resize((size, size), Image.Resampling.LANCZOS)
-        icon.save(target_dir / "ic_launcher_foreground.png")
+    rmtree(ICNS_ICONSET_DIR)
 
 
 def main():
-    full_icon, foreground = generate_base_icons()
+    full_icon, _foreground = generate_base_icons()
     generate_icns(full_icon)
-    generate_android_icons(full_icon, foreground)
-    print("Generated Plutus brand icons for Electron, iOS, and Android.")
+    print("Generated Plutus brand icons for Tauri.")
 
 
 if __name__ == "__main__":

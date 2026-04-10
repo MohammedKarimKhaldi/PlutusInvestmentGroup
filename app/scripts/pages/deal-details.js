@@ -7,6 +7,7 @@ let allTasks = [];
 let currentDeal = null;
 let groupMode = "owner";
 let accountingAccessState = { restricted: false, allowed: true };
+let dealLifecycleSaveInFlight = false;
 const AUTO_CONTACT_TASK_PREFIX = (AppCore && AppCore.AUTO_CONTACT_TASK_PREFIX) || "auto-contact-status";
 
 const STAGE_LABELS = {
@@ -20,6 +21,16 @@ const DEAL_LIFECYCLE_LABELS = {
   active: "Active",
   finished: "Finished",
   closed: "Closed - not concluded",
+};
+const DEAL_PIPELINE_LABELS = {
+  pipeline: "Pipeline",
+  negotiation: "Negotiation",
+};
+const NEGOTIATION_STATUS_LABELS = {
+  reviewing: "Reviewing",
+  engagement_to_send: "Engagement letter to send",
+  engagement_sent: "Engagement letter sent",
+  signed_back: "Signed back",
 };
 const SHAREDRIVE_URL_STORAGE_KEY = "sharedrive_url_v2";
 const deckPickerState = {
@@ -125,6 +136,30 @@ function normalizeDealLifecycleStatus(value) {
   return "active";
 }
 
+function normalizeDealPipelineStatus(value) {
+  return normalizeValue(value) === "negotiation" ? "negotiation" : "pipeline";
+}
+
+function normalizeDealNegotiationStatus(value) {
+  const normalized = normalizeValue(value);
+  if (normalized === "engagement_to_send") return "engagement_to_send";
+  if (normalized === "engagement_sent") return "engagement_sent";
+  if (normalized === "signed_back") return "signed_back";
+  return "reviewing";
+}
+
+function getCurrentDealPipelineStatus() {
+  return normalizeDealPipelineStatus(currentDeal && currentDeal.pipelineStatus);
+}
+
+function getCurrentDealNegotiationStatus() {
+  return normalizeDealNegotiationStatus(currentDeal && currentDeal.negotiationStatus);
+}
+
+function isCurrentDealNegotiationTrack() {
+  return getCurrentDealPipelineStatus() === "negotiation";
+}
+
 function getCurrentDealLifecycleStatus() {
   return normalizeDealLifecycleStatus(currentDeal && (currentDeal.lifecycleStatus || currentDeal.dealStatus));
 }
@@ -133,14 +168,76 @@ function isCurrentDealClosedLifecycle() {
   return getCurrentDealLifecycleStatus() !== "active";
 }
 
-async function updateDealLifecycleStatus(nextStatus) {
-  if (!currentDeal) return;
-  currentDeal.lifecycleStatus = normalizeDealLifecycleStatus(nextStatus);
-  currentDeal.dealStatus = currentDeal.lifecycleStatus;
-  await saveDealsData();
+function refreshDealWorkflowFormState() {
+  const pipelineStatusInput = document.getElementById("deal-input-pipeline-status");
+  const negotiationStatusInput = document.getElementById("deal-input-negotiation-status");
+  const stageInput = document.getElementById("deal-input-stage");
+  const pipelineStatus = normalizeDealPipelineStatus(pipelineStatusInput && pipelineStatusInput.value);
+  const isNegotiation = pipelineStatus === "negotiation";
+
+  if (negotiationStatusInput) {
+    negotiationStatusInput.disabled = !isNegotiation;
+  }
+  if (stageInput) {
+    stageInput.disabled = isNegotiation;
+  }
+}
+
+function waitForNextPaint() {
+  return new Promise((resolve) => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    window.setTimeout(resolve, 0);
+  });
+}
+
+function refreshCurrentDealView() {
   renderDealHeader();
   populateDealForm();
   renderRelatedTasks();
+}
+
+function setDealSaveStatus(message, clearAfterMs) {
+  const statusEl = document.getElementById("deal-save-status");
+  if (!statusEl) return;
+  statusEl.textContent = message || "";
+  if (clearAfterMs && Number.isFinite(clearAfterMs) && clearAfterMs > 0) {
+    window.setTimeout(() => {
+      if (statusEl.textContent === message) {
+        statusEl.textContent = "";
+      }
+    }, clearAfterMs);
+  }
+}
+
+function getDealLifecycleActionLabel(status) {
+  const normalized = normalizeDealLifecycleStatus(status);
+  if (normalized === "finished") return "marked as finished";
+  if (normalized === "closed") return "closed";
+  return "reopened";
+}
+
+async function updateDealLifecycleStatus(nextStatus) {
+  if (!currentDeal || dealLifecycleSaveInFlight) return;
+
+  currentDeal.lifecycleStatus = normalizeDealLifecycleStatus(nextStatus);
+  currentDeal.dealStatus = currentDeal.lifecycleStatus;
+  dealLifecycleSaveInFlight = true;
+  refreshCurrentDealView();
+
+  try {
+    await waitForNextPaint();
+    await saveDealsData();
+    setDealSaveStatus(`Deal ${getDealLifecycleActionLabel(nextStatus)}.`, 1800);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Sharedrive sync failed.";
+    setDealSaveStatus(`Deal ${getDealLifecycleActionLabel(nextStatus)} locally, but Sharedrive sync failed: ${message}`);
+  } finally {
+    dealLifecycleSaveInFlight = false;
+    refreshCurrentDealView();
+  }
 }
 
 function relatedTasksForCurrentDeal() {
@@ -171,6 +268,7 @@ function getSigningTaskProgress() {
 
 function advanceDealStage(nextStage) {
   if (!currentDeal) return;
+  if (isCurrentDealNegotiationTrack()) return;
   if (isCurrentDealClosedLifecycle()) return;
   currentDeal.stage = nextStage;
   saveDealsData();
@@ -182,6 +280,18 @@ function advanceDealStage(nextStage) {
 function refreshStageButton() {
   const button = document.getElementById("btn-complete-stage");
   if (!button || !currentDeal) return;
+
+  if (dealLifecycleSaveInFlight) {
+    button.disabled = true;
+    button.textContent = "Saving deal...";
+    return;
+  }
+
+  if (isCurrentDealNegotiationTrack()) {
+    button.disabled = true;
+    button.textContent = "Pre-pipeline negotiation";
+    return;
+  }
 
   if (isCurrentDealClosedLifecycle()) {
     button.disabled = true;
@@ -227,9 +337,9 @@ function refreshDealLifecycleControls() {
   closedBtn.hidden = lifecycleStatus === "closed";
   reopenBtn.hidden = lifecycleStatus === "active";
 
-  finishedBtn.disabled = lifecycleStatus === "finished";
-  closedBtn.disabled = lifecycleStatus === "closed";
-  reopenBtn.disabled = lifecycleStatus === "active";
+  finishedBtn.disabled = dealLifecycleSaveInFlight || lifecycleStatus === "finished";
+  closedBtn.disabled = dealLifecycleSaveInFlight || lifecycleStatus === "closed";
+  reopenBtn.disabled = dealLifecycleSaveInFlight || lifecycleStatus === "active";
 }
 
 function setupDealLifecycleButtons() {
@@ -283,6 +393,7 @@ function setupStageProgressionButton() {
 
   button.addEventListener("click", () => {
     if (!currentDeal) return;
+    if (isCurrentDealNegotiationTrack()) return;
     if (isCurrentDealClosedLifecycle()) return;
     const stage = normalizeValue(currentDeal.stage);
     const signing = getSigningTaskProgress();
@@ -308,6 +419,7 @@ function setupStageProgressionButton() {
 
 function autoPromoteFromOnboardingIfReady() {
   if (!currentDeal) return false;
+  if (isCurrentDealNegotiationTrack()) return false;
   if (isCurrentDealClosedLifecycle()) return false;
   if (normalizeValue(currentDeal.stage) !== "onboarding") return false;
 
@@ -1608,12 +1720,18 @@ function renderDealHeader() {
 
   const lifecycleStatus = getCurrentDealLifecycleStatus();
   const lifecycleLabel = DEAL_LIFECYCLE_LABELS[lifecycleStatus] || "Active";
+  const pipelineStatus = getCurrentDealPipelineStatus();
+  const pipelineLabel = DEAL_PIPELINE_LABELS[pipelineStatus] || "Pipeline";
+  const negotiationStatus = getCurrentDealNegotiationStatus();
+  const negotiationLabel = NEGOTIATION_STATUS_LABELS[negotiationStatus] || "Reviewing";
   const stageText = STAGE_LABELS[normalizeValue(currentDeal.stage)] || "Prospect";
+  const showPipelineStage = pipelineStatus === "pipeline";
+  const subtitleStatus = showPipelineStage ? stageText : `${pipelineLabel} • ${negotiationLabel}`;
 
   document.getElementById("crumb-deal-name").textContent = currentDeal.name || "Deal";
   document.getElementById("deal-name").textContent = currentDeal.name || "Deal";
   document.getElementById("deal-subtitle").textContent =
-    `${currentDeal.company || "Company"} • ${stageText}${lifecycleStatus !== "active" ? ` • ${lifecycleLabel}` : ""}`;
+    `${currentDeal.company || "Company"} • ${subtitleStatus}${lifecycleStatus !== "active" ? ` • ${lifecycleLabel}` : ""}`;
 
   document.getElementById("deal-company").textContent = currentDeal.company || "–";
   document.getElementById("deal-senior").textContent = getSeniorOwner(currentDeal) || "–";
@@ -1652,15 +1770,21 @@ function renderDealHeader() {
   document.getElementById("deal-progress").style.width = `${progressPercent}%`;
 
   const stage = normalizeValue(currentDeal.stage);
-  const stageLabel = STAGE_LABELS[stage] || "Prospect";
+  const stageLabel = showPipelineStage ? (STAGE_LABELS[stage] || "Prospect") : pipelineLabel;
   document.getElementById("deal-stage-label").textContent = stageLabel;
-  document.getElementById("deal-stage-dot").className = `stage-dot ${stageClass(stage)}`;
+  document.getElementById("deal-stage-dot").className = `stage-dot ${showPipelineStage ? stageClass(stage) : "stage-signing"}`;
   const lifecycleBadge = document.getElementById("deal-lifecycle-badge");
   if (lifecycleBadge) {
     lifecycleBadge.textContent = lifecycleLabel;
     lifecycleBadge.className = `deal-lifecycle-badge is-${lifecycleStatus}`;
   }
-  renderStageTracker(stage);
+  const stageTracker = document.getElementById("deal-stage-tracker");
+  if (stageTracker) {
+    stageTracker.hidden = !showPipelineStage;
+  }
+  if (showPipelineStage) {
+    renderStageTracker(stage);
+  }
 
   document.getElementById("deal-summary").textContent =
     currentDeal.summary ||
@@ -1802,6 +1926,8 @@ function populateDealForm() {
   document.getElementById("deal-input-senior").value = getSeniorOwner(currentDeal);
   document.getElementById("deal-input-junior").value = getJuniorOwner(currentDeal);
   document.getElementById("deal-input-sub-owners").value = normalizeDealSubOwners(currentDeal).join("\n");
+  document.getElementById("deal-input-pipeline-status").value = getCurrentDealPipelineStatus();
+  document.getElementById("deal-input-negotiation-status").value = getCurrentDealNegotiationStatus();
   document.getElementById("deal-input-stage").value = normalizeValue(currentDeal.stage) || "prospect";
   document.getElementById("deal-input-lifecycle-status").value = getCurrentDealLifecycleStatus();
   document.getElementById("deal-input-sector").value = normalizeDealSectors(currentDeal).join("\n");
@@ -1825,6 +1951,7 @@ function populateDealForm() {
   renderDealLegalLinkEditor();
   refreshDeckEditorSummary();
   renderDealContactEditor();
+  refreshDealWorkflowFormState();
 }
 
 function renderRelatedTasks() {
@@ -1964,6 +2091,7 @@ function setupDealForm() {
   const legalLinkEditorList = document.getElementById("deal-legal-editor-list");
   const addContactBtn = document.getElementById("btn-add-contact-row");
   const contactEditorList = document.getElementById("deal-contact-editor-list");
+  const pipelineStatusInput = document.getElementById("deal-input-pipeline-status");
 
   if (dashboardSelect && dashboardInput) {
     dashboardSelect.addEventListener("change", () => {
@@ -2075,6 +2203,13 @@ function setupDealForm() {
     });
   }
 
+  if (pipelineStatusInput) {
+    pipelineStatusInput.addEventListener("change", () => {
+      refreshDealWorkflowFormState();
+    });
+  }
+  refreshDealWorkflowFormState();
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!currentDeal) return;
@@ -2089,6 +2224,8 @@ function setupDealForm() {
     currentDeal.juniorOwner = document.getElementById("deal-input-junior").value.trim();
     currentDeal.subOwners = parseDealSubOwnersInput(document.getElementById("deal-input-sub-owners").value);
     currentDeal.owner = currentDeal.seniorOwner; // legacy compatibility
+    currentDeal.pipelineStatus = normalizeDealPipelineStatus(document.getElementById("deal-input-pipeline-status").value);
+    currentDeal.negotiationStatus = normalizeDealNegotiationStatus(document.getElementById("deal-input-negotiation-status").value);
     currentDeal.stage = document.getElementById("deal-input-stage").value;
     currentDeal.lifecycleStatus = normalizeDealLifecycleStatus(document.getElementById("deal-input-lifecycle-status").value);
     currentDeal.dealStatus = currentDeal.lifecycleStatus;

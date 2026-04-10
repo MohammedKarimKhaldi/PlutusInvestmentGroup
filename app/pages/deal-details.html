@@ -192,6 +192,20 @@
               <label>Senior<input id="deal-input-senior" type="text" required /></label>
               <label>Junior<input id="deal-input-junior" type="text" required /></label>
               <label class="deal-form-full">Sub owners<textarea id="deal-input-sub-owners" rows="2" placeholder="Comma or line separated, e.g. Alice, Bob"></textarea></label>
+              <label>Track on
+                <select id="deal-input-pipeline-status">
+                  <option value="pipeline">Deal pipeline</option>
+                  <option value="negotiation">Negotiations monitor</option>
+                </select>
+              </label>
+              <label>Negotiation status
+                <select id="deal-input-negotiation-status">
+                  <option value="reviewing">Reviewing</option>
+                  <option value="engagement_to_send">Engagement letter to send</option>
+                  <option value="engagement_sent">Engagement letter sent</option>
+                  <option value="signed_back">Signed back</option>
+                </select>
+              </label>
               <label>Stage
                 <select id="deal-input-stage">
                   <option value="prospect">Prospect</option>

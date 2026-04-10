@@ -1,13 +1,13 @@
 {
   "package": {
     "productName": "Plutus Investment Dashboard",
-    "version": "1.0.17"
+    "version": "1.0.18"
   },
   "tauri": {
     "bundle": {
       "active": true,
       "identifier": "com.plutus.investment.dashboard",
-      "icon": ["../electron-builder-resources/icon.png", "../electron-builder-resources/icon.icns", "../electron-builder-resources/icon.ico"]
+      "icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"]
     },
     "security": {
       "csp": null

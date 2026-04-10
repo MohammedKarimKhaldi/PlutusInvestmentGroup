@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Plutus Investment Dashboard</string>
-    <string name="title_activity_main">Plutus Investment Dashboard</string>
-    <string name="package_name">com.plutus.investment.dashboard</string>
-    <string name="custom_url_scheme">com.plutus.investment.dashboard</string>
-</resources>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Negotiations</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/deal-negotiations.css" />
+  <script src="../scripts/shared/app-config.js"></script>
+  <script src="../scripts/shared/sharedrive-gate.js"></script>
+</head>
+
+<body data-page-id="deal-negotiations">
+  <div class="shell">
+    <div class="layout">
+      <aside class="sidebar-nav" data-sidebar-nav></aside>
+
+      <div class="main-column">
+        <div class="header">
+          <div class="title-block">
+            <h1>Negotiations</h1>
+            <p>Track pre-pipeline companies under review, engagement letters to send, and letters waiting to come back signed.</p>
+          </div>
+          <div class="header-actions">
+            <div class="pill">
+              <span class="dot"></span>
+              <span>Pre-pipeline monitor</span>
+            </div>
+            <a class="btn btn-primary" href="#" data-route-id="deals-overview">Open pipeline</a>
+            <a class="btn" href="#" data-route-id="legal-management">Legal workspace</a>
+          </div>
+        </div>
+
+        <div class="meta-row" id="negotiation-meta-row"></div>
+
+        <div class="toolbar negotiation-filters">
+          <div class="toolbar-row negotiation-filters-row">
+            <label class="negotiation-search">
+              Search
+              <input id="negotiation-search" type="search" placeholder="Search by deal, company, owner, or contact" />
+            </label>
+            <label>
+              Negotiation status
+              <select id="negotiation-status-filter">
+                <option value="all">All statuses</option>
+                <option value="reviewing">Reviewing</option>
+                <option value="engagement_to_send">Engagement letter to send</option>
+                <option value="engagement_sent">Engagement letter sent</option>
+                <option value="signed_back">Signed back</option>
+              </select>
+            </label>
+            <label>
+              Owner
+              <select id="negotiation-owner-filter">
+                <option value="all">All owners</option>
+              </select>
+            </label>
+            <label>
+              Readiness
+              <select id="negotiation-readiness-filter">
+                <option value="all">All negotiations</option>
+                <option value="attention">Needs attention</option>
+                <option value="ready">Ready for pipeline</option>
+                <option value="missing-letter">Missing engagement letter link</option>
+                <option value="overdue-tasks">Overdue tasks</option>
+              </select>
+            </label>
+            <button class="btn" id="btn-reset-negotiation-filters" type="button">Reset filters</button>
+          </div>
+          <div class="negotiation-filter-summary" id="negotiation-filter-summary">Showing all negotiation deals.</div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Deal</th>
+                <th>Status</th>
+                <th>Owners</th>
+                <th>Main contact</th>
+                <th>Engagement letter</th>
+                <th>Related tasks</th>
+                <th>Readiness</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="negotiation-body"></tbody>
+          </table>
+        </div>
+
+        <div class="footer">
+          <span id="negotiation-footer-meta"></span>
+          <span>When a signed engagement letter comes back, move the deal onto the main pipeline from deal details.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../scripts/shared/layout.js"></script>
+  <script src="../scripts/shared/data-loader.js"></script>
+  <script src="../scripts/shared/core.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/deal-negotiations.js"></script>
+</body>
+
+</html>

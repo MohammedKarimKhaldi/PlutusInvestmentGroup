@@ -81,6 +81,21 @@ function loadDealsData() {
   dealsData = AppCore ? AppCore.loadDealsData() : (Array.isArray(window.DEALS) ? JSON.parse(JSON.stringify(window.DEALS)) : []);
 }
 
+function normalizeDealLifecycleStatus(value) {
+  if (AppCore && typeof AppCore.normalizeDealLifecycleStatus === "function") {
+    return AppCore.normalizeDealLifecycleStatus(value);
+  }
+  const normalized = normalizeValue(value);
+  if (normalized === "finished") return "finished";
+  if (normalized === "closed") return "closed";
+  return "active";
+}
+
+function isAccountingVisibleDeal(deal) {
+  if (!deal || typeof deal !== "object") return false;
+  return normalizeDealLifecycleStatus(deal.lifecycleStatus || deal.dealStatus) === "active";
+}
+
 function saveDealsData() {
   if (AppCore) return AppCore.saveDealsData(dealsData);
   try {
@@ -721,7 +736,7 @@ function getVisibleDeals() {
   }
 
   const query = normalizeValue(currentSearch);
-  const source = Array.isArray(dealsData) ? dealsData.slice() : [];
+  const source = Array.isArray(dealsData) ? dealsData.filter((deal) => isAccountingVisibleDeal(deal)) : [];
   const filtered = source.filter((deal) => {
     const contacts = normalizeDealContacts(deal);
     const haystack = [
@@ -747,13 +762,15 @@ function getVisibleDeals() {
 
 function findDealByReference(reference) {
   if (!Array.isArray(dealsData) || !dealsData.length) return null;
+  const visibleDeals = dealsData.filter((deal) => isAccountingVisibleDeal(deal));
+  if (!visibleDeals.length) return null;
   if (AppCore && typeof AppCore.findDealByReference === "function") {
-    return AppCore.findDealByReference(dealsData, reference);
+    return AppCore.findDealByReference(visibleDeals, reference);
   }
 
   const key = normalizeValue(reference);
   if (!key) return null;
-  return dealsData.find((deal) => {
+  return visibleDeals.find((deal) => {
     const refs = [
       deal && deal.id,
       deal && deal.name,
@@ -1271,6 +1288,7 @@ function prepareUpcomingInvoicesForNextMonth() {
 
   dealsData.forEach((deal) => {
     if (!deal || typeof deal !== "object") return;
+    if (!isAccountingVisibleDeal(deal)) return;
     if (!hasPositiveRetainer(deal)) return;
 
     const scheduledDate = getScheduledPaymentDateForMonth(deal, context.year, context.monthIndex);

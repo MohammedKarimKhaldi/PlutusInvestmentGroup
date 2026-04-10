@@ -70,7 +70,7 @@ Current sources of truth:
 
 ## Local persistence
 
-Browser/Electron persistence keys are centralized in `app-config.js`.
+Browser/desktop persistence keys are centralized in `app-config.js`.
 
 Key examples:
 

@@ -1908,28 +1908,6 @@
                     }, 90);
                 }
 
-                function getCapacitorPlugin(name) {
-                    const capacitor = window.Capacitor;
-                    if (!capacitor || !name) return null;
-                    if (capacitor.Plugins && capacitor.Plugins[name]) return capacitor.Plugins[name];
-                    if (typeof capacitor.registerPlugin === 'function') {
-                        try {
-                            return capacitor.registerPlugin(name);
-                        } catch (error) {
-                            console.warn(`[Dashboard] Failed to register Capacitor plugin: ${name}`, error);
-                        }
-                    }
-                    return null;
-                }
-
-                function isNativeMobileApp() {
-                    return Boolean(
-                        window.Capacitor &&
-                        typeof window.Capacitor.isNativePlatform === 'function' &&
-                        window.Capacitor.isNativePlatform()
-                    );
-                }
-
                 function sanitizeExportFileName(value) {
                     return String(value || 'snapshot')
                         .trim()
@@ -2040,46 +2018,7 @@
                     if (tableBody) tableBody.innerHTML = '';
                 }
 
-                async function blobToBase64(blob) {
-                    const buffer = await blob.arrayBuffer();
-                    const bytes = new Uint8Array(buffer);
-                    const chunkSize = 0x8000;
-                    let binary = '';
-                    for (let index = 0; index < bytes.length; index += chunkSize) {
-                        const chunk = bytes.subarray(index, index + chunkSize);
-                        binary += String.fromCharCode(...chunk);
-                    }
-                    return btoa(binary);
-                }
-
                 async function exportBlobForCurrentPlatform(blob, fileName) {
-                    const SharePlugin = getCapacitorPlugin('Share');
-                    const FilesystemPlugin = getCapacitorPlugin('Filesystem');
-
-                    if (
-                        isNativeMobileApp() &&
-                        SharePlugin &&
-                        FilesystemPlugin &&
-                        typeof FilesystemPlugin.writeFile === 'function' &&
-                        typeof SharePlugin.share === 'function'
-                    ) {
-                        const base64Data = await blobToBase64(blob);
-                        const saved = await FilesystemPlugin.writeFile({
-                            path: fileName,
-                            data: base64Data,
-                            directory: 'Cache',
-                            recursive: true,
-                        });
-
-                        await SharePlugin.share({
-                            title: 'Export HTML',
-                            text: 'Investor dashboard snapshot',
-                            url: saved.uri,
-                            dialogTitle: 'Share investor dashboard snapshot',
-                        });
-                        return 'shared';
-                    }
-
                     if (typeof File === 'function' && navigator.share) {
                         const shareFile = new File([blob], fileName, { type: 'text/html' });
                         if (!navigator.canShare || navigator.canShare({ files: [shareFile] })) {

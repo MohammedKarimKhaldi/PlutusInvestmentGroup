@@ -10,6 +10,11 @@
       label: "Deals overview",
       showInNav: true,
     },
+    "deal-negotiations": {
+      file: "deal-negotiations.html",
+      label: "Negotiations",
+      showInNav: true,
+    },
     "deal-ownership": {
       file: "deal-ownership.html",
       label: "Deal ownership",
@@ -33,6 +38,11 @@
     "tasks-management": {
       file: "tasks-management.html",
       label: "Tasks by owner",
+      showInNav: true,
+    },
+    "days-off": {
+      file: "days-off.html",
+      label: "Days off",
       showInNav: true,
     },
     "owner-tasks": {
@@ -60,6 +70,7 @@
   const storageKeys = {
     deals: "deals_data_v1",
     tasks: "owner_tasks_v1",
+    daysOff: "days_off_v1",
     sharedriveGate: "sharedrive_connected_v1",
     graphSession: "plutus_graph_session_v1",
     dashboardConfig: "plutus_dashboard_config_v1",
@@ -69,6 +80,7 @@
     config: "config.json",
     deals: "deals.json",
     tasks: "tasks.json",
+    daysOff: "days-off.json",
     sharedTasks: "sharedrive-tasks.json",
   };
 
@@ -252,8 +264,8 @@
       isTauri: true,
     });
 
-    ["config", "deals", "tasks", "sharedrive-tasks"].forEach(syncLocalDataJsonFromTauri);
-    [storageKeys.deals, storageKeys.tasks].forEach(syncArrayStoreFromTauri);
+    ["config", "deals", "tasks", "days-off", "sharedrive-tasks"].forEach(syncLocalDataJsonFromTauri);
+    [storageKeys.deals, storageKeys.tasks, storageKeys.daysOff].forEach(syncArrayStoreFromTauri);
   }
 
   global.PlutusDesktop = Object.assign({}, global.PlutusDesktop || {}, desktopBridge);

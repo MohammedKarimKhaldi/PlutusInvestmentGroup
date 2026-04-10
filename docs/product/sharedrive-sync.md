@@ -29,9 +29,9 @@ The main user-facing entry point is the Sharedrive folders page:
 
 ## Desktop support
 
-On Electron, the renderer can call `window.PlutusDesktop` methods exposed by `electron/preload.cjs`.
+On Tauri, the browser layer calls `window.PlutusDesktop` methods wired up in `app/scripts/shared/app-config.js`.
 
-The Electron main process then performs:
+The Tauri backend then performs:
 
 - Graph token resolution
 - download and upload requests
@@ -49,7 +49,7 @@ If sync fails, check:
 2. `app/data/config.json`
 3. the Sharedrive folders diagnostics page
 4. `tools/debug-sharedrive-json.cjs`
-5. Electron console output from `electron/main.cjs`
+5. Tauri logs from `src-tauri/src/main.rs`
 
 ## Common failure modes
 

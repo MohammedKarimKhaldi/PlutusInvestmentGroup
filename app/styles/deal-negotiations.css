@@ -1,0 +1,169 @@
+.negotiation-filters {
+  gap: 12px;
+}
+
+.negotiation-filters-row {
+  align-items: flex-end;
+}
+
+.negotiation-search {
+  flex: 1 1 320px;
+}
+
+.negotiation-filter-summary {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.negotiation-deal-cell,
+.negotiation-contact-stack,
+.negotiation-letter-cell,
+.negotiation-task-cell {
+  display: grid;
+  gap: 6px;
+}
+
+.negotiation-deal-cell {
+  min-width: 230px;
+}
+
+.negotiation-deal-link {
+  color: var(--text-main);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.negotiation-deal-link:hover {
+  color: var(--accent);
+}
+
+.negotiation-subline {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-soft);
+}
+
+.negotiation-owner-list,
+.negotiation-action-cluster,
+.negotiation-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.negotiation-owner-pill,
+.negotiation-letter-pill,
+.negotiation-status-pill,
+.negotiation-readiness-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-main);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.negotiation-owner-pill {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-soft);
+}
+
+.negotiation-status-pill.is-reviewing,
+.negotiation-readiness-pill.is-working {
+  border-color: rgba(59, 130, 246, 0.22);
+  background: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+}
+
+.negotiation-status-pill.is-engagement-to-send {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.14);
+  color: #92400e;
+}
+
+.negotiation-status-pill.is-engagement-sent {
+  border-color: rgba(14, 165, 233, 0.22);
+  background: rgba(14, 165, 233, 0.1);
+  color: #0f4c81;
+}
+
+.negotiation-status-pill.is-signed-back,
+.negotiation-readiness-pill.is-ready,
+.negotiation-letter-pill.is-linked {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.12);
+  color: #166534;
+}
+
+.negotiation-letter-pill.is-missing,
+.negotiation-readiness-pill.is-warning {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.14);
+  color: #92400e;
+}
+
+.negotiation-contact-name {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.negotiation-contact-email {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.negotiation-contact-email:hover {
+  text-decoration: underline;
+}
+
+.negotiation-task-progress {
+  display: grid;
+  gap: 5px;
+  min-width: 180px;
+}
+
+.negotiation-task-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.negotiation-task-bar {
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.negotiation-task-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f59e0b 0%, #0ea5e9 100%);
+}
+
+.negotiation-task-meta {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-soft);
+}
+
+.negotiation-action-cluster {
+  min-width: 120px;
+}
+
+@media (max-width: 960px) {
+  .negotiation-deal-cell,
+  .negotiation-task-progress {
+    min-width: 0;
+  }
+}

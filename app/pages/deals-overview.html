@@ -30,6 +30,7 @@
               <span class="dot"></span>
               <span>Live overview</span>
             </div>
+            <a class="btn" href="#" data-route-id="deal-negotiations">Negotiations</a>
             <a class="btn btn-primary" href="#" data-route-id="investor-dashboard">Open Investor Dashboard</a>
             <a class="btn" href="#" data-route-id="tasks-management">View owner tasks</a>
           </div>
@@ -147,6 +148,22 @@
               <label>
                 Dashboard ID
                 <input id="deal-dashboard-input" type="text" placeholder="optional" />
+              </label>
+              <label>
+                Track on
+                <select id="deal-pipeline-status-input">
+                  <option value="negotiation">Negotiations monitor</option>
+                  <option value="pipeline">Deal pipeline</option>
+                </select>
+              </label>
+              <label>
+                Negotiation status
+                <select id="deal-negotiation-status-input">
+                  <option value="reviewing">Reviewing</option>
+                  <option value="engagement_to_send">Engagement letter to send</option>
+                  <option value="engagement_sent">Engagement letter sent</option>
+                  <option value="signed_back">Signed back</option>
+                </select>
               </label>
             </div>
             <div class="toolbar-row">

@@ -607,8 +607,8 @@
       setStatus("Unavailable");
       setError(
         hasBrowserAuth()
-          ? "Listing items requires the desktop bridge. Sign in to use mobile task sync."
-          : "Desktop bridge not available. Open this page in the Electron app (`npm run desktop`).",
+          ? "Listing items requires the desktop bridge. Sign in to use browser-based ShareDrive sync."
+          : "Desktop bridge not available. Open this page in the Tauri desktop app (`npm run desktop`).",
       );
       setDebugPanelOpen(true);
       return;
@@ -677,7 +677,7 @@
     const useBrowser = hasBrowserAuth();
     if (!useDesktop && !useBrowser) {
       setStatus("Sign-in unavailable");
-      setError("Device code flow is unavailable. Update the Electron app to enable it.");
+      setError("Device code flow is unavailable. Update the desktop app to enable it.");
       setDebugPanelOpen(true);
       return;
     }

@@ -5,6 +5,7 @@
     sharedTasks: "sharedrive-tasks.json",
     deals: "deals.json",
     tasks: "tasks.json",
+    daysOff: "days-off.json",
   }, appConfig.dataFiles || {});
 
   function readDesktopJson(key) {
@@ -94,6 +95,12 @@
       ? null
       : readJsonSync(appConfig.getDataPath ? appConfig.getDataPath("tasks") : `../data/${dataFiles.tasks}`)) ||
     [];
+  const daysOffJson =
+    readDesktopJson("days-off") ||
+    (isFileProtocol
+      ? null
+      : readJsonSync(appConfig.getDataPath ? appConfig.getDataPath("daysOff") : `../data/${dataFiles.daysOff}`)) ||
+    [];
 
   const dashboards = ensureArray(configJson.dashboards);
   const settings = ensureObject(configJson.settings);
@@ -110,5 +117,6 @@
 
   window.DEALS = ensureArray(dealsJson);
   window.TASKS = ensureArray(tasksJson);
+  window.DAYS_OFF = ensureArray(daysOffJson);
   window.SHAREDRIVE_TASKS = ensureObject(sharedriveJson);
 })();

@@ -47,7 +47,7 @@ The most important pages to keep current are:
 
 - repository layout
 - browser runtime
-- Electron bridge
+- desktop bridge
 - configuration
 - build and deployment
 

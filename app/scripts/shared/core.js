@@ -3,6 +3,7 @@
   const STORAGE_KEYS = Object.assign({
     deals: "deals_data_v1",
     tasks: "owner_tasks_v1",
+    daysOff: "days_off_v1",
     graphSession: "plutus_graph_session_v1",
     dashboardConfig: "plutus_dashboard_config_v1",
   }, APP_CONFIG.storageKeys || {});
@@ -10,6 +11,7 @@
     config: "config.json",
     deals: "deals.json",
     tasks: "tasks.json",
+    daysOff: "days-off.json",
     sharedTasks: "sharedrive-tasks.json",
   }, APP_CONFIG.dataFiles || {});
 
@@ -31,7 +33,6 @@
   const GRAPH_BROWSER_SESSION_KEY = STORAGE_KEYS.graphSession;
   const GRAPH_UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
   const DASHBOARD_CONFIG_KEY = STORAGE_KEYS.dashboardConfig;
-  const NATIVE_HTTP_PLUGIN = "CapacitorHttp";
   const SHARED_FILE_DEFAULTS = {
     enabled: false,
     shareUrl: "",
@@ -42,11 +43,9 @@
     accessToken: "",
   };
 
-  let nativeHttpClient = null;
-  let nativeHttpChecked = false;
-
   let tasksCache = null;
   let dealsCache = null;
+  let daysOffCache = null;
   let dashboardConfigRefreshPromise = null;
   let sharedTasksSyncTimer = null;
   let sharedDealsSyncTimer = null;
@@ -346,156 +345,10 @@
     }
   }
 
-  function getNativeHttpClient() {
-    if (nativeHttpChecked) return nativeHttpClient;
-    nativeHttpChecked = true;
-
-    const cap = global.Capacitor;
-    if (!cap || typeof cap.getPlatform !== "function") {
-      nativeHttpClient = null;
-      return null;
-    }
-
-    if (cap.getPlatform() === "web") {
-      nativeHttpClient = null;
-      return null;
-    }
-
-    try {
-      if (cap.Plugins && cap.Plugins[NATIVE_HTTP_PLUGIN]) {
-        nativeHttpClient = { type: "plugin", client: cap.Plugins[NATIVE_HTTP_PLUGIN] };
-        return nativeHttpClient;
-      }
-      if (typeof cap.registerPlugin === "function") {
-        const plugin = cap.registerPlugin(NATIVE_HTTP_PLUGIN);
-        if (plugin) {
-          nativeHttpClient = { type: "plugin", client: plugin };
-          return nativeHttpClient;
-        }
-      }
-      if (typeof cap.nativePromise === "function") {
-        nativeHttpClient = { type: "nativePromise", client: cap };
-        return nativeHttpClient;
-      }
-    } catch {
-      // ignore
-    }
-
-    nativeHttpClient = null;
-
-    return nativeHttpClient;
-  }
-
-  function normalizeHttpResponse(response) {
-    const status = response && typeof response.status === "number" ? response.status : 0;
-    const ok = status >= 200 && status < 300;
-    const data = response && typeof response.data !== "undefined" ? response.data : null;
-    return { ok, status, data };
-  }
-
-  function getHeaderValue(headers, key) {
-    if (!headers || typeof headers !== "object") return "";
-    const matchKey = Object.keys(headers).find((headerKey) => String(headerKey || "").toLowerCase() === key.toLowerCase());
-    return matchKey ? String(headers[matchKey] || "") : "";
-  }
-
-  function base64ToArrayBuffer(base64) {
-    const binary = atob(String(base64 || "").trim());
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    return bytes.buffer;
-  }
-
-  function normalizeNativeHttpBody(body, headers) {
-    if (body == null) return undefined;
-    if (body instanceof URLSearchParams) {
-      return Object.fromEntries(body.entries());
-    }
-
-    const contentType = getHeaderValue(headers, "Content-Type").toLowerCase();
-    if (typeof body === "string") {
-      if (contentType.includes("application/json")) {
-        try {
-          return JSON.parse(body);
-        } catch {
-          return body;
-        }
-      }
-      if (contentType.includes("application/x-www-form-urlencoded")) {
-        return Object.fromEntries(new URLSearchParams(body).entries());
-      }
-      return body;
-    }
-
-    return body;
-  }
-
-  async function sendNativeHttpRequest(url, options, responseType) {
-    const nativeHttp = getNativeHttpClient();
-    if (!nativeHttp) return null;
-
-    const normalizedOptions = options || {};
-    const request = {
-      url,
-      method: String(normalizedOptions.method || "GET").toUpperCase(),
-      headers: normalizedOptions.headers || {},
-      responseType: responseType || "json",
-    };
-    const data = normalizeNativeHttpBody(normalizedOptions.body, request.headers);
-    if (typeof data !== "undefined") {
-      request.data = data;
-    }
-    if (normalizedOptions.dataType) {
-      request.dataType = normalizedOptions.dataType;
-    }
-
-    try {
-      if (nativeHttp.type === "plugin" && nativeHttp.client && typeof nativeHttp.client.request === "function") {
-        const response = await nativeHttp.client.request(request);
-        return normalizeHttpResponse(response);
-      }
-      if (nativeHttp.type === "nativePromise" && nativeHttp.client) {
-        const response = await nativeHttp.client.nativePromise("CapacitorHttp", "request", request);
-        return normalizeHttpResponse(response);
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        status: 0,
-        data: null,
-        error: (error && error.message) || "Native HTTP request failed.",
-      };
-    }
-
-    return null;
-  }
-
-  function toFormParams(params) {
-    if (params instanceof URLSearchParams) {
-      return Object.fromEntries(params.entries());
-    }
-    if (params && typeof params === "object") {
-      return params;
-    }
-    return {};
-  }
-
   async function postFormUrlEncoded(url, params) {
     const body =
       params instanceof URLSearchParams ? params.toString() : new URLSearchParams(params || {}).toString();
-    const formParams = toFormParams(params);
     const headers = { "Content-Type": "application/x-www-form-urlencoded" };
-    const nativeResponse = await sendNativeHttpRequest(url, {
-      method: "POST",
-      headers,
-      body: formParams,
-    }, "json");
-
-    if (nativeResponse) {
-      return nativeResponse;
-    }
 
     try {
       const response = await fetch(url, {
@@ -890,19 +743,6 @@
       },
     };
 
-    const nativeResponse = await sendNativeHttpRequest(url, requestOptions, "json");
-    if (nativeResponse) {
-      const payload = nativeResponse.data;
-      if (!nativeResponse.ok) {
-        const message =
-          (payload && payload.error && (payload.error.message || payload.error_description)) ||
-          nativeResponse.error ||
-          "Request failed";
-        throw new Error(message);
-      }
-      return payload;
-    }
-
     const response = await fetch(url, {
       ...requestOptions,
     });
@@ -1140,17 +980,6 @@
   }
 
   async function fetchText(url, options) {
-    const nativeResponse = await sendNativeHttpRequest(url, options || {}, "text");
-    if (nativeResponse) {
-      if (!nativeResponse.ok) {
-        throw new Error(nativeResponse.error || `Download failed (${nativeResponse.status || 0})`);
-      }
-      if (nativeResponse.data && typeof nativeResponse.data === "object") {
-        return JSON.stringify(nativeResponse.data, null, 2);
-      }
-      return String(nativeResponse.data || "");
-    }
-
     const response = await fetch(url, options);
     if (!response.ok) {
       throw new Error(`Download failed (${response.status})`);
@@ -1201,19 +1030,6 @@
     const url = `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(
       driveId,
     )}/items/${encodeURIComponent(itemId)}/content`;
-    const nativeResponse = await sendNativeHttpRequest(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    }, "text");
-    if (nativeResponse) {
-      if (!nativeResponse.ok) {
-        throw new Error(nativeResponse.error || "Download failed.");
-      }
-      if (typeof nativeResponse.data === "string") {
-        return { text: nativeResponse.data, driveId, itemId };
-      }
-      return { text: JSON.stringify(nativeResponse.data || {}), driveId, itemId };
-    }
-
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -1240,6 +1056,49 @@
     });
   }
 
+  async function uploadDirectFileBrowser({
+    driveId,
+    itemId,
+    parentItemId,
+    fileName,
+    token,
+    conflictBehavior,
+    bytes,
+  }) {
+    let url = itemId
+      ? `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/content`
+      : `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(parentItemId)}:/${encodeURIComponent(fileName)}:/content`;
+
+    if (!itemId && conflictBehavior) {
+      url += `?@microsoft.graph.conflictBehavior=${encodeURIComponent(conflictBehavior)}`;
+    }
+
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/octet-stream",
+      },
+      body: bytes,
+    });
+    const text = await response.text();
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      const message =
+        (payload && payload.error && (payload.error.message || payload.error_description)) ||
+        response.statusText ||
+        "Upload failed";
+      throw new Error(`Upload failed: ${message}`);
+    }
+    return payload;
+  }
+
   function base64ToBytes(base64) {
     const cleaned = String(base64 || "").trim();
     const binary = atob(cleaned);
@@ -1251,51 +1110,16 @@
     return bytes;
   }
 
-  function bytesToBase64(bytes) {
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let start = 0; start < bytes.length; start += chunkSize) {
-      const slice = bytes.subarray(start, Math.min(start + chunkSize, bytes.length));
-      binary += String.fromCharCode.apply(null, slice);
-    }
-    return btoa(binary);
-  }
-
   async function uploadWithSessionBrowser(uploadUrl, bytes) {
     const total = bytes.length;
     let start = 0;
     while (start < total) {
       const end = Math.min(start + GRAPH_UPLOAD_CHUNK_SIZE, total);
       const chunk = bytes.slice(start, end);
-      const nativeResponse = await sendNativeHttpRequest(uploadUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Content-Length": String(chunk.length),
-          "Content-Range": `bytes ${start}-${end - 1}/${total}`,
-        },
-        body: bytesToBase64(chunk),
-        dataType: "file",
-      }, "text");
-      if (nativeResponse) {
-        if (!nativeResponse.ok) {
-          throw new Error(`Upload failed: ${nativeResponse.error || "Unknown error"}`);
-        }
-        const text = String(nativeResponse.data || "");
-        if (end === total) {
-          try {
-            return text ? JSON.parse(text) : null;
-          } catch {
-            return null;
-          }
-        }
-        start = end;
-        continue;
-      }
-
       const response = await fetch(uploadUrl, {
         method: "PUT",
         headers: {
+          "Content-Type": "application/octet-stream",
           "Content-Length": String(chunk.length),
           "Content-Range": `bytes ${start}-${end - 1}/${total}`,
         },
@@ -1358,15 +1182,43 @@
     const bytes = base64ToBytes(contentBase64);
     if (!bytes.length) throw new Error("Upload content is empty.");
 
-    const session = await createUploadSessionBrowser({
-      driveId,
-      parentItemId: targetParentId,
-      fileName: cleanFileName,
-      token,
-      conflictBehavior: "replace",
-    });
+    const directItemId =
+      item &&
+      item.file &&
+      String(item.name || "").trim().toLowerCase() === cleanFileName.toLowerCase()
+        ? String(item.id || "").trim()
+        : "";
+
+    let session;
+    try {
+      session = await createUploadSessionBrowser({
+        driveId,
+        parentItemId: targetParentId,
+        fileName: cleanFileName,
+        token,
+        conflictBehavior: "replace",
+      });
+    } catch {
+      return uploadDirectFileBrowser({
+        driveId,
+        itemId: directItemId,
+        parentItemId: targetParentId,
+        fileName: cleanFileName,
+        token,
+        conflictBehavior: "replace",
+        bytes,
+      });
+    }
     if (!session || !session.uploadUrl) {
-      throw new Error("Failed to create upload session.");
+      return uploadDirectFileBrowser({
+        driveId,
+        itemId: directItemId,
+        parentItemId: targetParentId,
+        fileName: cleanFileName,
+        token,
+        conflictBehavior: "replace",
+        bytes,
+      });
     }
 
     return uploadWithSessionBrowser(session.uploadUrl, bytes);
@@ -1444,19 +1296,6 @@
     const url = `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(
       resolved.driveId,
     )}/items/${encodeURIComponent(resolved.itemId)}/content`;
-    const nativeResponse = await sendNativeHttpRequest(url, {
-      headers: { Authorization: `Bearer ${resolved.token}` },
-    }, "text");
-    if (nativeResponse) {
-      if (!nativeResponse.ok) {
-        throw new Error(nativeResponse.error || "Download failed.");
-      }
-      if (nativeResponse.data && typeof nativeResponse.data === "object") {
-        return nativeResponse.data;
-      }
-      return parseJsonText(String(nativeResponse.data || ""));
-    }
-
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${resolved.token}` },
     });
@@ -1478,17 +1317,6 @@
     const url = `https://graph.microsoft.com/v1.0/drives/${encodeURIComponent(
       resolved.driveId,
     )}/items/${encodeURIComponent(resolved.itemId)}/content`;
-    const nativeResponse = await sendNativeHttpRequest(url, {
-      headers: { Authorization: `Bearer ${resolved.token}` },
-    }, "text");
-    if (nativeResponse) {
-      if (!nativeResponse.ok) {
-        throw new Error(nativeResponse.error || "Download failed.");
-      }
-      if (typeof nativeResponse.data === "string") return nativeResponse.data;
-      return JSON.stringify(nativeResponse.data, null, 2);
-    }
-
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${resolved.token}` },
     });
@@ -1508,17 +1336,6 @@
   }
 
   async function downloadBinary(url, options) {
-    const nativeResponse = await sendNativeHttpRequest(url, options || {}, "arraybuffer");
-    if (nativeResponse) {
-      if (!nativeResponse.ok) {
-        throw new Error(nativeResponse.error || "Download failed.");
-      }
-      if (nativeResponse.data instanceof ArrayBuffer) return nativeResponse.data;
-      if (ArrayBuffer.isView(nativeResponse.data)) return nativeResponse.data.buffer;
-      if (typeof nativeResponse.data === "string") return base64ToArrayBuffer(nativeResponse.data);
-      throw new Error("Binary download returned an unsupported payload.");
-    }
-
     const response = await fetch(url, options);
     if (!response.ok) {
       throw new Error(`Download failed (${response.status})`);
@@ -1868,6 +1685,19 @@
     }
   }
 
+  function publishDaysOffUpdate(source) {
+    try {
+      const detail = {
+        entries: cloneArray(daysOffCache || []),
+        source: source || "local",
+        updatedAt: new Date().toISOString(),
+      };
+      global.dispatchEvent(new CustomEvent("appcore:days-off-updated", { detail }));
+    } catch (error) {
+      console.warn("[AppCore] Failed to dispatch days off update event", error);
+    }
+  }
+
   function publishSharedTasksStatus(stage) {
     try {
       const detail = {
@@ -1937,6 +1767,14 @@
       ? cloneArray(desktopTasks)
       : (readArrayFromStorage(STORAGE_KEYS.tasks) || cloneArray(global.TASKS));
     console.log("[AppCore] Initialized tasksCache:", tasksCache);
+  }
+
+  function ensureDaysOffCacheInitialized() {
+    if (daysOffCache) return;
+    const desktopDaysOff = readDataJson("days-off");
+    daysOffCache = Array.isArray(desktopDaysOff)
+      ? cloneArray(desktopDaysOff)
+      : (readArrayFromStorage(STORAGE_KEYS.daysOff) || cloneArray(global.DAYS_OFF));
   }
 
   function normalizeDealLegalLinksForTasks(deal) {
@@ -2165,6 +2003,22 @@
     }
     publishTasksUpdate("local");
     queueSharedTasksUpload(tasksCache);
+  }
+
+  function loadDaysOffData() {
+    ensureDaysOffCacheInitialized();
+    return cloneArray(daysOffCache);
+  }
+
+  function saveDaysOffData(entries) {
+    daysOffCache = cloneArray(entries);
+    writeArrayToStorage(STORAGE_KEYS.daysOff, daysOffCache);
+    writeDataJson("days-off", Array.isArray(daysOffCache) ? daysOffCache : []);
+    if (Array.isArray(daysOffCache)) {
+      global.DAYS_OFF = cloneArray(daysOffCache);
+    }
+    publishDaysOffUpdate("local");
+    return cloneArray(daysOffCache);
   }
 
   async function refreshTasksFromShareDrive(reason) {
@@ -2769,6 +2623,8 @@
     saveDealsData,
     loadTasksData,
     saveTasksData,
+    loadDaysOffData,
+    saveDaysOffData,
     refreshTasksFromShareDrive,
     refreshDealsFromShareDrive,
     requestGraphDeviceCode: requestDeviceCodeBrowser,

@@ -61,15 +61,15 @@ This avoids scattering hardcoded page filenames throughout the app.
 The app can read from several sources depending on environment:
 
 1. Bundled JSON in `app/data/` or `build/web/data/`
-2. Desktop-editable JSON files exposed by Electron
+2. Desktop-editable JSON files exposed by the Tauri bridge
 3. Local browser storage
 4. Sharedrive-hosted JSON files when sync is enabled
 
-## When Electron changes behavior
+## When Desktop Bridge Changes Behavior
 
 If `window.PlutusDesktop` is available:
 
-- page code can read or write editable JSON through Electron
+- page code can read or write editable JSON through the desktop bridge
 - page code can query Graph session state
 - page code can list, upload, and download ShareDrive files
 

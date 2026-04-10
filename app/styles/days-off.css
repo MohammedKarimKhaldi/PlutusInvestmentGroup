@@ -1,0 +1,566 @@
+.days-off-calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 420px);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.days-off-side-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.days-off-card {
+  border-radius: 18px;
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(160deg, rgba(79, 70, 229, 0.04), rgba(255, 255, 255, 0.96)),
+    var(--bg-card);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.06);
+  padding: 16px;
+}
+
+.days-off-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.days-off-card h2 {
+  font-size: 17px;
+  margin: 0;
+}
+
+.days-off-copy {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.days-off-calendar-head {
+  align-items: center;
+}
+
+.days-off-calendar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.days-off-calendar-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.days-off-calendar-month {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.days-off-calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.days-off-weekend-legend {
+  background: rgba(148, 163, 184, 0.14);
+  border-color: rgba(148, 163, 184, 0.24);
+  color: #475569;
+}
+
+.days-off-calendar-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.days-off-calendar-surface {
+  min-width: 700px;
+}
+
+.days-off-legend-chip,
+.days-off-type-badge,
+.days-off-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 11px;
+}
+
+.days-off-weekdays,
+.days-off-calendar-days-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.days-off-calendar-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.days-off-calendar-week {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.days-off-weekdays {
+  margin-bottom: 8px;
+}
+
+.days-off-weekday {
+  text-align: center;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-soft);
+  padding: 0 0 4px;
+}
+
+.days-off-weekday.is-weekend {
+  color: #7c3aed;
+}
+
+.days-off-calendar-day {
+  width: 100%;
+  min-height: 74px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.days-off-calendar-day:hover {
+  transform: translateY(-1px);
+  border-color: rgba(79, 70, 229, 0.38);
+  box-shadow: 0 10px 18px rgba(79, 70, 229, 0.08);
+}
+
+.days-off-calendar-day.is-outside-month {
+  background: rgba(248, 250, 252, 0.68);
+  color: #94a3b8;
+}
+
+.days-off-calendar-day.is-weekend {
+  background: linear-gradient(180deg, rgba(250, 245, 255, 0.92), rgba(255, 255, 255, 0.92));
+  border-color: rgba(167, 139, 250, 0.28);
+}
+
+.days-off-calendar-day.is-weekend.has-entries {
+  background: linear-gradient(180deg, rgba(243, 232, 255, 0.95), rgba(255, 255, 255, 0.98));
+}
+
+.days-off-calendar-day.is-today {
+  border-color: rgba(34, 197, 94, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.25);
+}
+
+.days-off-calendar-day.is-selected {
+  border-color: rgba(79, 70, 229, 0.82);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14);
+  background: linear-gradient(180deg, rgba(224, 231, 255, 0.58), rgba(255, 255, 255, 0.96));
+}
+
+.days-off-calendar-day.has-entries {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(238, 242, 255, 0.78));
+}
+
+.days-off-calendar-day.is-selected.has-entries {
+  background: linear-gradient(180deg, rgba(224, 231, 255, 0.78), rgba(238, 242, 255, 0.98));
+}
+
+.days-off-calendar-day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.days-off-calendar-day-number {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.days-off-calendar-day.is-outside-month .days-off-calendar-day-number {
+  color: #94a3b8;
+}
+
+.days-off-calendar-day-count {
+  min-width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(79, 70, 229, 0.14);
+  background: rgba(79, 70, 229, 0.1);
+  color: #3730a3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.days-off-calendar-day-meta {
+  min-height: 16px;
+  font-size: 11px;
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.days-off-calendar-day.is-outside-month .days-off-calendar-day-meta {
+  color: #94a3b8;
+}
+
+.days-off-calendar-day.is-weekend .days-off-calendar-day-meta {
+  color: #7c3aed;
+}
+
+.days-off-calendar-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.days-off-calendar-lane {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  min-height: 28px;
+}
+
+.days-off-calendar-bar {
+  width: 100%;
+  min-height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+
+.days-off-calendar-bar:hover {
+  transform: translateY(-1px);
+  filter: saturate(1.05);
+}
+
+.days-off-calendar-bar.is-continued-left {
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+}
+
+.days-off-calendar-bar.is-continued-right {
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+.days-off-calendar-bar.is-on-selected-date {
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.22) inset;
+}
+
+.days-off-calendar-bar.is-on-today {
+  border-color: rgba(34, 197, 94, 0.42);
+}
+
+.days-off-calendar-bar-label {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.days-off-selected-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.days-off-selected-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.days-off-selected-item,
+.days-off-empty-item {
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.days-off-selected-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.days-off-selected-person {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.days-off-selected-submeta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
+.days-off-selected-notes {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-soft);
+  white-space: normal;
+}
+
+.days-off-selected-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.days-off-selected-actions .btn,
+.days-off-actions .btn {
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.days-off-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.days-off-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.days-off-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.days-off-form input,
+.days-off-form select,
+.days-off-form textarea,
+.days-off-toolbar input,
+.days-off-toolbar select {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: #ffffff;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 9px 11px;
+}
+
+.days-off-form textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.days-off-form input:focus,
+.days-off-form select:focus,
+.days-off-form textarea:focus,
+.days-off-toolbar input:focus,
+.days-off-toolbar select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14);
+}
+
+.days-off-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.days-off-status-line {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.days-off-log-card {
+  margin-bottom: 2px;
+}
+
+.days-off-toolbar {
+  margin-bottom: 12px;
+}
+
+.days-off-search-label {
+  flex: 1 1 260px;
+}
+
+.days-off-table-count {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.days-off-type-annual-leave {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.25);
+  color: #166534;
+}
+
+.days-off-type-public-holiday {
+  background: rgba(79, 70, 229, 0.14);
+  border-color: rgba(79, 70, 229, 0.22);
+  color: #3730a3;
+}
+
+.days-off-type-personal-day {
+  background: rgba(249, 115, 22, 0.14);
+  border-color: rgba(249, 115, 22, 0.24);
+  color: #9a3412;
+}
+
+.days-off-type-sick-leave {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.22);
+  color: #be123c;
+}
+
+.days-off-type-travel {
+  background: rgba(14, 165, 233, 0.12);
+  border-color: rgba(14, 165, 233, 0.24);
+  color: #0c4a6e;
+}
+
+.days-off-type-other {
+  background: rgba(148, 163, 184, 0.14);
+  border-color: rgba(148, 163, 184, 0.24);
+  color: #475569;
+}
+
+.days-off-state-active {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.22);
+  color: #166534;
+}
+
+.days-off-state-upcoming {
+  background: rgba(14, 165, 233, 0.12);
+  border-color: rgba(14, 165, 233, 0.22);
+  color: #0c4a6e;
+}
+
+.days-off-state-past {
+  background: rgba(148, 163, 184, 0.14);
+  border-color: rgba(148, 163, 184, 0.24);
+  color: #475569;
+}
+
+.days-off-notes-cell {
+  max-width: 360px;
+  white-space: normal;
+  color: var(--text-soft);
+}
+
+.days-off-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.days-off-delete-btn {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #b91c1c;
+}
+
+.days-off-empty-state {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  background: rgba(248, 250, 252, 0.7);
+  color: var(--text-soft);
+  text-align: center;
+}
+
+@media (max-width: 1180px) {
+  .days-off-calendar-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .days-off-calendar-grid {
+    gap: 10px;
+  }
+
+  .days-off-calendar-days-row,
+  .days-off-calendar-lane {
+    gap: 6px;
+  }
+
+  .days-off-calendar-day {
+    min-height: 68px;
+    padding: 8px;
+  }
+
+  .days-off-calendar-bar {
+    min-height: 26px;
+    padding: 4px 8px;
+  }
+}
+
+@media (max-width: 760px) {
+  .days-off-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .days-off-card-head,
+  .days-off-calendar-title-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .days-off-calendar-controls {
+    justify-content: flex-start;
+  }
+}

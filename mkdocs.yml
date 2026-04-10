@@ -21,7 +21,7 @@ nav:
       - System Overview: architecture/system-overview.md
       - Repository Layout: architecture/repository-layout.md
       - Browser Runtime: architecture/browser-runtime.md
-      - Electron Bridge: architecture/electron-bridge.md
+      - Desktop Bridge: architecture/desktop-bridge.md
   - Product:
       - Pages: product/pages.md
       - Configuration: product/configuration.md

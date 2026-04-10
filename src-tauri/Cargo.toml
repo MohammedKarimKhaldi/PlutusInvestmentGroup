@@ -1,6 +1,6 @@
 [package]
 name = "plutus-investment-group-desktop"
-version = "1.0.17"
+version = "1.0.18"
 edition = "2021"
 authors = ["Plutus Team <support@plutus.com>"]
 description = "Tauri backend for Plutus Investment Group dashboard"
@@ -19,5 +19,9 @@ urlencoding = "2.1"
 
 [build-dependencies]
 tauri-build = { version = "1.4.0", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
 
 [workspace]

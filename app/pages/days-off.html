@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Days Off</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../styles/components.css" />
+  <link rel="stylesheet" href="../styles/days-off.css" />
+  <script src="../scripts/shared/app-config.js"></script>
+  <script src="../scripts/shared/sharedrive-gate.js"></script>
+</head>
+
+<body data-page-id="days-off">
+  <div class="shell">
+    <div class="layout">
+      <aside class="sidebar-nav" data-sidebar-nav></aside>
+
+      <div class="main-column">
+        <div class="header">
+          <div class="title-block">
+            <h1>Days Off & Holidays</h1>
+            <p>Use the team calendar to log leave, holidays, sick days, and see who is away each day.</p>
+          </div>
+          <div class="header-actions">
+            <div class="pill">
+              <span class="dot"></span>
+              <span id="days-off-status-pill">Calendar ready</span>
+            </div>
+            <a class="btn" href="#" data-route-id="tasks-management">Owner tasks</a>
+            <a class="btn" href="#" data-route-id="deals-overview">Deals</a>
+          </div>
+        </div>
+
+        <div class="meta-row" id="days-off-meta-row"></div>
+
+        <div class="days-off-calendar-layout">
+          <section class="days-off-card days-off-calendar-card">
+            <div class="days-off-card-head days-off-calendar-head">
+              <div>
+                <h2>Team Calendar</h2>
+                <p class="days-off-copy">Click a date to review the team away and prefill a new time-off entry.</p>
+              </div>
+              <div class="days-off-calendar-controls">
+                <button class="btn" type="button" data-action="calendar-prev">Prev</button>
+                <button class="btn" type="button" data-action="calendar-today">Today</button>
+                <button class="btn" type="button" data-action="calendar-next">Next</button>
+              </div>
+            </div>
+
+            <div class="days-off-calendar-title-row">
+              <div class="days-off-calendar-month" id="days-off-calendar-month">Month</div>
+              <div class="days-off-calendar-legend">
+                <span class="days-off-legend-chip days-off-state-active">Away today</span>
+                <span class="days-off-legend-chip days-off-type-public-holiday">Public holiday</span>
+                <span class="days-off-legend-chip days-off-type-annual-leave">Leave</span>
+                <span class="days-off-legend-chip days-off-weekend-legend">Weekend</span>
+              </div>
+            </div>
+
+            <div class="days-off-calendar-scroll">
+              <div class="days-off-calendar-surface">
+                <div class="days-off-weekdays">
+                  <div class="days-off-weekday">Mon</div>
+                  <div class="days-off-weekday">Tue</div>
+                  <div class="days-off-weekday">Wed</div>
+                  <div class="days-off-weekday">Thu</div>
+                  <div class="days-off-weekday">Fri</div>
+                  <div class="days-off-weekday is-weekend">Sat</div>
+                  <div class="days-off-weekday is-weekend">Sun</div>
+                </div>
+
+                <div class="days-off-calendar-grid" id="days-off-calendar-grid"></div>
+              </div>
+            </div>
+          </section>
+
+          <div class="days-off-side-column">
+            <section class="days-off-card">
+              <div class="days-off-card-head">
+                <div>
+                  <h2 id="days-off-selected-title">Selected Day</h2>
+                  <p class="days-off-copy" id="days-off-selected-subtitle">Pick any date in the calendar to see its absences.</p>
+                </div>
+                <button class="btn btn-primary" id="days-off-log-selected" type="button" data-action="calendar-log-selected">Log selected date</button>
+              </div>
+
+              <div class="days-off-selected-meta" id="days-off-selected-meta"></div>
+              <ul class="days-off-selected-list" id="days-off-selected-list"></ul>
+            </section>
+
+            <section class="days-off-card" id="days-off-form-card">
+              <div class="days-off-card-head">
+                <div>
+                  <h2 id="days-off-form-title">Log time off</h2>
+                  <p class="days-off-copy">Use <strong>All team</strong> for public holidays that apply to everyone.</p>
+                </div>
+                <button class="btn" id="days-off-cancel-edit" type="button" hidden>Cancel edit</button>
+              </div>
+
+              <form id="days-off-form" class="days-off-form">
+                <div class="days-off-field-grid">
+                  <label>
+                    Person / team
+                    <input id="days-off-owner" list="days-off-owner-options" type="text" required placeholder="e.g. Mohammed or All team" />
+                  </label>
+                  <label>
+                    Type
+                    <select id="days-off-type">
+                      <option value="annual leave">Annual leave</option>
+                      <option value="public holiday">Public holiday</option>
+                      <option value="personal day">Personal day</option>
+                      <option value="sick leave">Sick leave</option>
+                      <option value="travel">Travel</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+                  <label>
+                    Start date
+                    <input id="days-off-start-date" type="date" required />
+                  </label>
+                  <label>
+                    End date
+                    <input id="days-off-end-date" type="date" />
+                  </label>
+                </div>
+
+                <datalist id="days-off-owner-options"></datalist>
+
+                <label>
+                  Notes
+                  <textarea id="days-off-notes" rows="4" placeholder="Optional context, handover notes, or location"></textarea>
+                </label>
+
+                <div class="days-off-form-actions">
+                  <button class="btn btn-primary" id="days-off-submit-btn" type="submit">Save entry</button>
+                  <span class="days-off-status-line" id="days-off-form-status">Ready to log time off.</span>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+
+        <section class="days-off-card days-off-log-card">
+          <div class="days-off-card-head">
+            <div>
+              <h2>Log</h2>
+              <p class="days-off-copy">Search and filter the entries shown in both the calendar and the table below.</p>
+            </div>
+            <div class="days-off-table-count" id="days-off-count">0 shown</div>
+          </div>
+
+          <div class="toolbar days-off-toolbar">
+            <div class="toolbar-row">
+              <label class="days-off-search-label">
+                Search
+                <input id="days-off-search" type="search" placeholder="Search person, type, or notes..." />
+              </label>
+              <label>
+                Status
+                <select id="days-off-status-filter">
+                  <option value="all">All entries</option>
+                  <option value="active">Away today</option>
+                  <option value="upcoming">Upcoming</option>
+                  <option value="past">Past</option>
+                </select>
+              </label>
+              <label>
+                Type
+                <select id="days-off-type-filter">
+                  <option value="all">All types</option>
+                  <option value="annual leave">Annual leave</option>
+                  <option value="public holiday">Public holiday</option>
+                  <option value="personal day">Personal day</option>
+                  <option value="sick leave">Sick leave</option>
+                  <option value="travel">Travel</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Person</th>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th>Workdays</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="days-off-body"></tbody>
+            </table>
+          </div>
+
+          <div class="days-off-empty-state" id="days-off-empty" hidden>No time-off entries match the current filters.</div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="../scripts/shared/layout.js"></script>
+  <script src="../scripts/shared/data-loader.js"></script>
+  <script src="../scripts/shared/core.js"></script>
+  <script src="../scripts/shared/theme.js"></script>
+  <script src="../scripts/pages/days-off.js"></script>
+</body>
+
+</html>

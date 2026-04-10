@@ -1,166 +1,31 @@
 {
   "name": "plutus-investment-group-desktop",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "private": true,
-  "description": "Desktop wrapper for Plutus Investment Group dashboard",
-  "main": "electron/main.cjs",
+  "description": "Tauri desktop wrapper for Plutus Investment Group dashboard",
   "scripts": {
     "web:prepare": "node tools/prepare-web-assets.cjs",
     "docs:serve": "python3 -m mkdocs serve",
     "docs:build": "python3 -m mkdocs build --strict",
     "predesktop": "npm run web:prepare",
-    "desktop": "electron .",
+    "desktop": "tauri dev",
+    "predesktop:build": "npm run web:prepare",
+    "desktop:build": "tauri build",
     "pretauri:dev": "npm run web:prepare",
     "pretauri:build": "npm run web:prepare",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "preios:add": "npm run web:prepare",
-    "ios:add": "npx cap add ios --packagemanager cocoapods",
-    "preios:sync": "npm run web:prepare",
-    "ios:sync": "npx cap sync ios && node tools/patch-ios-podfile.cjs && (cd ios/App && pod install)",
-    "ios:open": "npx cap open ios",
-    "ios:run": "npm run ios:sync && npm run ios:open",
-    "preandroid:add": "npm run web:prepare",
-    "android:add": "npx cap add android",
-    "preandroid:sync": "npm run web:prepare",
-    "android:sync": "npx cap sync android",
-    "android:open": "npx cap open android",
-    "android:run": "npm run android:sync && npm run android:open",
     "debug:sharedrive:tasks": "node tools/debug-sharedrive-json.cjs tasks",
     "debug:sharedrive:deals": "node tools/debug-sharedrive-json.cjs deals",
     "debug:sharedrive:config": "node tools/debug-sharedrive-json.cjs config",
     "predist": "npm run web:prepare",
-    "dist": "electron-builder --mac dmg --universal --publish never",
-    "predist:mac": "npm run web:prepare",
-    "dist:mac": "electron-builder --mac dmg --universal --publish never",
-    "predist:mac:arm64": "npm run web:prepare",
-    "dist:mac:arm64": "electron-builder --mac dmg --arm64 --publish never",
-    "predist:mac:x64": "npm run web:prepare",
-    "dist:mac:x64": "electron-builder --mac dmg --x64 --publish never",
-    "predist:mac:universal": "npm run web:prepare",
-    "dist:mac:universal": "electron-builder --mac dmg --universal --publish never",
-    "predist:mac:zip": "npm run web:prepare",
-    "dist:mac:zip": "electron-builder --mac zip --universal --publish never",
-    "predist:mac:release": "npm run web:prepare",
-    "dist:mac:release": "electron-builder --mac dmg zip --universal --publish always",
-    "predist:mas:arm64": "npm run web:prepare",
-    "dist:mas:arm64": "electron-builder --mac mas --arm64 --publish never",
-    "predist:mas:x64": "npm run web:prepare",
-    "dist:mas:x64": "electron-builder --mac mas --x64 --publish never",
-    "predist:mas:dev:arm64": "npm run web:prepare",
-    "dist:mas:dev:arm64": "electron-builder --mac mas-dev --arm64 --publish never",
-    "predist:mas:dev:x64": "npm run web:prepare",
-    "dist:mas:dev:x64": "electron-builder --mac mas-dev --x64 --publish never",
-    "predist:win": "npm run web:prepare",
-    "dist:win": "electron-builder --win nsis --x64 --publish never",
-    "predist:win:publish": "npm run web:prepare",
-    "dist:win:publish": "electron-builder --win nsis --x64 --publish always",
-    "predist:linux": "npm run web:prepare",
-    "dist:linux": "electron-builder --linux AppImage --x64 --publish never"
-  },
-  "build": {
-    "appId": "com.plutus.investment.dashboard",
-    "productName": "Plutus Investment Dashboard",
-    "compression": "maximum",
-    "asar": true,
-    "directories": {
-      "buildResources": "electron-builder-resources"
-    },
-    "electronLanguages": [
-      "en-US"
-    ],
-    "files": [
-      "build/web/**/*",
-      "config/**/*",
-      "electron/**/*",
-      "package.json",
-      "!**/.DS_Store",
-      "!**/*.md"
-    ],
-    "mac": {
-      "category": "public.app-category.finance",
-      "icon": "electron-builder-resources/icon.icns",
-      "entitlements": "electron/entitlements.mac.plist",
-      "entitlementsInherit": "electron/entitlements.mac.inherit.plist",
-      "hardenedRuntime": true,
-      "target": [
-        {
-          "target": "zip"
-        }
-      ],
-      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
-    },
-    "mas": {
-      "type": "distribution",
-      "entitlements": "electron/entitlements.mas.plist",
-      "entitlementsInherit": "electron/entitlements.mas.inherit.plist",
-      "hardenedRuntime": false,
-      "artifactName": "${productName}-${version}-mas-${arch}.${ext}"
-    },
-    "masDev": {
-      "type": "development",
-      "entitlements": "electron/entitlements.mas.plist",
-      "entitlementsInherit": "electron/entitlements.mas.inherit.plist",
-      "hardenedRuntime": false,
-      "artifactName": "${productName}-${version}-mas-dev-${arch}.${ext}"
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "MohammedKarimKhaldi",
-        "repo": "PlutusInvestmentGroup",
-        "releaseType": "release"
-      }
-    ],
-    "win": {
-      "icon": "electron-builder-resources/icon.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false,
-      "deleteAppDataOnUninstall": false
-    },
-    "linux": {
-      "icon": "electron-builder-resources/icon.png",
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
-    },
-    "afterPack": "electron/after-pack.cjs",
-    "extraMetadata": {
-      "main": "electron/main.cjs"
-    }
+    "dist": "tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^1.4.0",
-    "@capacitor/cli": "^8.2.0",
-    "electron": "^27.3.11",
-    "electron-builder": "^26.8.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@tauri-apps/api": "^1.4.0",
-    "@capacitor/android": "^8.2.0",
-    "@capacitor/core": "^8.2.0",
-    "@capacitor/filesystem": "^8.1.2",
-    "@capacitor/ios": "^8.2.0",
-    "@capacitor/share": "^8.0.1",
-    "electron-updater": "^6.8.3"
+    "@tauri-apps/api": "^1.4.0"
   }
 }

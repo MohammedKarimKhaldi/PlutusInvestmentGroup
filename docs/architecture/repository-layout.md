@@ -6,9 +6,7 @@
 app/
 build/
 config/
-electron/
-ios/
-android/
+src-tauri/
 tools/
 ```
 
@@ -62,7 +60,7 @@ Shared and page-specific CSS.
 
 Generated bundle copied from `app/`.
 
-This folder exists so deployment targets can consume a clean output tree without treating source folders as platform assets.
+This folder exists so the desktop shell can consume a clean output tree without treating source folders as platform assets.
 
 ## `config/`
 
@@ -75,13 +73,13 @@ The key file is `config/project-paths.cjs`, which defines:
 - standard web subdirectory names
 - standard JSON filenames
 
-## `electron/`
+## `src-tauri/`
 
 Desktop shell and desktop-only services.
 
-- `main.cjs`: main process, Graph API integration, local persistence, window bootstrap
-- `preload.cjs`: safe renderer bridge
-- `after-pack.cjs`: packaging hook
+- `src/main.rs`: Tauri commands, Graph API integration, and local persistence
+- `tauri.conf.json`: desktop window and bundle configuration
+- `build.rs`: Tauri build script
 
 ## `tools/`
 
@@ -89,10 +87,5 @@ Node-side repository tools.
 
 - `prepare-web-assets.cjs`
 - `generate-config.js`
+- `generate-brand-icons.py`
 - `debug-sharedrive-json.cjs`
-
-## Native platform folders
-
-- `ios/` and `android/` are deployment targets
-- their copied web assets are generated
-- product changes should start in `app/`

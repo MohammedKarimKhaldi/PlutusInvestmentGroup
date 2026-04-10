@@ -6,7 +6,7 @@
 app/
   -> npm run web:prepare
   -> build/web/
-  -> Electron package or Capacitor sync
+  -> Tauri desktop build
 ```
 
 ## Web bundle generation
@@ -31,47 +31,46 @@ Common commands:
 
 ```bash
 npm run desktop
-npm run dist:mac
-npm run dist:win
-npm run dist:linux
+npm run desktop:build
+npm run dist
 ```
 
-The package build includes:
+Tauri bundle icons live in `src-tauri/icons/`.
 
-- `build/web/**/*`
-- `config/**/*`
-- `electron/**/*`
+## GitHub release publishing
 
-Electron Builder reserves a separate build resources directory. In this repo that is `electron-builder-resources/`, so the generated `build/web/` bundle is packaged as application content rather than treated as builder metadata.
+Once this folder is connected to a GitHub repository, use the workflow at `.github/workflows/publish.yml`.
 
-## GitHub Actions
+What it does:
 
-- `.github/workflows/windows-release.yml`
-  - Pull requests to `main` and pushes to `main` build the Windows installer for CI validation.
-  - Version tag pushes such as `v1.0.2` publish the Windows installer and updater metadata to GitHub Releases.
-  - If Windows signing secrets are configured, the tag release is signed; otherwise it is published unsigned.
+- builds macOS Apple Silicon bundles
+- builds macOS Intel bundles
+- builds Windows bundles
+- uploads all generated installers to a GitHub Release
 
-## Capacitor sync
-
-Commands:
+Recommended release flow:
 
 ```bash
-npm run ios:sync
-npm run android:sync
+git push origin main
+git tag v1.0.18
+git push origin v1.0.18
 ```
 
-These commands prepare the web bundle first, then sync it into native projects.
+Notes:
+
+- the workflow uses the app version from `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml`
+- unsigned macOS and Windows builds can still be downloaded, but users may see Gatekeeper or SmartScreen warnings until code signing is added
+- this local folder is not currently a git repository, so pushing must happen after it is linked to a remote repository
 
 ## Important operational rule
 
-If you change code in `app/`, rerun the relevant sync or build command before assuming the platform app reflects those changes.
+If you change code in `app/`, rerun the relevant build command before assuming the desktop app reflects those changes.
 
 ## Generated folders
 
 Treat these as generated output:
 
 - `build/`
-- copied web assets inside native platform folders
 - `dist/`
 
 ## Config regeneration

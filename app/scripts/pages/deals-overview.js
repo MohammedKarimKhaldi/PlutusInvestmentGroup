@@ -68,6 +68,22 @@
       return normalizeDealLifecycleStatus(deal && (deal.lifecycleStatus || deal.dealStatus));
     }
 
+    function normalizeDealPipelineStatus(value) {
+      return normalizeValue(value) === "negotiation" ? "negotiation" : "pipeline";
+    }
+
+    function normalizeDealNegotiationStatus(value) {
+      const normalized = normalizeValue(value);
+      if (normalized === "engagement_to_send") return "engagement_to_send";
+      if (normalized === "engagement_sent") return "engagement_sent";
+      if (normalized === "signed_back") return "signed_back";
+      return "reviewing";
+    }
+
+    function isPipelineTrackedDeal(deal) {
+      return normalizeDealPipelineStatus(deal && deal.pipelineStatus) === "pipeline";
+    }
+
     function isDealClosedLifecycle(status) {
       return status === "finished" || status === "closed";
     }
@@ -78,6 +94,7 @@
     }
 
     function matchesPortfolioFilter(deal) {
+      if (!isPipelineTrackedDeal(deal)) return false;
       const lifecycleStatus = getDealLifecycleStatus(deal);
       if (dealsFilterState.portfolio === "active") {
         return !isDealClosedLifecycle(lifecycleStatus);
@@ -543,6 +560,7 @@
       const owners = Array.from(
         new Set(
           (Array.isArray(dealsData) ? dealsData : [])
+            .filter((deal) => isPipelineTrackedDeal(deal))
             .flatMap((deal) => getDealOwners(deal))
             .map((owner) => owner.trim())
             .filter(Boolean)
@@ -837,7 +855,21 @@
       const dashboardFundsInput = document.getElementById("deal-dashboard-sheet-funds-input");
       const dashboardFoInput = document.getElementById("deal-dashboard-sheet-fo-input");
       const dashboardFiguresInput = document.getElementById("deal-dashboard-sheet-figures-input");
+      const pipelineStatusInput = document.getElementById("deal-pipeline-status-input");
+      const negotiationStatusInput = document.getElementById("deal-negotiation-status-input");
       const panel = document.getElementById("add-deal-panel");
+
+      function refreshAddDealWorkflowInputs() {
+        const pipelineStatus = normalizeDealPipelineStatus(pipelineStatusInput && pipelineStatusInput.value);
+        if (negotiationStatusInput) {
+          negotiationStatusInput.disabled = pipelineStatus !== "negotiation";
+        }
+      }
+
+      if (pipelineStatusInput) {
+        pipelineStatusInput.addEventListener("change", refreshAddDealWorkflowInputs);
+      }
+      refreshAddDealWorkflowInputs();
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -846,6 +878,8 @@
         const company = String(companyInput.value || "").trim();
         const seniorOwner = String(seniorInput.value || "").trim();
         const juniorOwner = String(juniorInput.value || "").trim();
+        const pipelineStatus = normalizeDealPipelineStatus(pipelineStatusInput && pipelineStatusInput.value);
+        const negotiationStatus = normalizeDealNegotiationStatus(negotiationStatusInput && negotiationStatusInput.value);
         const subOwners = parseSubOwnersInput(subOwnersInput && subOwnersInput.value);
         if (!name || !company || !seniorOwner || !juniorOwner) return;
 
@@ -858,7 +892,10 @@
         }
         if (dashboardInput) dashboardInput.value = dashboardId;
 
-        setDealFormStatus(dashboardUrl ? "Creating deal and linked dashboard..." : "Creating deal...", false);
+        const createLabel = pipelineStatus === "negotiation"
+          ? (dashboardUrl ? "Creating negotiation deal and linked dashboard..." : "Creating negotiation deal...")
+          : (dashboardUrl ? "Creating deal and linked dashboard..." : "Creating deal...");
+        setDealFormStatus(createLabel, false);
 
         try {
           if (dashboardUrl) {
@@ -889,6 +926,8 @@
             company,
             stage: "prospect",
             lifecycleStatus: "active",
+            pipelineStatus,
+            negotiationStatus,
             seniorOwner,
             juniorOwner,
             subOwners,
@@ -914,7 +953,15 @@
           renderDeals();
           form.reset();
           currencyInput.value = "USD";
-          setDealFormStatus(dashboardUrl ? "Deal and dashboard created." : "Deal created.", false);
+          if (pipelineStatusInput) pipelineStatusInput.value = "negotiation";
+          if (negotiationStatusInput) negotiationStatusInput.value = "reviewing";
+          refreshAddDealWorkflowInputs();
+          setDealFormStatus(
+            pipelineStatus === "negotiation"
+              ? "Negotiation deal created. Open Negotiations to monitor it."
+              : (dashboardUrl ? "Deal and dashboard created." : "Deal created."),
+            false,
+          );
           if (panel) panel.open = false;
         } catch (error) {
           if (createdDealId) {

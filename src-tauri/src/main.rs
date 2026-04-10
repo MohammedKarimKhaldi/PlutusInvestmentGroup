@@ -280,7 +280,13 @@ fn sharedrive_config_string(config: &Value, key: &str) -> String {
     config
         .get(key)
         .and_then(Value::as_str)
-        .or_else(|| config.get("tasks").and_then(Value::as_object).and_then(|tasks| tasks.get(key)).and_then(Value::as_str))
+        .or_else(|| {
+            config
+                .get("tasks")
+                .and_then(Value::as_object)
+                .and_then(|tasks| tasks.get(key))
+                .and_then(Value::as_str)
+        })
         .map(str::trim)
         .unwrap_or_default()
         .to_string()
@@ -362,7 +368,11 @@ fn parse_json_text(text: &str) -> Option<Value> {
 fn payload_error_message(payload: &Value) -> String {
     payload
         .get("error")
-        .and_then(|error| error.get("message").or_else(|| error.get("error_description")))
+        .and_then(|error| {
+            error
+                .get("message")
+                .or_else(|| error.get("error_description"))
+        })
         .and_then(Value::as_str)
         .or_else(|| payload.get("error_description").and_then(Value::as_str))
         .or_else(|| payload.get("error").and_then(Value::as_str))
@@ -380,7 +390,11 @@ async fn fetch_json(request: reqwest::RequestBuilder) -> Result<Value, String> {
         let message = if payload.is_null() {
             format!("HTTP {}: {}", status.as_u16(), text.trim())
         } else {
-            format!("HTTP {}: {}", status.as_u16(), payload_error_message(&payload))
+            format!(
+                "HTTP {}: {}",
+                status.as_u16(),
+                payload_error_message(&payload)
+            )
         };
         return Err(message);
     }
@@ -418,7 +432,9 @@ fn token_has_scope(token: &str, required_scope: &str) -> bool {
         .and_then(Value::as_str)
         .unwrap_or_default();
 
-    scopes.split_whitespace().any(|scope| scope.eq_ignore_ascii_case(required_scope))
+    scopes
+        .split_whitespace()
+        .any(|scope| scope.eq_ignore_ascii_case(required_scope))
 }
 
 fn read_graph_session(app: &AppHandle, state: &AppState) -> Result<GraphSession, String> {
@@ -435,7 +451,11 @@ fn read_graph_session(app: &AppHandle, state: &AppState) -> Result<GraphSession,
     Ok(session.clone())
 }
 
-fn write_graph_session(app: &AppHandle, state: &AppState, graph_session: &GraphSession) -> Result<(), String> {
+fn write_graph_session(
+    app: &AppHandle,
+    state: &AppState,
+    graph_session: &GraphSession,
+) -> Result<(), String> {
     {
         let mut session = state.graph_session.lock().map_err(stringify_error)?;
         *session = graph_session.clone();
@@ -528,7 +548,13 @@ async fn refresh_access_token(
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
 
-    update_graph_tokens(app, state, access_token.clone(), expires_in, new_refresh_token)?;
+    update_graph_tokens(
+        app,
+        state,
+        access_token.clone(),
+        expires_in,
+        new_refresh_token,
+    )?;
     Ok(access_token)
 }
 
@@ -630,9 +656,7 @@ async fn request_device_code_impl(app: &AppHandle, client: &Client) -> Result<Va
 
     auth_log(
         "device-code:start",
-        format!(
-            "tenant_id={tenant_id} client_id={client_id} scopes={scopes}"
-        ),
+        format!("tenant_id={tenant_id} client_id={client_id} scopes={scopes}"),
     );
 
     let payload = fetch_json(
@@ -648,7 +672,10 @@ async fn request_device_code_impl(app: &AppHandle, client: &Client) -> Result<Va
         format!(
             "interval={} expires_in={} verification_uri={}",
             payload.get("interval").and_then(Value::as_i64).unwrap_or(0),
-            payload.get("expires_in").and_then(Value::as_i64).unwrap_or(0),
+            payload
+                .get("expires_in")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
             payload
                 .get("verification_uri")
                 .and_then(Value::as_str)
@@ -727,15 +754,27 @@ async fn poll_device_code_impl(
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
 
-    update_graph_tokens(app, state, access_token.clone(), expires_in, refresh_token.clone())?;
+    update_graph_tokens(
+        app,
+        state,
+        access_token.clone(),
+        expires_in,
+        refresh_token.clone(),
+    )?;
 
     auth_log(
         "device-code:poll-success",
         format!(
             "expires_in={} refresh_token={} scope={}",
             expires_in,
-            refresh_token.as_deref().map(|value| !value.is_empty()).unwrap_or(false),
-            payload.get("scope").and_then(Value::as_str).unwrap_or_default()
+            refresh_token
+                .as_deref()
+                .map(|value| !value.is_empty())
+                .unwrap_or(false),
+            payload
+                .get("scope")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
         ),
     );
 
@@ -1018,7 +1057,14 @@ async fn get_share_drive_download_url_impl(
             &state.client,
             &payload.share_url,
             &token,
-            &["id", "name", "webUrl", "parentReference", "remoteItem", "@microsoft.graph.downloadUrl"],
+            &[
+                "id",
+                "name",
+                "webUrl",
+                "parentReference",
+                "remoteItem",
+                "@microsoft.graph.downloadUrl",
+            ],
         )
         .await?
     };
@@ -1085,7 +1131,11 @@ async fn get_share_drive_download_url_impl(
             .send()
             .await
             .map_err(stringify_error)?;
-        if let Some(location) = response.headers().get("location").and_then(|value| value.to_str().ok()) {
+        if let Some(location) = response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok())
+        {
             download_url = location.to_string();
         }
     }
@@ -1112,21 +1162,28 @@ async fn download_share_drive_file_impl(
 ) -> Result<Value, String> {
     let token = resolve_graph_access_token(app, state, &payload.access_token).await?;
 
-    let (drive_id, item_id) = if !payload.drive_id.trim().is_empty() && !payload.item_id.trim().is_empty() {
-        (
-            payload.drive_id.trim().to_string(),
-            payload.item_id.trim().to_string(),
-        )
-    } else {
-        let item = get_share_drive_item(
-            &state.client,
-            &payload.share_url,
-            &token,
-            &["id", "name", "parentReference", "remoteItem", "@microsoft.graph.downloadUrl"],
-        )
-        .await?;
-        (graph_drive_id(&item), graph_item_id(&item))
-    };
+    let (drive_id, item_id) =
+        if !payload.drive_id.trim().is_empty() && !payload.item_id.trim().is_empty() {
+            (
+                payload.drive_id.trim().to_string(),
+                payload.item_id.trim().to_string(),
+            )
+        } else {
+            let item = get_share_drive_item(
+                &state.client,
+                &payload.share_url,
+                &token,
+                &[
+                    "id",
+                    "name",
+                    "parentReference",
+                    "remoteItem",
+                    "@microsoft.graph.downloadUrl",
+                ],
+            )
+            .await?;
+            (graph_drive_id(&item), graph_item_id(&item))
+        };
 
     if drive_id.is_empty() || item_id.is_empty() {
         return Err("Unable to resolve sharedrive file for download.".to_string());
@@ -1203,6 +1260,47 @@ async fn create_upload_session(
     .await
 }
 
+async fn upload_direct_file(
+    client: &Client,
+    drive_id: &str,
+    item_id: &str,
+    parent_item_id: &str,
+    file_name: &str,
+    token: &str,
+    conflict_behavior: &str,
+    buffer: &[u8],
+) -> Result<Value, String> {
+    let mut url = if !item_id.trim().is_empty() {
+        format!(
+            "https://graph.microsoft.com/v1.0/drives/{}/items/{}/content",
+            urlencoding::encode(drive_id),
+            urlencoding::encode(item_id),
+        )
+    } else {
+        format!(
+            "https://graph.microsoft.com/v1.0/drives/{}/items/{}:/{}/content",
+            urlencoding::encode(drive_id),
+            urlencoding::encode(parent_item_id),
+            urlencoding::encode(file_name),
+        )
+    };
+
+    if item_id.trim().is_empty() && !conflict_behavior.trim().is_empty() {
+        url.push_str("?@microsoft.graph.conflictBehavior=");
+        url.push_str(&urlencoding::encode(conflict_behavior.trim()));
+    }
+
+    fetch_json(
+        client
+            .put(url)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/octet-stream")
+            .body(buffer.to_vec()),
+    )
+    .await
+}
+
 async fn upload_with_session(
     client: &Client,
     upload_url: &str,
@@ -1216,8 +1314,12 @@ async fn upload_with_session(
         let chunk = buffer[start..end].to_vec();
         let response = client
             .put(upload_url)
+            .header("Content-Type", "application/octet-stream")
             .header("Content-Length", chunk.len().to_string())
-            .header("Content-Range", format!("bytes {start}-{}/{total}", end - 1))
+            .header(
+                "Content-Range",
+                format!("bytes {start}-{}/{total}", end - 1),
+            )
             .body(chunk)
             .send()
             .await
@@ -1271,7 +1373,14 @@ async fn upload_share_drive_file_impl(
         &state.client,
         share_url,
         &token,
-        &["id", "name", "parentReference", "remoteItem", "folder", "file"],
+        &[
+            "id",
+            "name",
+            "parentReference",
+            "remoteItem",
+            "folder",
+            "file",
+        ],
     )
     .await?;
     let drive_id = graph_drive_id(&root_item);
@@ -1291,7 +1400,19 @@ async fn upload_share_drive_file_impl(
         return Err("Target folder ID is required for upload.".to_string());
     }
 
-    let session = create_upload_session(
+    let direct_item_id = if root_item.get("file").is_some()
+        && root_item
+            .get("name")
+            .and_then(Value::as_str)
+            .map(|name| name.eq_ignore_ascii_case(file_name))
+            .unwrap_or(false)
+    {
+        graph_item_id(&root_item)
+    } else {
+        String::new()
+    };
+
+    let session = match create_upload_session(
         &state.client,
         &drive_id,
         &parent_item_id,
@@ -1299,7 +1420,30 @@ async fn upload_share_drive_file_impl(
         &token,
         &payload.conflict_behavior,
     )
-    .await?;
+    .await
+    {
+        Ok(session) => session,
+        Err(error) if error.trim_start().starts_with("HTTP 400:") => {
+            let uploaded = upload_direct_file(
+                &state.client,
+                &drive_id,
+                &direct_item_id,
+                &parent_item_id,
+                file_name,
+                &token,
+                &payload.conflict_behavior,
+                &content,
+            )
+            .await?;
+
+            return Ok(json!({
+                "item": normalize_drive_item(&uploaded),
+                "driveId": drive_id,
+                "parentItemId": parent_item_id,
+            }));
+        }
+        Err(error) => return Err(error),
+    };
 
     let upload_url = session
         .get("uploadUrl")
@@ -1336,7 +1480,13 @@ fn normalize_recipients(recipients: Option<&Value>) -> Vec<Value> {
         .into_iter()
         .flatten()
         .map(|entry| normalize_email_address(Some(entry)))
-        .filter(|entry| entry.get("address").and_then(Value::as_str).map(|value| !value.is_empty()).unwrap_or(false))
+        .filter(|entry| {
+            entry
+                .get("address")
+                .and_then(Value::as_str)
+                .map(|value| !value.is_empty())
+                .unwrap_or(false)
+        })
         .collect()
 }
 
@@ -1384,7 +1534,8 @@ async fn list_outlook_messages_impl(
         ("$top".to_string(), page_size.to_string()),
         (
             "$select".to_string(),
-            "id,subject,bodyPreview,receivedDateTime,webLink,isRead,from,toRecipients,ccRecipients".to_string(),
+            "id,subject,bodyPreview,receivedDateTime,webLink,isRead,from,toRecipients,ccRecipients"
+                .to_string(),
         ),
     ];
 
