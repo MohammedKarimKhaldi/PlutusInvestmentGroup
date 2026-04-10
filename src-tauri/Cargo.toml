@@ -1,6 +1,6 @@
 [package]
 name = "plutus-investment-group-desktop"
-version = "1.0.18"
+version = "1.0.19"
 edition = "2021"
 authors = ["Plutus Team <support@plutus.com>"]
 description = "Tauri backend for Plutus Investment Group dashboard"

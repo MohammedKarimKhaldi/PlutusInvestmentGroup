@@ -1,6 +1,6 @@
 {
   "name": "plutus-investment-group-desktop",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "private": true,
   "description": "Tauri desktop wrapper for Plutus Investment Group dashboard",
   "scripts": {
@@ -13,6 +13,7 @@
     "desktop:build": "tauri build",
     "pretauri:dev": "npm run web:prepare",
     "pretauri:build": "npm run web:prepare",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "debug:sharedrive:tasks": "node tools/debug-sharedrive-json.cjs tasks",

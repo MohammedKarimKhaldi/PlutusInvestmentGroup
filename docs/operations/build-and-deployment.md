@@ -52,8 +52,8 @@ Recommended release flow:
 
 ```bash
 git push origin main
-git tag v1.0.18
-git push origin v1.0.18
+git tag v1.0.19
+git push origin v1.0.19
 ```
 
 Notes:
