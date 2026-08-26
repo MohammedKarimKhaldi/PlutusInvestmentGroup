@@ -140,6 +140,8 @@
       border: 1px solid rgba(148, 163, 184, 0.35);
       background: #ffffff;
       padding: 3px 6px;
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
     }
 
     .deal-stage-step.active {
@@ -147,6 +149,49 @@
       border-color: rgba(79, 70, 229, 0.85);
       background: #e0e7ff;
       font-weight: 600;
+    }
+
+    .deal-stage-step.current {
+      box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.35);
+    }
+
+    .deal-stage-step:hover,
+    .deal-stage-step:focus-visible {
+      outline: none;
+      transform: translateY(-1px);
+      border-color: rgba(14, 165, 233, 0.7);
+      background: #f0f9ff;
+      color: #0f4c81;
+    }
+
+    .deal-stage-readiness {
+      margin-top: 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(34, 197, 94, 0.24);
+      background: rgba(34, 197, 94, 0.08);
+      color: #166534;
+      padding: 9px 10px;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .deal-stage-readiness.has-warnings {
+      border-color: rgba(245, 158, 11, 0.28);
+      background: rgba(245, 158, 11, 0.1);
+      color: #92400e;
+    }
+
+    .deal-stage-readiness-title {
+      font-weight: 600;
+    }
+
+    .deal-stage-readiness ul {
+      margin: 6px 0 0;
+      padding-left: 16px;
+    }
+
+    .deal-stage-readiness li + li {
+      margin-top: 2px;
     }
 
     .btn {

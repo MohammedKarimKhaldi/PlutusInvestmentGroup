@@ -76,6 +76,160 @@
     return String(value || "").trim().toLowerCase();
   }
 
+  function normalizeDealPipelineStatus(value) {
+    return normalizeValue(value) === "negotiation" ? "negotiation" : "pipeline";
+  }
+
+  function normalizeDealNegotiationStatus(value) {
+    const normalized = normalizeValue(value);
+    if (normalized === "engagement_to_send") return "engagement_to_send";
+    if (normalized === "engagement_sent") return "engagement_sent";
+    if (normalized === "signed_back") return "signed_back";
+    return "reviewing";
+  }
+
+  function normalizeDealStage(value) {
+    const normalized = normalizeValue(value);
+    if (normalized === "signing") return "signing";
+    if (normalized === "onboarding") return "onboarding";
+    if (normalized === "contacting investors") return "contacting investors";
+    return "prospect";
+  }
+
+  function normalizeDealLegalLinksForWorkflow(deal) {
+    const source =
+      deal && Array.isArray(deal.legalLinks)
+        ? deal.legalLinks
+        : deal && Array.isArray(deal.legalAspects)
+          ? deal.legalAspects
+          : [];
+
+    return source
+      .map((entry, index) => {
+        if (typeof entry === "string") {
+          const url = String(entry || "").trim();
+          return url
+            ? {
+                title: `Legal link ${index + 1}`,
+                url,
+              }
+            : null;
+        }
+        if (!entry || typeof entry !== "object") return null;
+        const title = String(entry.title || entry.label || entry.name || "").trim();
+        const url = String(entry.url || entry.href || entry.link || "").trim();
+        if (!title && !url) return null;
+        return {
+          title: title || `Legal link ${index + 1}`,
+          url,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function isLikelyEngagementLetterLink(link) {
+    const haystack = normalizeValue(`${link && link.title || ""} ${link && link.url || ""}`);
+    if (!haystack) return false;
+    return (
+      haystack.includes("engagement") ||
+      haystack.includes("eng letter")
+    );
+  }
+
+  function isLikelySignedEngagementLetterLink(link) {
+    const haystack = normalizeValue(`${link && link.title || ""} ${link && link.url || ""}`);
+    if (!haystack) return false;
+    return (
+      haystack.includes("signed back") ||
+      haystack.includes("signed-back") ||
+      haystack.includes("signed") ||
+      haystack.includes("executed") ||
+      haystack.includes("counter signed") ||
+      haystack.includes("counter-signed") ||
+      haystack.includes("countersigned")
+    );
+  }
+
+  function isRawUrlTitledLink(link) {
+    return normalizeValue(link && link.title) !== "" &&
+      normalizeValue(link && link.title) === normalizeValue(link && link.url);
+  }
+
+  function syncDealWorkflowFromLegalLinks(deal) {
+    if (!deal || typeof deal !== "object") return false;
+
+    let changed = false;
+    const normalizedPipeline = normalizeDealPipelineStatus(deal.pipelineStatus);
+    if (deal.pipelineStatus !== normalizedPipeline) {
+      deal.pipelineStatus = normalizedPipeline;
+      changed = true;
+    }
+
+    const normalizedStage = normalizeDealStage(deal.stage);
+    if (deal.stage !== normalizedStage) {
+      deal.stage = normalizedStage;
+      changed = true;
+    }
+
+    const normalizedNegotiationStatus = normalizeDealNegotiationStatus(deal.negotiationStatus);
+    if (deal.negotiationStatus !== normalizedNegotiationStatus) {
+      deal.negotiationStatus = normalizedNegotiationStatus;
+      changed = true;
+    }
+
+    if (normalizedPipeline !== "negotiation") {
+      return changed;
+    }
+
+    const legalLinks = normalizeDealLegalLinksForWorkflow(deal);
+    if (!legalLinks.length) {
+      return changed;
+    }
+
+    const explicitEngagementLetters = legalLinks.filter(isLikelyEngagementLetterLink);
+    const engagementLetters = explicitEngagementLetters.length ? explicitEngagementLetters : legalLinks;
+    const hasRawUrlOnlyLegalLink = explicitEngagementLetters.length === 0 && legalLinks.some(isRawUrlTitledLink);
+    const hasSignedEngagementLetter =
+      engagementLetters.some(isLikelySignedEngagementLetterLink) ||
+      hasRawUrlOnlyLegalLink;
+    const currentNegotiationStatus = normalizeDealNegotiationStatus(deal.negotiationStatus);
+
+    let nextNegotiationStatus = currentNegotiationStatus;
+    if (hasSignedEngagementLetter) {
+      nextNegotiationStatus = "signed_back";
+    } else if (currentNegotiationStatus === "reviewing" || currentNegotiationStatus === "engagement_to_send") {
+      nextNegotiationStatus = "engagement_sent";
+    }
+
+    if (deal.negotiationStatus !== nextNegotiationStatus) {
+      deal.negotiationStatus = nextNegotiationStatus;
+      changed = true;
+    }
+
+    if (nextNegotiationStatus === "signed_back") {
+      if (deal.pipelineStatus !== "pipeline") {
+        deal.pipelineStatus = "pipeline";
+        changed = true;
+      }
+      if (normalizeDealStage(deal.stage) === "prospect") {
+        deal.stage = "signing";
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
+
+  function normalizeDealsWorkflow(deals) {
+    let changed = false;
+    (Array.isArray(deals) ? deals : []).forEach((deal) => {
+      if (syncDealWorkflowFromLegalLinks(deal)) {
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
   function parseDealAmount(value) {
     if (typeof value === "number" && Number.isFinite(value)) return value;
     const raw = String(value == null ? "" : value).trim();
@@ -364,11 +518,15 @@
       }
       return { ok: response.ok, status: response.status, data };
     } catch (error) {
+      const originalMessage = (error && error.message) || "Request failed.";
+      const authEndpoint = String(url || "").includes("login.microsoftonline.com");
       return {
         ok: false,
         status: 0,
         data: null,
-        error: (error && error.message) || "Request failed.",
+        error: authEndpoint
+          ? `Browser Microsoft sign-in is blocked by the browser network/CORS layer (${originalMessage}). Open the Tauri desktop app, or paste a Microsoft Graph access token in Advanced and debug.`
+          : originalMessage,
       };
     }
   }
@@ -1741,18 +1899,21 @@
     const desktopDeals = readDataJson("deals");
     if (Array.isArray(desktopDeals)) {
       dealsCache = cloneArray(desktopDeals);
+      normalizeDealsWorkflow(dealsCache);
       return;
     }
 
     const storedDeals = readArrayFromStorage(STORAGE_KEYS.deals);
     if (Array.isArray(storedDeals) && storedDeals.length) {
       dealsCache = cloneArray(storedDeals);
+      normalizeDealsWorkflow(dealsCache);
       return;
     }
 
     const bundledDeals = Array.isArray(global.DEALS) ? cloneArray(global.DEALS) : [];
     if (bundledDeals.length || !config.enabled) {
       dealsCache = bundledDeals;
+      normalizeDealsWorkflow(dealsCache);
       return;
     }
 
@@ -1803,6 +1964,51 @@
       .filter(Boolean);
   }
 
+  function normalizeDealDueDiligenceLinksForTasks(deal) {
+    const source =
+      deal && Array.isArray(deal.dueDiligenceLinks)
+        ? deal.dueDiligenceLinks
+        : deal && Array.isArray(deal.dueDiligenceReports)
+          ? deal.dueDiligenceReports
+          : deal && Array.isArray(deal.ddReports)
+            ? deal.ddReports
+            : [];
+
+    const links = source
+      .map((entry, index) => {
+        if (typeof entry === "string") {
+          const url = String(entry || "").trim();
+          return url ? { title: `Due diligence report ${index + 1}`, url } : null;
+        }
+        if (!entry || typeof entry !== "object") return null;
+        const title = String(entry.title || entry.label || entry.name || "").trim();
+        const url = String(entry.url || entry.href || entry.link || "").trim();
+        if (!title && !url) return null;
+        return {
+          title: title || (url ? `Due diligence report ${index + 1}` : ""),
+          url,
+        };
+      })
+      .filter(Boolean);
+
+    const fallbackUrl = String(
+      deal && (
+        deal.dueDiligenceUrl ||
+        deal.dueDiligenceReportUrl ||
+        deal.ddReportUrl ||
+        ""
+      ) || "",
+    ).trim();
+    if (fallbackUrl) {
+      links.push({
+        title: String(deal && (deal.dueDiligenceName || deal.dueDiligenceReportName) || "").trim() || "Due diligence report",
+        url: fallbackUrl,
+      });
+    }
+
+    return links;
+  }
+
   function toSafeExternalTaskUrl(value) {
     const raw = String(value || "").trim();
     if (!raw) return "";
@@ -1845,7 +2051,9 @@
         const owner = String(deal.seniorOwner || deal.owner || "System").trim() || "System";
         const companyLabel = String(deal.company || deal.name || dealId).trim();
         const legalLinks = normalizeDealLegalLinksForTasks(deal);
+        const dueDiligenceLinks = normalizeDealDueDiligenceLinksForTasks(deal);
         const hasLegalDocument = legalLinks.some((entry) => Boolean(toSafeExternalTaskUrl(entry.url)));
+        const hasDueDiligence = dueDiligenceLinks.some((entry) => Boolean(toSafeExternalTaskUrl(entry.url)));
         const hasDeck = Boolean(toSafeExternalTaskUrl(deal.deckUrl));
         const hasDashboard = Boolean(String(deal.fundraisingDashboardId || "").trim());
 
@@ -1863,6 +2071,13 @@
             title: `[Auto] Add deck for ${companyLabel}`,
             type: "Deck setup",
             notes: `Auto-generated on ${createdAt}. Link a deck PDF to this deal.`,
+          },
+          {
+            category: "due-diligence",
+            missing: !hasDueDiligence,
+            title: `[Auto] Add due diligence report for ${companyLabel}`,
+            type: "Due diligence setup",
+            notes: `Auto-generated on ${createdAt}. Attach the due diligence report or folder to this deal.`,
           },
           {
             category: "dashboard",
@@ -1916,6 +2131,7 @@
   function saveDealsData(deals) {
     const config = getSharedDealsConfig();
     dealsCache = cloneArray(deals);
+    normalizeDealsWorkflow(dealsCache);
     if (!config.enabled) {
       writeArrayToStorage(STORAGE_KEYS.deals, dealsCache);
     }
@@ -2146,6 +2362,7 @@
 
       if (Array.isArray(payload)) {
         dealsCache = cloneArray(payload);
+        normalizeDealsWorkflow(dealsCache);
         if (!config.enabled) {
           writeArrayToStorage(STORAGE_KEYS.deals, dealsCache);
         }
@@ -2619,6 +2836,7 @@
     compareDealsByRetainerState,
     sortDealsByRetainerState,
     getPageUrl,
+    syncDealWorkflowFromLegalLinks,
     loadDealsData,
     saveDealsData,
     loadTasksData,

@@ -374,16 +374,25 @@ tr.group-row td {
 }
 
 .invoice-badge-sent,
+.invoice-badge-pending,
 .invoice-badge-part_paid {
   background: #fff7ed;
   color: #c2410c;
   border-color: #fdba74;
 }
 
-.invoice-badge-paid {
+.invoice-badge-received,
+.invoice-badge-paid,
+.invoice-badge-paid_advance {
   background: #ecfdf5;
   color: #047857;
   border-color: #86efac;
+}
+
+.invoice-badge-paid_advance {
+  background: #f0fdfa;
+  color: #0f766e;
+  border-color: #5eead4;
 }
 
 .invoice-badge-cancelled {

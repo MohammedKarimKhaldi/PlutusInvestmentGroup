@@ -34,11 +34,16 @@ const INVOICE_TEMPLATE_FILE = "invoice-template.docx";
 const INVOICE_STATUS_OPTIONS = [
   { value: "draft", label: "Draft" },
   { value: "prepared", label: "Prepared" },
-  { value: "sent", label: "Sent / Waiting" },
+  { value: "sent", label: "Sent" },
+  { value: "pending", label: "Pending payment" },
   { value: "part_paid", label: "Part paid" },
-  { value: "paid", label: "Received / Paid" },
+  { value: "received", label: "Received" },
+  { value: "paid", label: "Paid / reconciled" },
+  { value: "paid_advance", label: "Paid in advance" },
   { value: "cancelled", label: "Cancelled" },
 ];
+const OUTSTANDING_INVOICE_STATUSES = new Set(["prepared", "sent", "pending", "part_paid"]);
+const COLLECTED_INVOICE_STATUSES = new Set(["received", "paid", "paid_advance"]);
 const ACCOUNTING_GROUPING_OPTIONS = [
   { value: "none", label: "Standard order" },
   { value: "incoming_payments", label: "Next incoming payment" },
@@ -445,7 +450,8 @@ function updateMetaRow(filteredDeals) {
     `<div class="chip"><strong>${invoiceStats.totalInvoices}</strong> invoice records</div>`,
     `<div class="chip"><strong>${invoiceStats.outstanding}</strong> awaiting payment</div>`,
     `<div class="chip"><strong>${invoiceStats.overdue}</strong> overdue</div>`,
-    `<div class="chip"><strong>${invoiceStats.paid}</strong> paid</div>`,
+    `<div class="chip"><strong>${invoiceStats.paid}</strong> received / paid</div>`,
+    `<div class="chip"><strong>${invoiceStats.paidAdvance}</strong> paid in advance</div>`,
     `<div class="chip"><strong>${dirtyDealIds.size}</strong> unsaved changes</div>`,
   ].join("");
 }
@@ -723,7 +729,8 @@ function renderAnalytics(deals) {
     <div class="analytics-lines">
       <div class="analytics-line"><span>Outstanding</span><strong>${invoiceStats.outstanding}</strong></div>
       <div class="analytics-line"><span>Overdue</span><strong>${invoiceStats.overdue}</strong></div>
-      <div class="analytics-line"><span>Paid</span><strong>${invoiceStats.paid}</strong></div>
+      <div class="analytics-line"><span>Received / paid</span><strong>${invoiceStats.paid}</strong></div>
+      <div class="analytics-line"><span>Paid in advance</span><strong>${invoiceStats.paidAdvance}</strong></div>
       <div class="analytics-line"><span>Total invoices</span><strong>${invoiceStats.totalInvoices}</strong></div>
     </div>
   `;
@@ -910,7 +917,15 @@ function buildMonthLabelFromKey(monthKey) {
 
 function normalizeInvoiceStatus(value) {
   const raw = String(value || "").trim().toLowerCase();
+  if (raw === "waiting" || raw === "awaiting_payment" || raw === "awaiting payment") return "pending";
+  if (raw === "part paid" || raw === "partial" || raw === "partially_paid") return "part_paid";
+  if (raw === "payment_received" || raw === "payment received" || raw === "received_paid") return "received";
+  if (raw === "paid in advance" || raw === "paid-in-advance" || raw === "advance_paid" || raw === "prepaid") return "paid_advance";
   return INVOICE_STATUS_OPTIONS.some((option) => option.value === raw) ? raw : "draft";
+}
+
+function isInvoiceCollected(invoice) {
+  return COLLECTED_INVOICE_STATUSES.has(normalizeInvoiceStatus(invoice && invoice.status));
 }
 
 function normalizeAccountingGroupingMode(value) {
@@ -1096,16 +1111,18 @@ function buildManualInvoiceRecord(deal, preset) {
   const invoiceDate = normalizeDateInput(draft.invoiceDate) || today;
   const dueDate = normalizeDateInput(draft.dueDate) || invoiceDate;
   const billingMonthKey = getMonthKeyFromDateValue(invoiceDate || dueDate);
-  const isPaidPreset = preset === "paid";
+  const normalizedPreset = normalizeInvoiceStatus(preset);
+  const status = normalizedPreset === "draft" ? "pending" : normalizedPreset;
+  const isCollectedPreset = COLLECTED_INVOICE_STATUSES.has(status);
   const record = {
     name: "",
     url: "",
     parentPath: "",
     addedAt: new Date().toISOString(),
-    status: isPaidPreset ? "paid" : "sent",
+    status,
     sentDate: invoiceDate || today,
     dueDate,
-    paidDate: isPaidPreset ? today : "",
+    paidDate: isCollectedPreset ? today : "",
     invoiceNumber: String(draft.invoiceNumber || buildDefaultInvoiceNumber(invoiceDate)).trim(),
     invoiceDate,
     description: String(draft.description || `Retainer Plutus - ${formatMonthYear(invoiceDate)}`).trim(),
@@ -1526,7 +1543,7 @@ function getLatestInvoiceRecord(deal) {
 }
 
 function isInvoiceOverdue(invoice) {
-  if (!invoice || normalizeInvoiceStatus(invoice.status) === "paid" || normalizeInvoiceStatus(invoice.status) === "cancelled") {
+  if (!invoice || isInvoiceCollected(invoice) || normalizeInvoiceStatus(invoice.status) === "cancelled") {
     return false;
   }
   if (invoice.paidDate) return false;
@@ -1546,6 +1563,8 @@ function getInvoiceSummaryStats(deals) {
     totalInvoices: 0,
     outstanding: 0,
     paid: 0,
+    received: 0,
+    paidAdvance: 0,
     sent: 0,
     overdue: 0,
   };
@@ -1555,9 +1574,11 @@ function getInvoiceSummaryStats(deals) {
       summary.totalInvoices += 1;
       const status = normalizeInvoiceStatus(invoice.status);
       if (isInvoiceOverdue(invoice)) summary.overdue += 1;
-      if (["prepared", "sent", "part_paid"].includes(status)) summary.outstanding += 1;
-      if (status === "paid") summary.paid += 1;
-      if (status === "sent" || status === "part_paid") summary.sent += 1;
+      if (OUTSTANDING_INVOICE_STATUSES.has(status)) summary.outstanding += 1;
+      if (isInvoiceCollected(invoice)) summary.paid += 1;
+      if (status === "received") summary.received += 1;
+      if (status === "paid_advance") summary.paidAdvance += 1;
+      if (status === "sent" || status === "pending" || status === "part_paid") summary.sent += 1;
     });
   });
 
@@ -2379,7 +2400,9 @@ function renderInvoiceHistory() {
       if (invoice.invoiceDate) detailParts.push(`Invoice ${formatShortDate(invoice.invoiceDate)}`);
       if (invoice.sentDate) detailParts.push(`Sent ${formatShortDate(invoice.sentDate)}`);
       if (invoice.dueDate) detailParts.push(`Due ${formatShortDate(invoice.dueDate)}`);
-      if (invoice.paidDate) detailParts.push(`Paid ${formatShortDate(invoice.paidDate)}`);
+      if (invoice.paidDate) {
+        detailParts.push(`${status === "paid_advance" ? "Paid in advance" : "Received / paid"} ${formatShortDate(invoice.paidDate)}`);
+      }
       if (invoice.readyToSend && !invoice.sentDate) detailParts.push("Ready to send");
       if (!invoice.url && invoiceMonthLabel) detailParts.push(`Billing ${invoiceMonthLabel}`);
       if (!invoice.url) detailParts.push("PDF pending");
@@ -2413,7 +2436,7 @@ function renderInvoiceHistory() {
                 <input data-invoice-index="${index}" data-invoice-field="dueDate" type="date" value="${escapeHtml(invoice.dueDate || "")}" />
               </label>
               <label class="invoice-field">
-                <span>Paid date</span>
+                <span>Received / paid date</span>
                 <input data-invoice-index="${index}" data-invoice-field="paidDate" type="date" value="${escapeHtml(invoice.paidDate || "")}" />
               </label>
             </div>
@@ -2439,16 +2462,16 @@ function updateInvoiceTrackingField(index, field, nextValue) {
   const today = new Date().toISOString().slice(0, 10);
   if (field === "status") {
     invoice.status = normalizeInvoiceStatus(nextValue);
-    if (invoice.status === "sent" && !invoice.sentDate) {
+    if ((invoice.status === "sent" || invoice.status === "pending") && !invoice.sentDate) {
       invoice.sentDate = today;
     }
-    if (invoice.status === "paid") {
-      if (!invoice.sentDate) invoice.sentDate = today;
+    if (COLLECTED_INVOICE_STATUSES.has(invoice.status)) {
+      if (!invoice.sentDate && invoice.status !== "paid_advance") invoice.sentDate = today;
       if (!invoice.paidDate) invoice.paidDate = today;
     }
   } else if (field === "sentDate") {
     invoice.sentDate = normalizeDateInput(nextValue);
-    if (invoice.sentDate && invoice.status === "draft") {
+    if (invoice.sentDate && (invoice.status === "draft" || invoice.status === "prepared")) {
       invoice.status = "sent";
     }
   } else if (field === "dueDate") {
@@ -2456,7 +2479,9 @@ function updateInvoiceTrackingField(index, field, nextValue) {
   } else if (field === "paidDate") {
     invoice.paidDate = normalizeDateInput(nextValue);
     if (invoice.paidDate) {
-      invoice.status = "paid";
+      if (!COLLECTED_INVOICE_STATUSES.has(invoice.status)) {
+        invoice.status = "received";
+      }
       if (!invoice.sentDate) invoice.sentDate = invoice.paidDate;
     }
   } else {
@@ -2492,10 +2517,13 @@ function addManualInvoiceRecord(preset) {
   renderInvoiceBuilder();
   renderInvoiceHistory();
   setStatus("Invoice record added. Save all changes to persist.", false);
+  const normalizedPreset = normalizeInvoiceStatus(preset);
   setInvoiceHistoryStatus(
-    preset === "paid"
+    normalizedPreset === "paid_advance"
+      ? "Added a paid in advance invoice record for this deal."
+      : COLLECTED_INVOICE_STATUSES.has(normalizedPreset)
       ? "Added a received / paid invoice record for this deal."
-      : "Added a sent / waiting invoice record for this deal.",
+      : "Added a sent / pending invoice record for this deal.",
     false,
   );
 }
@@ -2711,6 +2739,7 @@ function addInvoiceToDealFromPicker(item) {
 function setupInvoiceHistory() {
   const addSentBtn = document.getElementById("btn-add-sent-invoice");
   const addPaidBtn = document.getElementById("btn-add-paid-invoice");
+  const addPaidAdvanceBtn = document.getElementById("btn-add-paid-advance-invoice");
   const loadBtn = document.getElementById("btn-load-invoice-pdf");
   const list = document.getElementById("invoice-history-list");
   const modal = document.getElementById("invoice-picker-modal");
@@ -2723,14 +2752,21 @@ function setupInvoiceHistory() {
   if (addSentBtn) {
     addSentBtn.addEventListener("click", () => {
       if (!singleDealMode) return;
-      addManualInvoiceRecord("sent");
+      addManualInvoiceRecord("pending");
     });
   }
 
   if (addPaidBtn) {
     addPaidBtn.addEventListener("click", () => {
       if (!singleDealMode) return;
-      addManualInvoiceRecord("paid");
+      addManualInvoiceRecord("received");
+    });
+  }
+
+  if (addPaidAdvanceBtn) {
+    addPaidAdvanceBtn.addEventListener("click", () => {
+      if (!singleDealMode) return;
+      addManualInvoiceRecord("paid_advance");
     });
   }
 
@@ -3154,7 +3190,7 @@ function getInvoiceStatusGroupDetails(deal) {
   }
 
   const displayStatus = getInvoiceDisplayStatus(latestInvoice);
-  const order = ["overdue", "sent", "part_paid", "prepared", "paid", "cancelled", "draft"];
+  const order = ["overdue", "pending", "sent", "part_paid", "prepared", "received", "paid", "paid_advance", "cancelled", "draft"];
   const sortIndex = order.indexOf(displayStatus);
   const label = displayStatus === "overdue" ? "Overdue" : formatStatusLabel(displayStatus);
   return {

@@ -266,11 +266,90 @@ function getSigningTaskProgress() {
   };
 }
 
-function advanceDealStage(nextStage) {
+function hasSafeUrl(value) {
+  return Boolean(toSafeExternalUrl(value));
+}
+
+function hasLinkedDeck(deal) {
+  return hasSafeUrl(deal && deal.deckUrl);
+}
+
+function hasLinkedDueDiligence(deal) {
+  return normalizeDealDueDiligenceLinks(deal).some((entry) => hasSafeUrl(entry.url));
+}
+
+function hasLinkedLegal(deal) {
+  return normalizeDealLegalLinks(deal).some((entry) => hasSafeUrl(entry.url));
+}
+
+function hasLinkedDashboard(deal) {
+  return Boolean(String(deal && deal.fundraisingDashboardId || "").trim());
+}
+
+function getStageReadinessWarnings(stage, nextStage) {
+  const warnings = [];
+  if (!currentDeal) return warnings;
+
+  const currentIndex = STAGE_ORDER.indexOf(normalizeValue(stage));
+  const normalizedNextStage = normalizeValue(nextStage);
+  const nextIndex = STAGE_ORDER.indexOf(normalizedNextStage);
+  if (nextIndex < 0 || nextIndex <= currentIndex) return warnings;
+
+  const signing = getSigningTaskProgress();
+  const signingIndex = STAGE_ORDER.indexOf("signing");
+  const onboardingIndex = STAGE_ORDER.indexOf("onboarding");
+  const investorIndex = STAGE_ORDER.indexOf("contacting investors");
+
+  if (nextIndex >= signingIndex && !hasLinkedDeck(currentDeal)) {
+    warnings.push("Pitch deck is not linked yet.");
+  }
+  if (nextIndex >= onboardingIndex && !hasLinkedDueDiligence(currentDeal)) {
+    warnings.push("Due diligence report or folder is not linked yet.");
+  }
+  if (nextIndex >= signingIndex && !hasLinkedLegal(currentDeal)) {
+    warnings.push("Legal documents are not linked yet.");
+  }
+  if (nextIndex >= investorIndex && !hasLinkedDashboard(currentDeal)) {
+    warnings.push("Fundraising dashboard is not linked yet.");
+  }
+  if (nextIndex >= investorIndex && signing.total > 0 && !signing.allDone) {
+    warnings.push(`Signing tasks are not all complete (${signing.done}/${signing.total} done).`);
+  }
+
+  return warnings;
+}
+
+function getNextStageFromCurrentStage(stage) {
+  if (stage === "prospect") return "signing";
+  if (stage === "signing") return "onboarding";
+  if (stage === "onboarding") return "contacting investors";
+  return "";
+}
+
+function confirmAdvanceWithWarnings(currentStage, nextStage) {
+  const warnings = getStageReadinessWarnings(currentStage, nextStage);
+  if (!warnings.length) return true;
+  return window.confirm(
+    [
+      `Move to "${STAGE_LABELS[nextStage] || nextStage}" anyway?`,
+      "",
+      "The deal still has these readiness items:",
+      ...warnings.map((warning) => `- ${warning}`),
+      "",
+      "You can continue now and close the gaps later from the deal record.",
+    ].join("\n"),
+  );
+}
+
+function advanceDealStage(nextStage, options = {}) {
   if (!currentDeal) return;
   if (isCurrentDealNegotiationTrack()) return;
   if (isCurrentDealClosedLifecycle()) return;
-  currentDeal.stage = nextStage;
+  const currentStage = normalizeValue(currentDeal.stage);
+  const targetStage = normalizeValue(nextStage);
+  if (!STAGE_ORDER.includes(targetStage) || targetStage === currentStage) return;
+  if (options.confirmWarnings !== false && !confirmAdvanceWithWarnings(currentStage, targetStage)) return;
+  currentDeal.stage = targetStage;
   saveDealsData();
   renderDealHeader();
   populateDealForm();
@@ -313,12 +392,12 @@ function refreshStageButton() {
     return;
   }
   if (stage === "onboarding") {
-    button.disabled = !signing.allDone;
+    button.disabled = false;
     button.textContent = signing.total === 0
       ? "Move to contacting investors"
       : (signing.allDone
         ? "Move to contacting investors"
-        : `Complete signing tasks (${signing.done}/${signing.total})`);
+        : `Move forward (${signing.done}/${signing.total} tasks done)`);
     return;
   }
 
@@ -396,24 +475,35 @@ function setupStageProgressionButton() {
     if (isCurrentDealNegotiationTrack()) return;
     if (isCurrentDealClosedLifecycle()) return;
     const stage = normalizeValue(currentDeal.stage);
-    const signing = getSigningTaskProgress();
+    const nextStage = getNextStageFromCurrentStage(stage);
+    if (nextStage) advanceDealStage(nextStage);
+  });
+}
 
-    if (stage === "prospect") {
-      advanceDealStage("signing");
-      return;
-    }
-    if (stage === "signing") {
-      advanceDealStage("onboarding");
-      return;
-    }
-    if (stage === "onboarding") {
-      if (!signing.allDone) {
-        window.alert(`Complete signing tasks first (${signing.done}/${signing.total} done).`);
-        return;
-      }
-      advanceDealStage("contacting investors");
-      return;
-    }
+function setupStageTrackerNavigation() {
+  const tracker = document.getElementById("deal-stage-tracker");
+  if (!tracker) return;
+
+  const activateStageStep = (step) => {
+    if (!step || !currentDeal) return;
+    if (isCurrentDealNegotiationTrack()) return;
+    if (isCurrentDealClosedLifecycle()) return;
+    const targetStage = normalizeValue(step.getAttribute("data-stage"));
+    advanceDealStage(targetStage);
+  };
+
+  tracker.addEventListener("click", (event) => {
+    const step = event.target.closest(".deal-stage-step");
+    if (!step || !tracker.contains(step)) return;
+    activateStageStep(step);
+  });
+
+  tracker.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const step = event.target.closest(".deal-stage-step");
+    if (!step || !tracker.contains(step)) return;
+    event.preventDefault();
+    activateStageStep(step);
   });
 }
 
@@ -768,6 +858,143 @@ function renderDealLegalLinks() {
           <div class="legal-link-title">${escapeHtml(link.title || "Legal link")}</div>
           <a class="btn legal-link-button" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">
             Open ${escapeHtml(link.title || "legal document")}
+          </a>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function normalizeDealDueDiligenceLinks(deal, options = {}) {
+  const { keepEmpty = false } = options;
+  const source =
+    deal && Array.isArray(deal.dueDiligenceLinks)
+      ? deal.dueDiligenceLinks
+      : deal && Array.isArray(deal.dueDiligenceReports)
+        ? deal.dueDiligenceReports
+        : deal && Array.isArray(deal.ddReports)
+          ? deal.ddReports
+          : [];
+
+  const normalized = source
+    .map((entry, index) => {
+      if (typeof entry === "string") {
+        const url = String(entry || "").trim();
+        if (!keepEmpty && !url) return null;
+        return {
+          title: url ? `Due diligence report ${index + 1}` : "",
+          url,
+          kind: "report",
+        };
+      }
+      if (!entry || typeof entry !== "object") return null;
+      const title = String(entry.title || entry.label || entry.name || "").trim();
+      const url = String(entry.url || entry.href || entry.link || "").trim();
+      const kind = String(entry.kind || entry.type || "report").trim() || "report";
+      if (!keepEmpty && !title && !url) return null;
+      return {
+        title: title || (url ? `Due diligence report ${index + 1}` : ""),
+        url,
+        kind,
+      };
+    })
+    .filter(Boolean);
+
+  const fallbackUrl = String(
+    deal && (
+      deal.dueDiligenceUrl ||
+      deal.dueDiligenceReportUrl ||
+      deal.ddReportUrl ||
+      ""
+    ) || "",
+  ).trim();
+  if (fallbackUrl && !normalized.some((entry) => normalizeValue(entry.url) === normalizeValue(fallbackUrl))) {
+    normalized.push({
+      title: String(deal && (deal.dueDiligenceName || deal.dueDiligenceReportName) || "").trim() || "Due diligence report",
+      url: fallbackUrl,
+      kind: "report",
+    });
+  }
+
+  if (deal && typeof deal === "object") {
+    deal.dueDiligenceLinks = normalized;
+    deal.dueDiligenceReports = normalized;
+  }
+  return normalized;
+}
+
+function buildDueDiligenceEditorRow(link, index) {
+  return `
+    <div class="legal-link-editor-row" data-due-diligence-row="${index}">
+      <div class="contact-editor-grid">
+        <label>Title<input type="text" data-due-diligence-field="title" value="${escapeHtml(link.title || "")}" placeholder="DD report, data room, red flags..." /></label>
+        <label>URL<input type="url" data-due-diligence-field="url" value="${escapeHtml(link.url || "")}" placeholder="https://..." /></label>
+      </div>
+      <div class="legal-link-editor-actions">
+        <div class="linked-asset-meta">Use a report, folder, or data-room link that supports the investment review.</div>
+        <button class="btn" type="button" data-remove-due-diligence-row="${index}">Remove</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderDealDueDiligenceEditor() {
+  const listEl = document.getElementById("deal-due-diligence-editor-list");
+  if (!listEl || !currentDeal) return;
+  const links = normalizeDealDueDiligenceLinks(currentDeal, { keepEmpty: true });
+  listEl.innerHTML = links.length
+    ? links.map((link, index) => buildDueDiligenceEditorRow(link, index)).join("")
+    : '<div class="legal-link-empty">No due diligence links yet. Add the report or data-room folder when it arrives.</div>';
+}
+
+function collectDealDueDiligenceLinksFromEditor() {
+  const listEl = document.getElementById("deal-due-diligence-editor-list");
+  if (!listEl) return [];
+  const rows = Array.from(listEl.querySelectorAll("[data-due-diligence-row]"));
+  return rows
+    .map((row, index) => {
+      const title = String((row.querySelector('[data-due-diligence-field="title"]') || {}).value || "").trim();
+      const url = String((row.querySelector('[data-due-diligence-field="url"]') || {}).value || "").trim();
+      if (!title && !url) return null;
+      return {
+        title: title || `Due diligence report ${index + 1}`,
+        url,
+        kind: "report",
+      };
+    })
+    .filter(Boolean);
+}
+
+function renderDealDueDiligenceLinks() {
+  const listEl = document.getElementById("deal-due-diligence-list");
+  const summaryEl = document.getElementById("deal-due-diligence-summary");
+  if (!listEl || !summaryEl || !currentDeal) return;
+
+  const links = normalizeDealDueDiligenceLinks(currentDeal);
+  if (!links.length) {
+    summaryEl.textContent = "Add due diligence report or folder links in the editor below.";
+    listEl.innerHTML = '<div class="legal-link-empty">No due diligence report linked for this deal yet.</div>';
+    return;
+  }
+
+  summaryEl.textContent = `${links.length} due diligence link${links.length === 1 ? "" : "s"} linked to this deal.`;
+  listEl.innerHTML = links
+    .map((link) => {
+      const safeUrl = toSafeExternalUrl(link.url);
+      if (!safeUrl) {
+        return `
+          <div class="legal-link-card is-invalid">
+            <div class="legal-link-title">${escapeHtml(link.title || "Due diligence report")}</div>
+            <div class="legal-link-meta">This entry does not have a valid http(s) URL yet.</div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="legal-link-card">
+          <div class="legal-link-title">${escapeHtml(link.title || "Due diligence report")}</div>
+          <a class="btn legal-link-button" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">
+            Open ${escapeHtml(link.title || "due diligence")}
           </a>
         </div>
       `;
@@ -1893,6 +2120,7 @@ function renderDealHeader() {
 
   syncLegacyPrimaryContactFields(currentDeal);
   renderDealLegalLinks();
+  renderDealDueDiligenceLinks();
   renderDealContactsSummary();
   renderDealInvestorContacts();
   refreshDealTaskOwnerSuggestions();
@@ -1915,7 +2143,39 @@ function renderStageTracker(stage) {
 
   stepNodes.forEach((node, index) => {
     node.classList.toggle("active", index <= stageIndex);
+    node.classList.toggle("current", index === stageIndex);
+    node.classList.toggle("pending", index > stageIndex);
+    node.setAttribute("role", "button");
+    node.setAttribute("tabindex", "0");
+    node.setAttribute("aria-current", index === stageIndex ? "step" : "false");
+    node.setAttribute("aria-label", `Move deal to ${node.textContent.trim()}`);
   });
+
+  renderStageReadiness(stage);
+}
+
+function renderStageReadiness(stage) {
+  const readiness = document.getElementById("deal-stage-readiness");
+  if (!readiness) return;
+
+  const nextStage = getNextStageFromCurrentStage(stage);
+  if (!nextStage || isCurrentDealClosedLifecycle() || isCurrentDealNegotiationTrack()) {
+    readiness.hidden = true;
+    readiness.innerHTML = "";
+    return;
+  }
+
+  const warnings = getStageReadinessWarnings(stage, nextStage);
+  readiness.hidden = false;
+  readiness.className = `deal-stage-readiness${warnings.length ? " has-warnings" : " is-ready"}`;
+  readiness.innerHTML = warnings.length
+    ? `
+      <div class="deal-stage-readiness-title">Can move to ${escapeHtml(STAGE_LABELS[nextStage] || nextStage)} now, with ${warnings.length} follow-up item${warnings.length === 1 ? "" : "s"}.</div>
+      <ul>
+        ${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}
+      </ul>
+    `
+    : `<div class="deal-stage-readiness-title">Ready for ${escapeHtml(STAGE_LABELS[nextStage] || nextStage)}.</div>`;
 }
 
 function populateDealForm() {
@@ -1945,10 +2205,12 @@ function populateDealForm() {
   document.getElementById("deal-input-keywords").value = normalizeDealKeywords(currentDeal).join("\n");
   document.getElementById("deal-input-summary").value = currentDeal.summary || "";
   normalizeDealLegalLinks(currentDeal);
+  normalizeDealDueDiligenceLinks(currentDeal);
   document.getElementById("deal-input-deck-name").value = currentDeal.deckName || "";
   document.getElementById("deal-input-deck-url").value = currentDeal.deckUrl || "";
   document.getElementById("deal-input-deck-parent-path").value = currentDeal.deckParentPath || "";
   renderDealLegalLinkEditor();
+  renderDealDueDiligenceEditor();
   refreshDeckEditorSummary();
   renderDealContactEditor();
   refreshDealWorkflowFormState();
@@ -2089,6 +2351,8 @@ function setupDealForm() {
   const clearDeckBtn = document.getElementById("btn-clear-deck-link");
   const addLegalLinkBtn = document.getElementById("btn-add-legal-link-row");
   const legalLinkEditorList = document.getElementById("deal-legal-editor-list");
+  const addDueDiligenceBtn = document.getElementById("btn-add-due-diligence-row");
+  const dueDiligenceEditorList = document.getElementById("deal-due-diligence-editor-list");
   const addContactBtn = document.getElementById("btn-add-contact-row");
   const contactEditorList = document.getElementById("deal-contact-editor-list");
   const pipelineStatusInput = document.getElementById("deal-input-pipeline-status");
@@ -2167,6 +2431,37 @@ function setupDealForm() {
       currentDeal.legalLinks = legalLinks;
       renderDealLegalLinkEditor();
       if (statusEl) statusEl.textContent = "Legal link removed in form";
+    });
+  }
+
+  if (addDueDiligenceBtn) {
+    addDueDiligenceBtn.addEventListener("click", () => {
+      if (!currentDeal) return;
+      const links = normalizeDealDueDiligenceLinks(currentDeal, { keepEmpty: true });
+      links.push({
+        title: "",
+        url: "",
+        kind: "report",
+      });
+      currentDeal.dueDiligenceLinks = links;
+      currentDeal.dueDiligenceReports = links;
+      renderDealDueDiligenceEditor();
+      if (statusEl) statusEl.textContent = "Due diligence link row added in form";
+    });
+  }
+
+  if (dueDiligenceEditorList) {
+    dueDiligenceEditorList.addEventListener("click", (event) => {
+      const removeBtn = event.target.closest("button[data-remove-due-diligence-row]");
+      if (!removeBtn || !currentDeal) return;
+      const index = Number(removeBtn.getAttribute("data-remove-due-diligence-row"));
+      const links = normalizeDealDueDiligenceLinks(currentDeal, { keepEmpty: true });
+      if (!Number.isFinite(index) || !links[index]) return;
+      links.splice(index, 1);
+      currentDeal.dueDiligenceLinks = links;
+      currentDeal.dueDiligenceReports = links;
+      renderDealDueDiligenceEditor();
+      if (statusEl) statusEl.textContent = "Due diligence link removed in form";
     });
   }
 
@@ -2253,6 +2548,18 @@ function setupDealForm() {
       title: entry.title || `Legal link ${index + 1}`,
       url: toSafeExternalUrl(entry.url),
     }));
+    const dueDiligenceLinks = collectDealDueDiligenceLinksFromEditor();
+    const invalidDueDiligenceLink = dueDiligenceLinks.find((entry) => !toSafeExternalUrl(entry.url));
+    if (invalidDueDiligenceLink) {
+      statusEl.textContent = `Due diligence link "${invalidDueDiligenceLink.title || "Untitled"}" needs a valid http(s) URL.`;
+      return;
+    }
+    currentDeal.dueDiligenceLinks = dueDiligenceLinks.map((entry, index) => ({
+      title: entry.title || `Due diligence report ${index + 1}`,
+      url: toSafeExternalUrl(entry.url),
+      kind: entry.kind || "report",
+    }));
+    currentDeal.dueDiligenceReports = currentDeal.dueDiligenceLinks;
     currentDeal.deckName = document.getElementById("deal-input-deck-name").value.trim();
     currentDeal.deckUrl = document.getElementById("deal-input-deck-url").value.trim();
     currentDeal.deckParentPath = document.getElementById("deal-input-deck-parent-path").value.trim();
@@ -2288,7 +2595,7 @@ function setupDealForm() {
           ? `Saved and synced ${subOwnerSyncResult.syncedCount} sub owner${subOwnerSyncResult.syncedCount === 1 ? "" : "s"}`
           : "Saved and cleared sub owner sync rows";
       } else {
-        statusEl.textContent = currentDeal.fundraisingDashboardId || currentDeal.deckUrl ? "Saved and linked" : "Saved";
+        statusEl.textContent = currentDeal.fundraisingDashboardId || currentDeal.deckUrl || currentDeal.dueDiligenceLinks.length ? "Saved and linked" : "Saved";
       }
       window.setTimeout(() => {
         statusEl.textContent = "";
@@ -2547,6 +2854,7 @@ async function loadDealPage() {
   setupGroupButtons();
   setupDealLifecycleButtons();
   setupStageProgressionButton();
+  setupStageTrackerNavigation();
   syncContactStatusTasksFromDashboard();
 }
 

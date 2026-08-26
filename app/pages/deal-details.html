@@ -60,6 +60,7 @@
             <div class="deal-stage-step" data-stage="onboarding">Onboarding</div>
             <div class="deal-stage-step" data-stage="contacting investors">Contacting investors</div>
           </div>
+          <div class="deal-stage-readiness" id="deal-stage-readiness" hidden></div>
         </div>
 
         <div class="meta-grid">
@@ -130,6 +131,11 @@
               <div class="linked-asset-label">Linked deck</div>
               <div class="linked-asset-name" id="deal-deck-name">No deck linked</div>
               <div class="linked-asset-meta" id="deal-deck-meta">Choose a PDF from Sharedrive and save the deal to keep the link.</div>
+            </div>
+            <div class="linked-asset-card">
+              <div class="linked-asset-label">Due diligence reports</div>
+              <div class="linked-asset-meta" id="deal-due-diligence-summary">Add due diligence report or folder links in the editor below.</div>
+              <div class="legal-link-list" id="deal-due-diligence-list"></div>
             </div>
             <div class="linked-asset-card">
               <div class="linked-asset-label">Legal aspects</div>
@@ -252,6 +258,16 @@
                 <button class="btn" id="btn-add-legal-link-row" type="button">Add legal link</button>
               </div>
               <div class="legal-link-editor-list" id="deal-legal-editor-list"></div>
+            </div>
+            <div class="deal-legal-editor">
+              <div class="panel-heading-row">
+                <div>
+                  <div class="linked-asset-label">Due diligence links</div>
+                  <div class="linked-asset-meta">Track due diligence reports, data-room folders, or DD packs separately from legal documents.</div>
+                </div>
+                <button class="btn" id="btn-add-due-diligence-row" type="button">Add due diligence link</button>
+              </div>
+              <div class="legal-link-editor-list" id="deal-due-diligence-editor-list"></div>
             </div>
             <div class="deal-contact-editor">
               <div class="panel-heading-row">
