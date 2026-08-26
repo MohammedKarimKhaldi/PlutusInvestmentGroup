@@ -41,6 +41,10 @@
     );
   }
 
+  function getBrowserBridgeAuthMessage() {
+    return "Browser preview cannot start Microsoft device-code sign-in because Microsoft blocks the direct auth request from normal web pages. Open the Tauri desktop app (`npm run desktop`) for built-in sign-in, or paste a Microsoft Graph access token in Advanced and debug.";
+  }
+
   function bytesToReadable(bytes) {
     if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return "-";
     const sizes = ["B", "KB", "MB", "GB", "TB"];
@@ -678,6 +682,18 @@
     if (!useDesktop && !useBrowser) {
       setStatus("Sign-in unavailable");
       setError("Device code flow is unavailable. Update the desktop app to enable it.");
+      setDebugPanelOpen(true);
+      return;
+    }
+    if (!useDesktop && useBrowser) {
+      const message = getBrowserBridgeAuthMessage();
+      setStatus("Desktop app required");
+      setError(message);
+      setAuthDebug(formatAuthDebug("Auth debug: start blocked", {
+        bridge: "browser",
+        reason: "microsoft-auth-cors",
+        action: "Open the Tauri desktop app with npm run desktop, or paste a Graph token.",
+      }), true);
       setDebugPanelOpen(true);
       return;
     }

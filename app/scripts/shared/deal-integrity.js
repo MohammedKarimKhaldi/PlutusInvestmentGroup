@@ -1,7 +1,19 @@
 (function initDealIntegrity(global) {
   const AppCore = global.AppCore;
   const DEFAULT_CURRENCY = "GBP";
-  const KNOWN_INVOICE_STATUSES = new Set(["draft", "prepared", "sent", "part_paid", "paid", "cancelled"]);
+  const KNOWN_INVOICE_STATUSES = new Set([
+    "draft",
+    "prepared",
+    "sent",
+    "pending",
+    "part_paid",
+    "received",
+    "paid",
+    "paid_advance",
+    "cancelled",
+  ]);
+  const OUTSTANDING_INVOICE_STATUSES = new Set(["prepared", "sent", "pending", "part_paid"]);
+  const COLLECTED_INVOICE_STATUSES = new Set(["received", "paid", "paid_advance"]);
 
   function normalizeValue(value) {
     if (AppCore && typeof AppCore.normalizeValue === "function") {
@@ -165,7 +177,15 @@
 
   function normalizeInvoiceStatus(value) {
     const raw = String(value || "").trim().toLowerCase();
+    if (raw === "waiting" || raw === "awaiting_payment" || raw === "awaiting payment") return "pending";
+    if (raw === "part paid" || raw === "partial" || raw === "partially_paid") return "part_paid";
+    if (raw === "payment_received" || raw === "payment received" || raw === "received_paid") return "received";
+    if (raw === "paid in advance" || raw === "paid-in-advance" || raw === "advance_paid" || raw === "prepaid") return "paid_advance";
     return KNOWN_INVOICE_STATUSES.has(raw) ? raw : "draft";
+  }
+
+  function isInvoiceCollected(invoice) {
+    return COLLECTED_INVOICE_STATUSES.has(normalizeInvoiceStatus(invoice && invoice.status));
   }
 
   function isPdfReference(value) {
@@ -277,7 +297,7 @@
   }
 
   function isInvoiceOverdue(invoice) {
-    if (!invoice || normalizeInvoiceStatus(invoice.status) === "paid" || normalizeInvoiceStatus(invoice.status) === "cancelled") {
+    if (!invoice || isInvoiceCollected(invoice) || normalizeInvoiceStatus(invoice.status) === "cancelled") {
       return false;
     }
     if (invoice.paidDate) return false;
@@ -298,6 +318,8 @@
       total: invoices.length,
       outstanding: 0,
       paid: 0,
+      received: 0,
+      paidAdvance: 0,
       overdue: 0,
       sent: 0,
       latest: null,
@@ -306,9 +328,11 @@
     invoices.forEach((invoice) => {
       const status = normalizeInvoiceStatus(invoice.status);
       if (isInvoiceOverdue(invoice)) summary.overdue += 1;
-      if (status === "paid") summary.paid += 1;
-      if (status === "sent" || status === "part_paid") summary.sent += 1;
-      if (["prepared", "sent", "part_paid"].includes(status)) summary.outstanding += 1;
+      if (isInvoiceCollected(invoice)) summary.paid += 1;
+      if (status === "received") summary.received += 1;
+      if (status === "paid_advance") summary.paidAdvance += 1;
+      if (status === "sent" || status === "pending" || status === "part_paid") summary.sent += 1;
+      if (OUTSTANDING_INVOICE_STATUSES.has(status)) summary.outstanding += 1;
     });
 
     summary.latest = getLatestInvoice(deal);
@@ -346,6 +370,60 @@
       .filter(Boolean);
   }
 
+  function normalizeDealDueDiligenceLinks(deal, options = {}) {
+    const keepEmpty = Boolean(options.keepEmpty);
+    const source =
+      deal && Array.isArray(deal.dueDiligenceLinks)
+        ? deal.dueDiligenceLinks
+        : deal && Array.isArray(deal.dueDiligenceReports)
+          ? deal.dueDiligenceReports
+          : deal && Array.isArray(deal.ddReports)
+            ? deal.ddReports
+            : [];
+
+    const normalized = source
+      .map((entry, index) => {
+        if (typeof entry === "string") {
+          const url = String(entry || "").trim();
+          if (!keepEmpty && !url) return null;
+          return {
+            title: url ? `Due diligence report ${index + 1}` : "",
+            url,
+            kind: "report",
+          };
+        }
+        if (!entry || typeof entry !== "object") return null;
+        const title = String(entry.title || entry.label || entry.name || "").trim();
+        const url = String(entry.url || entry.href || entry.link || "").trim();
+        const kind = String(entry.kind || entry.type || "report").trim() || "report";
+        if (!keepEmpty && !title && !url) return null;
+        return {
+          title: title || (url ? `Due diligence report ${index + 1}` : ""),
+          url,
+          kind,
+        };
+      })
+      .filter(Boolean);
+
+    const fallbackUrl = String(
+      deal && (
+        deal.dueDiligenceUrl ||
+        deal.dueDiligenceReportUrl ||
+        deal.ddReportUrl ||
+        ""
+      ) || "",
+    ).trim();
+    if (fallbackUrl && !normalized.some((entry) => normalizeValue(entry.url) === normalizeValue(fallbackUrl))) {
+      normalized.push({
+        title: String(deal && (deal.dueDiligenceName || deal.dueDiligenceReportName) || "").trim() || "Due diligence report",
+        url: fallbackUrl,
+        kind: "report",
+      });
+    }
+
+    return normalized;
+  }
+
   function toSafeExternalUrl(value) {
     const raw = String(value || "").trim();
     if (!raw) return "";
@@ -361,6 +439,16 @@
 
   function getLegalLinkStats(deal) {
     const links = normalizeDealLegalLinks(deal);
+    const validCount = links.filter((entry) => Boolean(toSafeExternalUrl(entry.url))).length;
+    return {
+      total: links.length,
+      valid: validCount,
+      invalid: Math.max(links.length - validCount, 0),
+    };
+  }
+
+  function getDueDiligenceLinkStats(deal) {
+    const links = normalizeDealDueDiligenceLinks(deal);
     const validCount = links.filter((entry) => Boolean(toSafeExternalUrl(entry.url))).length;
     return {
       total: links.length,
@@ -395,6 +483,10 @@
     return Boolean(toSafeExternalUrl(deal && deal.deckUrl));
   }
 
+  function hasDueDiligenceLinked(deal) {
+    return normalizeDealDueDiligenceLinks(deal).some((entry) => Boolean(toSafeExternalUrl(entry.url)));
+  }
+
   function buildDealIntegrityReport(deal, options = {}) {
     if (!deal || typeof deal !== "object") {
       return {
@@ -405,6 +497,7 @@
         fullyLinked: false,
         accounting: { hasRetainer: false, invoices: [], invoiceSummary: null, primaryContact: null, nextPaymentDate: null },
         legal: { links: [], stats: { total: 0, valid: 0, invalid: 0 } },
+        materials: { hasDashboard: false, hasDeck: false, hasDueDiligence: false, dueDiligenceLinks: [], dueDiligenceStats: { total: 0, valid: 0, invalid: 0 } },
       };
     }
 
@@ -455,6 +548,8 @@
 
     const legalLinks = normalizeDealLegalLinks(deal);
     const legalStats = getLegalLinkStats(deal);
+    const dueDiligenceLinks = normalizeDealDueDiligenceLinks(deal);
+    const dueDiligenceStats = getDueDiligenceLinkStats(deal);
     if (!legalStats.total) {
       addIssue("legal", "missing_legal", "No legal documents linked", "Attach at least one legal file or folder link so the deal package is complete.");
     } else if (legalStats.invalid > 0) {
@@ -465,12 +560,23 @@
         "One or more legal links are not valid http/https URLs."
       );
     }
+    if (dueDiligenceStats.invalid > 0) {
+      addIssue(
+        "setup",
+        "invalid_due_diligence",
+        `${dueDiligenceStats.invalid} invalid due diligence link${dueDiligenceStats.invalid === 1 ? "" : "s"}`,
+        "One or more due diligence report links are not valid http/https URLs."
+      );
+    }
 
     if (!hasDashboardLinked(deal)) {
       addIssue("setup", "missing_dashboard", "Dashboard not linked", "Attach the fundraising dashboard so investor activity is connected.");
     }
     if (!hasDeckLinked(deal)) {
       addIssue("setup", "missing_deck", "Deck not linked", "Add a deck link so the deal materials stay complete.");
+    }
+    if (!hasDueDiligenceLinked(deal)) {
+      addIssue("setup", "missing_due_diligence", "Due diligence not linked", "Attach the due diligence report or folder so the investment package is complete.");
     }
 
     const counts = ["ownership", "accounting", "legal", "setup"].reduce((accumulator, scope) => {
@@ -504,6 +610,13 @@
         links: legalLinks,
         stats: legalStats,
       },
+      materials: {
+        hasDashboard: hasDashboardLinked(deal),
+        hasDeck: hasDeckLinked(deal),
+        hasDueDiligence: hasDueDiligenceLinked(deal),
+        dueDiligenceLinks,
+        dueDiligenceStats,
+      },
     };
   }
 
@@ -520,18 +633,22 @@
     normalizeDealContacts,
     getPrimaryDealContact,
     normalizeInvoiceStatus,
+    isInvoiceCollected,
     normalizeDealInvoices,
     getLatestInvoice,
     isInvoiceOverdue,
     getInvoiceDisplayStatus,
     getInvoiceSummaryForDeal,
     normalizeDealLegalLinks,
+    normalizeDealDueDiligenceLinks,
     toSafeExternalUrl,
     getLegalLinkStats,
+    getDueDiligenceLinkStats,
     getSubOwners,
     getDealOwners,
     hasDashboardLinked,
     hasDeckLinked,
+    hasDueDiligenceLinked,
     buildDealIntegrityReport,
   };
 })(window);

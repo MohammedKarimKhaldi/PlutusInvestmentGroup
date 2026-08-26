@@ -92,13 +92,15 @@
                 <option value="all">All deals</option>
                 <option value="missing-dashboard">Missing dashboard</option>
                 <option value="missing-deck">Missing deck</option>
+                <option value="missing-due-diligence">Missing due diligence</option>
                 <option value="missing-legal">Missing legal</option>
                 <option value="missing-any">Missing any setup item</option>
                 <option value="irregularities">Any irregularity</option>
                 <option value="ownership-attention">Ownership attention</option>
                 <option value="accounting-attention">Accounting attention</option>
                 <option value="legal-attention">Legal attention</option>
-                <option value="ready">Dashboard, deck, and legal ready</option>
+                <option value="setup-attention">Materials attention</option>
+                <option value="ready">Dashboard, deck, due diligence, and legal ready</option>
                 <option value="fully-linked">Fully connected</option>
               </select>
             </label>
@@ -226,6 +228,24 @@
               <label>
                 Sheet: Figures
                 <input id="deal-dashboard-sheet-figures-input" type="text" placeholder="figure" />
+              </label>
+            </div>
+            <div class="toolbar-row">
+              <label>
+                Pitch deck name
+                <input id="deal-deck-name-input" type="text" placeholder="Pitch deck" />
+              </label>
+              <label style="flex: 1 1 320px;">
+                Pitch deck link
+                <input id="deal-deck-url-input" type="url" placeholder="https://..." />
+              </label>
+              <label>
+                Due diligence title
+                <input id="deal-due-diligence-title-input" type="text" placeholder="DD report or folder" />
+              </label>
+              <label style="flex: 1 1 320px;">
+                Due diligence link
+                <input id="deal-due-diligence-url-input" type="url" placeholder="https://..." />
               </label>
               <button class="btn btn-primary" type="submit">Create deal</button>
             </div>

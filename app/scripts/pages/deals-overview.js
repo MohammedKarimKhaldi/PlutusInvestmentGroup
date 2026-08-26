@@ -33,6 +33,7 @@
       "onboarding": "Onboarding",
       "contacting investors": "Contacting investors"
     };
+    const DEAL_STAGE_ORDER = ["prospect", "signing", "onboarding", "contacting investors"];
     const DEAL_SORT_LABELS = {
       deal: "Deal",
       company: "Company",
@@ -179,6 +180,63 @@
       return Boolean(String(deal && deal.deckUrl || "").trim());
     }
 
+    function toSafeExternalUrl(value) {
+      if (DealIntegrity && typeof DealIntegrity.toSafeExternalUrl === "function") {
+        return DealIntegrity.toSafeExternalUrl(value);
+      }
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      try {
+        const parsed = new URL(raw);
+        const protocol = String(parsed.protocol || "").toLowerCase();
+        if (protocol !== "http:" && protocol !== "https:") return "";
+        return parsed.toString();
+      } catch {
+        return "";
+      }
+    }
+
+    function normalizeDealDueDiligenceLinksForFilters(deal) {
+      if (DealIntegrity && typeof DealIntegrity.normalizeDealDueDiligenceLinks === "function") {
+        return DealIntegrity.normalizeDealDueDiligenceLinks(deal);
+      }
+      const source =
+        deal && Array.isArray(deal.dueDiligenceLinks)
+          ? deal.dueDiligenceLinks
+          : deal && Array.isArray(deal.dueDiligenceReports)
+            ? deal.dueDiligenceReports
+            : [];
+
+      const links = source
+        .map((entry, index) => {
+          if (typeof entry === "string") {
+            const url = String(entry || "").trim();
+            return url ? { title: `Due diligence report ${index + 1}`, url } : null;
+          }
+          if (!entry || typeof entry !== "object") return null;
+          const title = String(entry.title || entry.label || entry.name || "").trim();
+          const url = String(entry.url || entry.href || entry.link || "").trim();
+          if (!title && !url) return null;
+          return { title: title || `Due diligence report ${index + 1}`, url };
+        })
+        .filter(Boolean);
+      const fallbackUrl = String(deal && (deal.dueDiligenceUrl || deal.dueDiligenceReportUrl || deal.ddReportUrl) || "").trim();
+      if (fallbackUrl) {
+        links.push({
+          title: String(deal && (deal.dueDiligenceName || deal.dueDiligenceReportName) || "").trim() || "Due diligence report",
+          url: fallbackUrl,
+        });
+      }
+      return links;
+    }
+
+    function hasDueDiligenceLinked(deal) {
+      if (DealIntegrity && typeof DealIntegrity.hasDueDiligenceLinked === "function") {
+        return DealIntegrity.hasDueDiligenceLinked(deal);
+      }
+      return normalizeDealDueDiligenceLinksForFilters(deal).some((entry) => Boolean(toSafeExternalUrl(entry.url)));
+    }
+
     function normalizeDealLegalLinksForFilters(deal) {
       const source =
         deal && Array.isArray(deal.legalLinks)
@@ -197,7 +255,73 @@
     }
 
     function hasLegalLinked(deal) {
-      return normalizeDealLegalLinksForFilters(deal).length > 0;
+      return normalizeDealLegalLinksForFilters(deal).some((url) => Boolean(toSafeExternalUrl(url)));
+    }
+
+    function getNextStageForDeal(deal) {
+      const stage = normalizeValue(deal && deal.stage) || "prospect";
+      const stageIndex = DEAL_STAGE_ORDER.indexOf(stage);
+      if (stageIndex < 0 || stageIndex >= DEAL_STAGE_ORDER.length - 1) return "";
+      return DEAL_STAGE_ORDER[stageIndex + 1];
+    }
+
+    function getDealReadinessWarnings(deal, nextStage) {
+      const warnings = [];
+      const normalizedNextStage = normalizeValue(nextStage);
+      const nextIndex = DEAL_STAGE_ORDER.indexOf(normalizedNextStage);
+      if (!deal || nextIndex < 0) return warnings;
+
+      const signingIndex = DEAL_STAGE_ORDER.indexOf("signing");
+      const onboardingIndex = DEAL_STAGE_ORDER.indexOf("onboarding");
+      const investorIndex = DEAL_STAGE_ORDER.indexOf("contacting investors");
+
+      if (nextIndex >= signingIndex && !hasDeckLinked(deal)) {
+        warnings.push("Pitch deck is not linked yet.");
+      }
+      if (nextIndex >= onboardingIndex && !hasDueDiligenceLinked(deal)) {
+        warnings.push("Due diligence report or folder is not linked yet.");
+      }
+      if (nextIndex >= signingIndex && !hasLegalLinked(deal)) {
+        warnings.push("Legal documents are not linked yet.");
+      }
+      if (nextIndex >= investorIndex && !hasDashboardLinked(deal)) {
+        warnings.push("Fundraising dashboard is not linked yet.");
+      }
+
+      const report = getDealIntegrityReport(deal);
+      if (report && report.counts && report.counts.accounting) {
+        warnings.push("Accounting or invoice status still has an open item.");
+      }
+
+      return Array.from(new Set(warnings));
+    }
+
+    function confirmDealStageAdvance(deal, nextStage) {
+      const warnings = getDealReadinessWarnings(deal, nextStage);
+      if (!warnings.length) return true;
+      return window.confirm(
+        [
+          `Move "${deal.name || deal.company || "this deal"}" to ${STAGE_LABELS[nextStage] || nextStage}?`,
+          "",
+          "This will keep the pipeline moving, but these readiness items remain open:",
+          ...warnings.map((warning) => `- ${warning}`),
+          "",
+          "You can fill them in later from the deal record, legal, accounting, or dashboard pages.",
+        ].join("\n"),
+      );
+    }
+
+    async function advanceDealFromOverview(dealId, nextStage) {
+      const deal = (Array.isArray(dealsData) ? dealsData : []).find((entry) => normalizeValue(entry && entry.id) === normalizeValue(dealId));
+      const targetStage = normalizeValue(nextStage);
+      if (!deal || !DEAL_STAGE_ORDER.includes(targetStage)) return;
+      if (isDealClosedLifecycle(getDealLifecycleStatus(deal)) || !isPipelineTrackedDeal(deal)) return;
+      if (!confirmDealStageAdvance(deal, targetStage)) return;
+
+      deal.stage = targetStage;
+      await saveDealsData();
+      clearDealIntegrityCache();
+      renderDeals();
     }
 
     function getDealRetainerState(deal) {
@@ -597,6 +721,7 @@
           getSubOwners(deal).join(" "),
           deal.currency,
           deal.summary,
+          normalizeDealDueDiligenceLinksForFilters(deal).map((entry) => `${entry.title || ""} ${entry.url || ""}`).join(" "),
         ]
           .join(" ")
           .toLowerCase();
@@ -615,17 +740,20 @@
 
       const hasDashboard = hasDashboardLinked(deal);
       const hasDeck = hasDeckLinked(deal);
+      const hasDueDiligence = hasDueDiligenceLinked(deal);
       const hasLegal = hasLegalLinked(deal);
       const integrityReport = getDealIntegrityReport(deal);
       if (dealsFilterState.setup === "missing-dashboard" && hasDashboard) return false;
       if (dealsFilterState.setup === "missing-deck" && hasDeck) return false;
+      if (dealsFilterState.setup === "missing-due-diligence" && hasDueDiligence) return false;
       if (dealsFilterState.setup === "missing-legal" && hasLegal) return false;
-      if (dealsFilterState.setup === "missing-any" && hasDashboard && hasDeck && hasLegal) return false;
-      if (dealsFilterState.setup === "ready" && !(hasDashboard && hasDeck && hasLegal)) return false;
+      if (dealsFilterState.setup === "missing-any" && hasDashboard && hasDeck && hasDueDiligence && hasLegal) return false;
+      if (dealsFilterState.setup === "ready" && !(hasDashboard && hasDeck && hasDueDiligence && hasLegal)) return false;
       if (dealsFilterState.setup === "irregularities" && !integrityReport.counts.total) return false;
       if (dealsFilterState.setup === "ownership-attention" && !integrityReport.counts.ownership) return false;
       if (dealsFilterState.setup === "accounting-attention" && !integrityReport.counts.accounting) return false;
       if (dealsFilterState.setup === "legal-attention" && !integrityReport.counts.legal) return false;
+      if (dealsFilterState.setup === "setup-attention" && !integrityReport.counts.setup) return false;
       if (dealsFilterState.setup === "fully-linked" && !integrityReport.fullyLinked) return false;
 
       return true;
@@ -794,6 +922,21 @@
       });
     }
 
+    function setupDealActionHandlers() {
+      const tableBody = document.getElementById("deals-body");
+      if (!tableBody) return;
+
+      tableBody.addEventListener("click", (event) => {
+        const advanceButton = event.target.closest("[data-deal-advance-id]");
+        if (!advanceButton || !tableBody.contains(advanceButton)) return;
+        event.preventDefault();
+        advanceDealFromOverview(
+          advanceButton.getAttribute("data-deal-advance-id"),
+          advanceButton.getAttribute("data-deal-next-stage"),
+        );
+      });
+    }
+
     function toDealId(value) {
       return String(value || "")
         .trim()
@@ -855,6 +998,10 @@
       const dashboardFundsInput = document.getElementById("deal-dashboard-sheet-funds-input");
       const dashboardFoInput = document.getElementById("deal-dashboard-sheet-fo-input");
       const dashboardFiguresInput = document.getElementById("deal-dashboard-sheet-figures-input");
+      const deckNameInput = document.getElementById("deal-deck-name-input");
+      const deckUrlInput = document.getElementById("deal-deck-url-input");
+      const dueDiligenceTitleInput = document.getElementById("deal-due-diligence-title-input");
+      const dueDiligenceUrlInput = document.getElementById("deal-due-diligence-url-input");
       const pipelineStatusInput = document.getElementById("deal-pipeline-status-input");
       const negotiationStatusInput = document.getElementById("deal-negotiation-status-input");
       const panel = document.getElementById("add-deal-panel");
@@ -884,6 +1031,8 @@
         if (!name || !company || !seniorOwner || !juniorOwner) return;
 
         const dashboardUrl = String(dashboardUrlInput && dashboardUrlInput.value || "").trim();
+        const deckUrl = String(deckUrlInput && deckUrlInput.value || "").trim();
+        const dueDiligenceUrl = String(dueDiligenceUrlInput && dueDiligenceUrlInput.value || "").trim();
         let dashboardId = String(dashboardInput.value || "").trim();
         let createdDealId = "";
         const sectors = parseDealSectorsInput(sectorInput && sectorInput.value);
@@ -919,6 +1068,15 @@
             });
           }
 
+          const safeDeckUrl = deckUrl ? toSafeExternalUrl(deckUrl) : "";
+          if (deckUrl && !safeDeckUrl) {
+            throw new Error("Pitch deck link must be a valid http(s) URL.");
+          }
+          const safeDueDiligenceUrl = dueDiligenceUrl ? toSafeExternalUrl(dueDiligenceUrl) : "";
+          if (dueDiligenceUrl && !safeDueDiligenceUrl) {
+            throw new Error("Due diligence link must be a valid http(s) URL.");
+          }
+
           createdDealId = buildUniqueDealId(`${company}-${name}`);
           const newDeal = {
             id: createdDealId,
@@ -946,6 +1104,16 @@
             EquityCommission: String(equityInput.value || "").trim(),
             Retainer: String(retainerInput.value || "").trim(),
             summary: String(summaryInput.value || "").trim(),
+            deckName: String(deckNameInput && deckNameInput.value || "").trim(),
+            deckUrl: safeDeckUrl,
+            deckParentPath: "",
+            dueDiligenceLinks: safeDueDiligenceUrl
+              ? [{
+                title: String(dueDiligenceTitleInput && dueDiligenceTitleInput.value || "").trim() || "Due diligence report",
+                url: safeDueDiligenceUrl,
+                kind: "report",
+              }]
+              : [],
           };
 
           dealsData.push(newDeal);
@@ -1356,6 +1524,28 @@
       return `<span class="${className}">${escapeHtml(label)}</span>`;
     }
 
+    function renderReadinessChip(label, ready) {
+      const stateClass = ready ? "is-ready" : "is-missing";
+      const stateLabel = ready ? "Linked" : "Missing";
+      return `
+        <span class="deal-readiness-chip ${stateClass}" title="${escapeHtml(label)} ${stateLabel.toLowerCase()}">
+          <span>${escapeHtml(label)}</span>
+          <strong>${stateLabel}</strong>
+        </span>
+      `;
+    }
+
+    function renderDealReadinessStrip(deal) {
+      return `
+        <div class="deal-readiness-strip" aria-label="Deal readiness">
+          ${renderReadinessChip("Deck", hasDeckLinked(deal))}
+          ${renderReadinessChip("DD", hasDueDiligenceLinked(deal))}
+          ${renderReadinessChip("Legal", hasLegalLinked(deal))}
+          ${renderReadinessChip("Dashboard", hasDashboardLinked(deal))}
+        </div>
+      `;
+    }
+
     function renderDealIntegrityCell(deal) {
       const report = getDealIntegrityReport(deal);
       const summary = report.topIssues && report.topIssues.length
@@ -1372,7 +1562,9 @@
             ${renderIntegrityPill("Ownership", ownershipState)}
             ${renderIntegrityPill("Accounting", report.statuses.accounting)}
             ${renderIntegrityPill("Legal", report.statuses.legal)}
+            ${renderIntegrityPill("Materials", report.statuses.setup)}
           </div>
+          ${renderDealReadinessStrip(deal)}
           <div class="deal-integrity-summary">
             <strong>${report.counts.total ? `${report.counts.total} irregularit${report.counts.total === 1 ? "y" : "ies"}` : "Fully connected"}</strong>
             <span> · ${escapeHtml(summary)}</span>
@@ -1387,11 +1579,29 @@
       const accountingHref = buildPageUrl("accounting", { id: deal.id });
       const legalHref = buildPageUrl("legal-management", { id: deal.id });
       const dashboard = getDealDashboard(deal);
-      const links = [
+      const nextStage = getNextStageForDeal(deal);
+      const warnings = nextStage ? getDealReadinessWarnings(deal, nextStage) : [];
+      const links = [];
+
+      if (nextStage && getDealLifecycleStatus(deal) === "active" && isPipelineTrackedDeal(deal)) {
+        links.push(`
+          <button
+            class="action-link deal-primary-action${warnings.length ? " has-warnings" : ""}"
+            type="button"
+            data-deal-advance-id="${escapeHtml(deal.id)}"
+            data-deal-next-stage="${escapeHtml(nextStage)}"
+          >
+            Next: ${escapeHtml(STAGE_LABELS[nextStage] || nextStage)}
+            ${warnings.length ? `<span class="deal-next-warning">${warnings.length}</span>` : ""}
+          </button>
+        `);
+      }
+
+      links.push(
         `<a class="action-link" href="${detailHref}">Deal record</a>`,
         `<a class="action-link" href="${ownershipHref}">Ownership</a>`,
         `<a class="action-link" href="${legalHref}">Legal</a>`,
-      ];
+      );
 
       if (!accountingAccessState.restricted || accountingAccessState.allowed) {
         links.push(`<a class="action-link" href="${accountingHref}">Accounting</a>`);
@@ -1402,7 +1612,7 @@
         links.push(`<a class="action-link" href="${dashboardHref}">Open dashboard</a>`);
       }
 
-      return `<div class="deal-action-cluster">${links.join('<span style="color: var(--text-dim);">·</span>')}</div>`;
+      return `<div class="deal-action-cluster">${links.join("")}</div>`;
     }
 
     function renderIntegrityFilterChips(source) {
@@ -1416,6 +1626,7 @@
         "ownership-attention": 0,
         "accounting-attention": 0,
         "legal-attention": 0,
+        "setup-attention": 0,
         "fully-linked": 0,
       };
 
@@ -1425,6 +1636,7 @@
         if (report.counts.ownership) counts["ownership-attention"] += 1;
         if (report.counts.accounting) counts["accounting-attention"] += 1;
         if (report.counts.legal) counts["legal-attention"] += 1;
+        if (report.counts.setup) counts["setup-attention"] += 1;
         if (report.fullyLinked) counts["fully-linked"] += 1;
       });
 
@@ -1434,6 +1646,7 @@
         { value: "ownership-attention", label: "Ownership", count: counts["ownership-attention"] },
         { value: "accounting-attention", label: "Accounting", count: counts["accounting-attention"] },
         { value: "legal-attention", label: "Legal", count: counts["legal-attention"] },
+        { value: "setup-attention", label: "Materials", count: counts["setup-attention"] },
         { value: "fully-linked", label: "Fully connected", count: counts["fully-linked"] },
       ];
 
@@ -1532,6 +1745,7 @@
         applyRouteDealFilterFromUrl();
         setupDealFilters();
         setupDealSorting();
+        setupDealActionHandlers();
         setupAddDealForm();
         renderDeals();
         refreshOwnershipSnapshot();
